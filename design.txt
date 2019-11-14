@@ -1,0 +1,16 @@
+Goal: a minimal bullshit low level c-like language
+
+Differences between Gremlin and C
+ * No header files or forward declarations
+ * Functions are overloadable
+ * Vararg functions are type safe and allow random access and introspection of the passed variables
+ * Runtime type information is supplied
+ * All functions that are "pure" (meaning they do not affect global state) can be run at compile time as long as    
+   all the parameters are known at compile time
+ * Macros are type safe
+ * The build process is controlled by the program itself
+ * The program being compiled can catch compile events and modify the compilation process
+ * Functions can return multiple values
+ * Implicit casting is only performed on void* and core types (unless additional casting rules are specified)
+   all signed integers are implicitly upcast to I64, all unsigned integers are upcast to U64, F32 is upcast to 
+   F64, any pointer can be implicitly cast to void* and back
