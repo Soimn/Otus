@@ -1,5 +1,8 @@
 Goal: a minimal bullshit low level c-like language
 
+TODO:
+ * Should a union type decl be added or should there be a tag that conveys joint memory
+
 Differences between Gremlin and C
  * No header files or forward declarations
  * Functions are overloadable
@@ -10,7 +13,58 @@ Differences between Gremlin and C
  * Macros are type safe
  * The build process is controlled by the program itself
  * The program being compiled can catch compile events and modify the compilation process
- * Functions can return multiple values
+ * Functions can return multiple values (structured bindings)
  * Implicit casting is only performed on void* and core types (unless additional casting rules are specified)
    all signed integers are implicitly upcast to I64, all unsigned integers are upcast to U64, F32 is upcast to 
    F64, any pointer can be implicitly cast to void* and back
+
+--- Type and name order ---
+Types are specified before names for readability. This does however complicate parsing.
+type identifer instead of indentifier: type
+The keyword 'var' is therefore used to signify an inferred type
+
+--- Structured bindings ---
+NOTE: Structured bindings are used to group variables to enable muliple return values and an alternative way of 
+      multiple assignment. Variables declared or assigned this way are not special and may be accessed as if they 
+      were declared separately.
+NOTE: Structured bindings can be aliased with the using keyword, the elements in the binding must be named ot be 
+      accessible, and can be accessed by using the dot operator on the alias followed by the name of the element
+
+return_value: [type_0, type_1, ... type_n] Function () { ... }
+decl and assignment: [type_0 name_0, type_1 name_1, ... type_n name_n] = expression
+expression: [int i, String s, bool b] = [1, "Hello", true]
+assignment: [i, s, b] = Function();
+
+--- Grammar ---
+NOTE: {}? signifies an optional expression
+NOTE: {} x N signifies the the expression is repeated N times
+NOTE: {} x [a, b] signifies the expression is repeated between a and b times (inclusive)
+NOTE: {} x <a, b> signifies the expression is repeated between a and b times (exclusive)
+NOTE: / signifies a specialication. e.g. indetifier/IsType matches an indentifier which fulfills IsType
+NOTE: ! signifies logical negation
+NOTE: | signified logical or
+
+type : identifier/IsType
+     | var
+     ;
+
+unnamed_structured_binding : '[' {type} x [1, N] ']'
+
+variable_decl : type identifer {',' type identifier {'=' expression}? } x N ';'
+              | type identifier '=' expression {',' type identifier {'=' expression}? } x N ';'
+              | '[' {type identifier} x [1, N] ']' ';'
+              | '[' {type identifier} x [1, N] ']' '=' '[' {expression} x [1, N] ']' ';'
+              ;
+
+NOTE: The '!IsType' is added to avoid multiple declarations
+type_decl : struct identifier/!IsType { '::' '(' {type identifier {'=' expression/IsConstant}? }? ')'}? '{' {struct_body}? '}'
+          ;
+
+struct_body : variable_decl struct_body
+            | variable_decl
+            | type_decl struct_body
+            | type_decl
+            ;
+
+function_decl : {tag}? x X {linkage_specifier}? x Y {type | unnamed_structured_binding} identifier '(' {variable_decl} x N ')' scope
+              ;
