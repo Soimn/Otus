@@ -30,12 +30,16 @@ NOTE: Structured bindings are used to group variables to enable muliple return v
 NOTE: Structured bindings can be aliased with the using keyword, the elements in the binding must be named ot be 
       accessible, and can be accessed by using the dot operator on the alias followed by the name of the element
 
+NOTE: Structured bindings are only allowed in assignment and as return values from a function. This is done to 
+      avoid complexity.
+
 return_value: [type_0, type_1, ... type_n] Function () { ... }
-decl and assignment: [type_0 name_0, type_1 name_1, ... type_n name_n] = expression
-expression: [int i, String s, bool b] = [1, "Hello", true]
+decl and assignment: [type_0 name_0, type_1 name_1, ... type_n name_n] = Function();
 assignment: [i, s, b] = Function();
+expression: [int i, String s, bool b] = [1, "Hello", true];
 
 --- Grammar ---
+NOTE: This grammar is not complete and serves only the purpose of making the construction of the parser simpler
 NOTE: {}? signifies an optional expression
 NOTE: {} x N signifies the the expression is repeated N times
 NOTE: {} x [a, b] signifies the expression is repeated between a and b times (inclusive)
@@ -66,5 +70,69 @@ struct_body : variable_decl struct_body
             | type_decl
             ;
 
-function_decl : {tag}? x X {linkage_specifier}? x Y {type | unnamed_structured_binding} identifier '(' {variable_decl} x N ')' scope
+function_decl : {tag}? x X {linkage_specifier}? x Y {type | unnamed_structured_binding} identifier '(' {variable_decl} x N ')' compound_statement
               ;
+
+compound_statement : '{' statement '}'
+                   ;
+
+statement : compound_statement
+          | conditional_statement
+          | iteration_statement
+          | expression {',' expression}? x N ';'
+          ;
+
+conditional_statement : if '(' expression ')' statement
+                      | if '(' expression ')' statement else statement
+                      ;
+
+iteration_statement : for '(' {expression}? ';' {expression}? ';' {expression}? ')' statement
+                    | while '(' expression ')' statement
+                    | do compound_statement while '(' expression ')' ';'
+                    ;
+
+expression : identifier '(' {identifier | expression { ',' identifier | expression} x [0, N]}? ')'
+           | expression ? expression : expression
+           | expression '+'   expression
+           | expression '-'   expression
+           | expression '*'   expression
+           | expression '/'   expression
+           | expression '%'   expression
+           | expression '='   expression
+           | expression '&'   expression
+           | expression '|'   expression
+           | expression '^'   expression
+           | expression '>>'  expression
+           | expression '<<'  expression
+           | expression '&&'  expression
+           | expression '||'  expression
+           | expression '>'   expression
+           | expression '<'   expression
+           | expression '=='  expression
+           | expression '!='  expression
+           | expression '>='  expression
+           | expression '<='  expression
+           | expression '+='  expression
+           | expression '-='  expression
+           | expression '*='  expression
+           | expression '/='  expression
+           | expression '%='  expression
+           | expression '&='  expression
+           | expression '|='  expression
+           | expression '^='  expression
+           | expression '>>=' expression
+           | expression '<<=' expression
+           | expression '.'   expression
+           | expression ','   expression
+           | expression '[' expression ']'
+           | '+' expression
+           | '-' expression
+           | '~' expression
+           | '!' expression
+           | '*' expression
+           | '&' expression
+           | '(' identifier/IsType ')'
+           | number {'.' number}?
+           | identifier
+           | '(' expression ')'
+           ;
