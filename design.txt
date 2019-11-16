@@ -2,6 +2,7 @@ Goal: a minimal bullshit low level c-like language
 
 TODO:
  * Should a union type decl be added or should there be a tag that conveys joint memory
+ * Should a variant of const and volatile be added?
 
 Differences between Gremlin and C
  * No header files or forward declarations
@@ -14,14 +15,18 @@ Differences between Gremlin and C
  * The build process is controlled by the program itself
  * The program being compiled can catch compile events and modify the compilation process
  * Functions can return multiple values (structured bindings)
- * Implicit casting is only performed on void* and core types (unless additional casting rules are specified)
-   all signed integers are implicitly upcast to I64, all unsigned integers are upcast to U64, F32 is upcast to 
-   F64, any pointer can be implicitly cast to void* and back
+// * Implicit casting is only performed on void* and core types (unless additional casting rules are specified)
+//   all signed integers are implicitly upcast to I64, all unsigned integers are upcast to U64, F32 is upcast to 
+//   F64, any pointer can be implicitly cast to void* and back
+ * A defer "function" is supplied, which makes it possible to execute code on scope exit
 
 --- Type and name order ---
 Types are specified before names for readability. This does however complicate parsing.
 type identifer instead of indentifier: type
 The keyword 'var' is therefore used to signify an inferred type
+
+IMPORTANT TODO: Is structured bindings a good solution to the multiple return value problem and how should 
+                captures be specified
 
 --- Structured bindings ---
 NOTE: Structured bindings are used to group variables to enable muliple return values and an alternative way of 
