@@ -38,6 +38,7 @@ struct Buffer
 };
 
 typedef Buffer String;
+#define CONST_STRING(cstring) {(U8*)cstring, sizeof(cstring) - 1}
 
 #define U8_MAX  (U8)  0xFF
 #define U16_MAX (U16) 0xFFFF
@@ -72,9 +73,11 @@ typedef Buffer String;
 #ifdef GREMLIN_DEBUG
 #define HARD_ASSERT(EX) if (EX); else *(volatile int*)0 = 0
 #define NOT_IMPLEMENTED HARD_ASSERT(!"NOT IMPLEMENTED")
+#define INVALID_DEFAULT_CASE default: HARD_ASSERT(!"INVALID DEFAULT CASE"); break
 #else
 #define HARD_ASSERT(EX)
 #define NOT_IMPLEMENTED
+#define INVALID_DEFAULT_CASE
 #endif
 
 inline void*

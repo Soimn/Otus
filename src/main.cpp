@@ -5,7 +5,14 @@
 int
 main(int argc, const char** argv)
 {
-    printf("Hello world");
+    Lexer lexer = LexString(CONST_STRING("( + ) aa.... - * & / / /**/ && & << <"));
+    
+    Token token = {};
+    while (token.type != Token_EndOfStream)
+    {
+        token = GetToken(&lexer);
+        Print("%S\n", GetNameOfTokenType(token.type));
+    }
     
     return  0;
 }

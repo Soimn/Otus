@@ -19,6 +19,7 @@ struct Lexer
 enum TOKEN_TYPE
 {
     Token_Unknown = 0,
+    Token_Error,
     Token_EndOfStream,
     
     Token_Identifier,
@@ -81,6 +82,8 @@ enum TOKEN_TYPE
     Token_CloseBrace,
     Token_OpenBracket,
     Token_CloseBracket,
+    
+    TOKEN_TYPE_COUNT
 };
 
 struct Token
@@ -94,11 +97,74 @@ struct Token
     String string;
 };
 
+inline String
+GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
+{
+    String result = {};
+    
+    switch (type)
+    {
+        case Token_Unknown:            result = CONST_STRING("Token_Unknown");            break;
+        case Token_EndOfStream:        result = CONST_STRING("Token_EndOfStream");        break;
+        case Token_Identifier:         result = CONST_STRING("Token_Identifier");         break;
+        case Token_String:             result = CONST_STRING("Token_String");             break;
+        case Token_Plus:               result = CONST_STRING("Token_Plus");               break;
+        case Token_PlusEquals:         result = CONST_STRING("Token_PlusEquals");         break;
+        case Token_Increment:          result = CONST_STRING("Token_Increment");          break;
+        case Token_Minus:              result = CONST_STRING("Token_Minus");              break;
+        case Token_MinusEquals:        result = CONST_STRING("Token_MinusEquals");        break;
+        case Token_Decrement:          result = CONST_STRING("Token_Decrement");          break;
+        case Token_Asterisk:           result = CONST_STRING("Token_Asterisk");           break;
+        case Token_MultiplyEquals:     result = CONST_STRING("Token_MultiplyEquals");     break;
+        case Token_Divide:             result = CONST_STRING("Token_Divide");             break;
+        case Token_DivideEquals:       result = CONST_STRING("Token_DivideEquals");       break;
+        case Token_Modulo:             result = CONST_STRING("Token_Modulo");             break;
+        case Token_ModuloEquals:       result = CONST_STRING("Token_ModuloEquals");       break;
+        case Token_Ampersand:          result = CONST_STRING("Token_Ampersand");          break;
+        case Token_AndEquals:          result = CONST_STRING("Token_AndEquals");          break;
+        case Token_Or:                 result = CONST_STRING("Token_Or");                 break;
+        case Token_OrEquals:           result = CONST_STRING("Token_OrEquals");           break;
+        case Token_XOR:                result = CONST_STRING("Token_XOR");                break;
+        case Token_XOREquals:          result = CONST_STRING("Token_XOREquals");          break;
+        case Token_Not:                result = CONST_STRING("Token_Not");                break;
+        case Token_NotEquals:          result = CONST_STRING("Token_NotEquals");          break;
+        case Token_LogicalAnd:         result = CONST_STRING("Token_LogicalAnd");         break;
+        case Token_LogicalOr:          result = CONST_STRING("Token_LogicalOr");          break;
+        case Token_LogicalNot:         result = CONST_STRING("Token_LogicalNot");         break;
+        case Token_IsEqual:            result = CONST_STRING("Token_IsEqual");            break;
+        case Token_IsNotEqual:         result = CONST_STRING("Token_IsNotEqual");         break;
+        case Token_GreaterThan:        result = CONST_STRING("Token_GreaterThan");        break;
+        case Token_GreaterThanOrEqual: result = CONST_STRING("Token_GreaterThanOrEqual"); break;
+        case Token_LessThan:           result = CONST_STRING("Token_LessThan");           break;
+        case Token_LessThanOrEqual:    result = CONST_STRING("Token_LessThanOrEqual");    break;
+        case Token_Questionmark:       result = CONST_STRING("Token_Questionmark");       break;
+        case Token_Colon:              result = CONST_STRING("Token_Colon");              break;
+        case Token_RightShift:         result = CONST_STRING("Token_RightShift");         break;
+        case Token_RightShiftEquals:   result = CONST_STRING("Token_RightShiftEquals");   break;
+        case Token_LeftShift:          result = CONST_STRING("Token_LeftShift");          break;
+        case Token_LeftShiftEquals:    result = CONST_STRING("Token_LeftShiftEquals");    break;
+        case Token_Equals:             result = CONST_STRING("Token_Equals");             break;
+        case Token_Dot:                result = CONST_STRING("Token_Dot");                break;
+        case Token_Elipsis:            result = CONST_STRING("Token_Elipsis");            break;
+        case Token_Comma:              result = CONST_STRING("Token_Comma");              break;
+        case Token_OpenParen:          result = CONST_STRING("Token_OpenParen");          break;
+        case Token_CloseParen:         result = CONST_STRING("Token_CloseParen");         break;
+        case Token_OpenBrace:          result = CONST_STRING("Token_OpenBrace");          break;
+        case Token_CloseBrace:         result = CONST_STRING("Token_CloseBrace");         break;
+        case Token_OpenBracket:        result = CONST_STRING("Token_OpenBracket");        break;
+        case Token_CloseBracket:       result = CONST_STRING("Token_CloseBracket");       break;
+        INVALID_DEFAULT_CASE;
+        
+    }
+    
+    return result;
+}
+
 inline void
 Refill(Lexer* lexer)
 {
     lexer->peek[0] = (lexer->input.size != 0 ? lexer->input.data[0] : 0);
-    lexer->peek[0] = (lexer->input.size >= 2 ? lexer->input.data[1] : 0);
+    lexer->peek[1] = (lexer->input.size >= 2 ? lexer->input.data[1] : 0);
 }
 
 inline void
@@ -355,8 +421,18 @@ GetToken(Lexer* lexer)
                     Advance(lexer, 1);
                 }
                 
-                token.string.size = lexer->input.data - token.string.data;
-                Advance(lexer, 1);
+                if (lexer->peek[0] != 0)
+                {
+                    token.string.size = lexer->input.data - token.string.data;
+                    Advance(lexer, 1);
+                }
+                
+                else
+                {
+                    //// ERROR: End of stream reached before encountering a terminating "  character in string
+                    token.type = Token_Error;
+                }
+                
             }
             
             else

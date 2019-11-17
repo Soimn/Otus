@@ -144,11 +144,11 @@ Print(String format, va_list arg_list)
                         number = -number;
                     }
                     
-                    unsigned_number = number;
+                    unsigned_number = (number != 0 ? number : unsigned_number);
                     
                     U64 largest_place = 1;
                     
-                    for (U64 num = unsigned_number; num != 0; num /= 10)
+                    for (U64 num = unsigned_number; num >= 10; num /= 10)
                     {
                         largest_place *= 10;
                     }

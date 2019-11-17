@@ -1,8 +1,14 @@
 Goal: a minimal bullshit low level c-like language
 
+NOTE:
+ * Due to the wide spread usage of the C pointer synax, the same syntax is used in this language (despite its 
+   flaws)
+
 TODO:
  * Should a union type decl be added or should there be a tag that conveys joint memory
  * Should a variant of const and volatile be added?
+ * Find out if there is a better syntax for pointers than the one in C
+ * Should multiple variable declaration via a ',' separated list be removed?
 
 Differences between Gremlin and C
  * No header files or forward declarations
