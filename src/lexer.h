@@ -186,6 +186,7 @@ LexString(String input)
     return lexer;
 }
 
+// TODO(soimn): This is an example of a function that would benefit of being local to another functions scope
 inline void
 EatAllCommentsAndWhitespace(String* string)
 {
@@ -429,7 +430,7 @@ GetToken(Lexer* lexer)
                 
                 else
                 {
-                    //// ERROR: End of stream reached before encountering a terminating "  character in string
+                    //// ERROR: End of stream reached before encountering a terminating '"'  character in string
                     token.type = Token_Error;
                 }
                 
