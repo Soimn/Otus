@@ -1,0 +1,20 @@
+WIP grammar for the gremlin language
+() denotes 1 or more repititions
+{} denotes 0 or more repititions
+[] denotes an optional sequence
+<> denotes a range of characters or values
+
+
+IDENT -> (<'a', 'b'> | <'A', 'B'> | '_'){<'a', 'b'> | <'A', 'B'> | '_' | <'0', '9'>}
+TYPE  -> var | IDENT
+
+CONSTANT_DECLARATION -> TYPE IDENT ':' '=' EXPRESSION ';'
+
+COMPILER_DIRECTIVE -> '#' IDENT
+USER_NOTE -> '@' IDENT
+
+MODULE -> {CONSTANT_DECLARATION | VARIABLE_DECLARATION | COMPILER_DIRECTIVE | USER_NOTE}
+
+// TODO:
+  * Find out whether or not multiple variable assignment and declaration should be supported
+  * Multiple return value syntax
