@@ -1,50 +1,22 @@
-Goal: a minimal bullshit low level c-like language
-
-NOTE:
- * Due to the wide spread usage of the C pointer synax, the same syntax is used in this language (despite its 
-   flaws)
+Goal: a minimal bullshit low level c-like language that is concise and easily understood
 
 TODO:
- * Should a union type decl be added or should there be a tag that conveys joint memory
  * Should a variant of const and volatile be added?
- * Find out if there is a better syntax for pointers than the one in C
- * Should multiple variable declaration via a ',' separated list be removed?
+ * Is multiple return values necessary, or could it be substituted for optional/variant return values?
+ * Should enums be a concept in this language, or should there be a more general structure for allowing enum like 
+   groups of any types of constants
+ * Unions or compiler directive?
 
 Differences between Gremlin and C
  * No header files or forward declarations
  * Functions are overloadable
  * Vararg functions are type safe and allow random access and introspection of the passed variables
- * Runtime type information is supplied
- * All functions that are "pure" (meaning they do not affect global state) can be run at compile time as long as    
-   all the parameters are known at compile time
- * Macros are type safe
+ * Runtime and compile time type information is supplied
+ * All code can be run at compile time
  * The build process is controlled by the program itself
  * The program being compiled can catch compile events and modify the compilation process
- * Functions can return multiple values (structured bindings)
-// * Implicit casting is only performed on void* and core types (unless additional casting rules are specified)
-//   all signed integers are implicitly upcast to I64, all unsigned integers are upcast to U64, F32 is upcast to 
-//   F64, any pointer can be implicitly cast to void* and back
  * A defer "function" is supplied, which makes it possible to execute code on scope exit
+ * Name before type
 
---- Type and name order ---
-Types are specified before names for readability. This does however complicate parsing.
-type identifer instead of indentifier: type
-The keyword 'var' is therefore used to signify an inferred type
-
-IMPORTANT TODO: Is structured bindings a good solution to the multiple return value problem and how should 
-                captures be specified
-
---- Structured bindings ---
-NOTE: Structured bindings are used to group variables to enable muliple return values and an alternative way of 
-      multiple assignment. Variables declared or assigned this way are not special and may be accessed as if they 
-      were declared separately.
-NOTE: Structured bindings can be aliased with the using keyword, the elements in the binding must be named ot be 
-      accessible, and can be accessed by using the dot operator on the alias followed by the name of the element
-
-NOTE: Structured bindings are only allowed in assignment and as return values from a function. This is done to 
-      avoid complexity.
-
-return_value: [type_0, type_1, ... type_n] Function () { ... }
-decl and assignment: [type_0 name_0, type_1 name_1, ... type_n name_n] = Function();
-assignment: [i, s, b] = Function();
-expression: [int i, String s, bool b] = [1, "Hello", true];
+IMPORTANT NOTE: Due to feedback, clunky function pointer syntax and some weird differences between function and
+                variable declarations

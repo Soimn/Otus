@@ -3,18 +3,42 @@ WIP grammar for the gremlin language
 {} denotes 0 or more repititions
 [] denotes an optional sequence
 <> denotes a range of characters or values
+\a denotes an alphabetical character
+\c denotes a character
+\d denotes a digit
 
+IDENT  -> (\a | '_'){\a | '_' | \d}
+STRING -> '"' {\c} '"'
 
-IDENT -> (<'a', 'b'> | <'A', 'B'> | '_'){<'a', 'b'> | <'A', 'B'> | '_' | <'0', '9'>}
-TYPE  -> var | IDENT
+TYPE_NAME -> IDENT
+           | "var"
 
-CONSTANT_DECLARATION -> TYPE IDENT ':' '=' EXPRESSION ';'
+TYPE -> {'[' EXPRESSION ']'} {'*'} TYPE_NAME
+     
+MODULE -> {COMPILER_DIRECTIVE | USER_LEVEL_NOTE | CONSTANT_DECLARATION | VARIABLE_DECLARATION | TYPE_DECLARATION | FUNCTION_DECLARATION}
 
-COMPILER_DIRECTIVE -> '#' IDENT
-USER_NOTE -> '@' IDENT
+COMPILER_DIRECTIVE -> '#' IDENT [STRING | COMPOUND_STATEMENT]
+USER_LEVEL_NOTE -> '@' IDENT
 
-MODULE -> {CONSTANT_DECLARATION | VARIABLE_DECLARATION | COMPILER_DIRECTIVE | USER_NOTE}
+CONSTANT_DECLARATION -> IDENT "::" EXPRESSION ';'
 
-// TODO:
-  * Find out whether or not multiple variable assignment and declaration should be supported
-  * Multiple return value syntax
+VARIABLE_DECLARATION -> IDENT ':' TYPE ['=' EXPRESSION] ';'
+                      | IDENT ':' '=' EXPRESSION ';'
+
+TYPE_DECLARATION -> IDENT "::" "struct" COMPOUND_STATEMENT
+                  | IDENT "::" "union"  COMPOUND_SATEMENT
+
+FUNCTION_DECLARATION_ARGUMENT_LIST -> {IDENT ':' TYPE ['=' EXPRESSION]}
+FUNCTION_DECLARATION -> IDENT "::" '(' FUNCTION_DECLARATION_ARGUMENT_LIST ')' ["->" TYPE] COMPOUND_STATEMENT
+
+STATEMENT -> ';'
+           | EXPRESSION ';'
+           | COMPOUND_STATEMENT
+           | "if" '(' EXPRESSION ')' STATEMENT ["else" STATEMENT]
+           | "while" '(' EXPRESSION ')' STATEMENT
+           | "do" ["while" '(' EXPRESSION ')'] STATEMENT
+           | "for" '(' [EXPRESSION] ';' [EXPRESSION] ';' [EXPRESSION] ')' STATEMENT
+           | return EXPRESSION ';'
+           | defer EXPRESSION ';'
+
+EXPRESSION ->

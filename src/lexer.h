@@ -62,9 +62,6 @@ enum TOKEN_TYPE
     Token_LessThan,
     Token_LessThanOrEqual,
     
-    Token_Questionmark,
-    Token_Colon,
-    
     /// Bitwise shift
     Token_RightShift,
     Token_RightShiftEquals,
@@ -75,6 +72,9 @@ enum TOKEN_TYPE
     Token_Dot,
     Token_Elipsis,
     Token_Comma,
+    Token_Questionmark,
+    Token_Colon,
+    Token_Semicolon,
     
     Token_OpenParen,
     Token_CloseParen,
@@ -82,6 +82,11 @@ enum TOKEN_TYPE
     Token_CloseBrace,
     Token_OpenBracket,
     Token_CloseBracket,
+    
+    /// Special
+    Token_DoubleColon,
+    Token_Alpha,
+    Token_Hash,
     
     TOKEN_TYPE_COUNT
 };
@@ -137,8 +142,6 @@ GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
         case Token_GreaterThanOrEqual: result = CONST_STRING("Token_GreaterThanOrEqual"); break;
         case Token_LessThan:           result = CONST_STRING("Token_LessThan");           break;
         case Token_LessThanOrEqual:    result = CONST_STRING("Token_LessThanOrEqual");    break;
-        case Token_Questionmark:       result = CONST_STRING("Token_Questionmark");       break;
-        case Token_Colon:              result = CONST_STRING("Token_Colon");              break;
         case Token_RightShift:         result = CONST_STRING("Token_RightShift");         break;
         case Token_RightShiftEquals:   result = CONST_STRING("Token_RightShiftEquals");   break;
         case Token_LeftShift:          result = CONST_STRING("Token_LeftShift");          break;
@@ -147,12 +150,17 @@ GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
         case Token_Dot:                result = CONST_STRING("Token_Dot");                break;
         case Token_Elipsis:            result = CONST_STRING("Token_Elipsis");            break;
         case Token_Comma:              result = CONST_STRING("Token_Comma");              break;
+        case Token_Questionmark:       result = CONST_STRING("Token_Questionmark");       break;
+        case Token_Colon:              result = CONST_STRING("Token_Colon");              break;
+        case Token_Semicolon:          result = CONST_STRING("Token_Semicolon");          break;
         case Token_OpenParen:          result = CONST_STRING("Token_OpenParen");          break;
         case Token_CloseParen:         result = CONST_STRING("Token_CloseParen");         break;
         case Token_OpenBrace:          result = CONST_STRING("Token_OpenBrace");          break;
         case Token_CloseBrace:         result = CONST_STRING("Token_CloseBrace");         break;
         case Token_OpenBracket:        result = CONST_STRING("Token_OpenBracket");        break;
         case Token_CloseBracket:       result = CONST_STRING("Token_CloseBracket");       break;
+        case Token_Alpha:              result = CONST_STRING("Token_Alpha");              break;
+        case Token_Hash:               result = CONST_STRING("Token_Hash");               break;
         INVALID_DEFAULT_CASE;
         
     }
@@ -262,7 +270,6 @@ GetToken(Lexer* lexer)
         case 0: token.type = Token_EndOfStream; break;
         
         case '?': token.type = Token_Questionmark; break;
-        case ':': token.type = Token_Colon;        break;
         case ',': token.type = Token_Dot;          break;
         
         case '(': token.type = Token_OpenParen;    break;
@@ -271,6 +278,25 @@ GetToken(Lexer* lexer)
         case '}': token.type = Token_CloseBrace;   break;
         case '[': token.type = Token_OpenBracket;  break;
         case ']': token.type = Token_CloseBracket; break;
+        
+        case '@': token.type = Token_Alpha;        break;
+        case '#': token.type = Token_Hash;         break;
+        
+        case ';': token.type = Token_Semicolon;    break;
+        
+        case ':':
+        {
+            if (lexer->peek[0] == ':')
+            {
+                token.type = Token_DoubleColon;
+                Advance(lexer, 1);
+            }
+            
+            else
+            {
+                token.type = Token_Colon;
+            }
+        } break;
         
         case '.':
         {
@@ -452,8 +478,28 @@ GetToken(Lexer* lexer)
 }
 
 inline Token
-PeekToken(Lexer* lexer)
+PeekToken(Lexer* lexer, U32 step = 1)
 {
     Lexer temp_lexer = *lexer;
-    return GetToken(&temp_lexer);
+    Token token = {};
+    
+    for (U32 i = 0; i < step; ++i)
+        token = GetToken(&temp_lexer);
+    
+    return token;
+}
+
+inline bool
+RequireToken(Lexer* lexer, Enum32(TOKEN_TYPE) type)
+{
+    Token token = PeekToken(lexer);
+    
+    bool result = (token.type == type);
+    
+    if (result)
+    {
+        GetToken(lexer);
+    }
+    
+    return result;
 }
