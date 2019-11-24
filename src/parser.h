@@ -5,9 +5,78 @@
 #include "lexer.h"
 
 inline bool
-ParseUnaryExpression(Lexer* lexer)
+ParsePostfixExpression(Lexer* lexer)
 {
     NOT_IMPLEMENTED;
+}
+
+inline bool
+ParseCastExpression(Lexer* lexer);
+
+inline bool
+ParseUnaryExpression(Lexer* lexer)
+{
+    bool encountered_errors = false;
+    
+    Token token = PeekToken(lexer);
+    
+    if (token.type == Token_Increment)
+    {
+        SkipToken(lexer);
+        
+        encountered_errors = ParseUnaryExpression(lexer);
+    }
+    
+    else if (token.type == Token_Decrement)
+    {
+        SkipToken(lexer);
+        
+        encountered_errors = ParseUnaryExpression(lexer);
+    }
+    
+    else if (token.type == Token_Ampersand)
+    {
+        SkipToken(lexer);
+        
+        encountered_errors = ParseCastExpression(lexer);
+    }
+    
+    else if (token.type == Token_Asterisk)
+    {
+        SkipToken(lexer);
+        
+        encountered_errors = ParseCastExpression(lexer);
+    }
+    
+    else if (token.type == Token_Plus)
+    {
+        SkipToken(lexer);
+        
+        encountered_errors = ParseCastExpression(lexer);
+    }
+    
+    else if (token.type == Token_Minus)
+    {
+        SkipToken(lexer);
+        
+        encountered_errors = ParseCastExpression(lexer);
+    }
+    
+    else if (token.type == Token_Not)
+    {
+        SkipToken(lexer);
+        
+        encountered_errors = ParseCastExpression(lexer);
+    }
+    
+    else if (token.type == Token_LogicalNot)
+    {
+        SkipToken(lexer);
+        
+        encountered_errors = ParseCastExpression(lexer);
+    }
+    
+    return encountered_errors;
 }
 
 inline bool
@@ -344,38 +413,13 @@ ParseExpression(Lexer* lexer)
     
     if (token.type != Token_Comma && token.type != Token_Semicolon)
     {
-        bool last_was_expression = false;
-        while (!encountered_errors)
+        encountered_errors = ParseAssignmentExpression(lexer);
+        
+        if (!encountered_errors)
         {
-            if (token.type == Token_Semicolon) break;
-            
-            else if (token.type == Token_Comma)
+            if (RequireToken(lexer, Token_Comma))
             {
-                if (last_was_expression)
-                {
-                    SkipToken(lexer);
-                }
-                
-                else
-                {
-                    //// ERROR: Expected an expression
-                    encountered_errors = true;
-                }
-            }
-            
-            else
-            {
-                if (!last_was_expression)
-                {
-                    encountered_errors = ParseAssignmentExpression(lexer);
-                    last_was_expression = true;
-                }
-                
-                else
-                {
-                    //// ERROR: Did not expect expression
-                    encountered_errors = true;
-                }
+                encountered_errors = ParseExpression(lexer);
             }
         }
     }
@@ -559,7 +603,7 @@ ParseType(Lexer* lexer)
     {
         for (;;)
         {
-            if (token.type == Token_Asterisk)
+            if (token.type == Token_Ampersand)
             {
                 // ...
             }
@@ -653,12 +697,50 @@ ParseFunctionHeader(Lexer* lexer, bool require_return_type, bool allow_default_v
     Token token = GetToken(lexer);
     if (token.type == Token_OpenParen)
     {
-        token = GetToken(lexer);
+        token = PeekToken(lexer);
         while (!encountered_errors && token.type != Token_CloseParen)
         {
-            NOT_IMPLEMENTED;
+            if (token.type == Token_Identifier)
+            {
+                String name = token.string;
+                SkipToken(lexer);
+                
+                if (RequireToken(lexer, Token_Colon))
+                {
+                    encountered_errors = ParseType(lexer);
+                    
+                    if (!encountered_errors)
+                    {
+                        if (PeekToken(lexer).type == Token_Equals)
+                        {
+                            if (allow_default_values)
+                            {
+                                SkipToken(lexer);
+                                
+                                encountered_errors = ParseExpression(lexer);
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Default argument values are illegal in this context
+                                encountered_errors = true;
+                            }
+                        }
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Expected colon after argument name in function argument list
+                    encountered_errors = true;
+                }
+            }
             
-            token = GetToken(lexer);
+            else
+            {
+                //// ERROR: Invalid expression in function argument list
+                encountered_errors = true;
+            }
         }
         
         if (!encountered_errors)
