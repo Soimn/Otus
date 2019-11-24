@@ -84,6 +84,7 @@ enum TOKEN_TYPE
     Token_CloseBracket,
     
     /// Special
+    Token_Arrow,
     Token_DoubleColon,
     Token_Alpha,
     Token_Hash,
@@ -159,6 +160,8 @@ GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
         case Token_CloseBrace:         result = CONST_STRING("Token_CloseBrace");         break;
         case Token_OpenBracket:        result = CONST_STRING("Token_OpenBracket");        break;
         case Token_CloseBracket:       result = CONST_STRING("Token_CloseBracket");       break;
+        case Token_Arrow:              result = CONST_STRING("Token_Arrow");              break;
+        case Token_DoubleColon:        result = CONST_STRING("Token_DoubleColon");        break;
         case Token_Alpha:              result = CONST_STRING("Token_Alpha");              break;
         case Token_Hash:               result = CONST_STRING("Token_Hash");               break;
         INVALID_DEFAULT_CASE;
@@ -352,8 +355,17 @@ GetToken(Lexer* lexer)
             }
         } break;
         
-        case '+':
         case '-':
+        {
+            if (lexer->peek[0] == '>')
+            {
+                token.type = Token_Arrow;
+                Advance(lexer, 1);
+                break;
+            }
+        }
+        
+        case '+':
         case '&':
         case '|':
         {
@@ -487,6 +499,12 @@ PeekToken(Lexer* lexer, U32 step = 1)
         token = GetToken(&temp_lexer);
     
     return token;
+}
+
+inline void
+SkipToken(Lexer* lexer)
+{
+    GetToken(lexer);
 }
 
 inline bool

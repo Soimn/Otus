@@ -6,7 +6,7 @@
 int
 main(int argc, const char** argv)
 {
-    Lexer lexer = LexString(CONST_STRING("( + ) aa.... - * & / / /**/ && & << <"));
+    Lexer lexer = LexString(CONST_STRING("( + ) aa.... ->->--> * & / / /**/ && & << <"));
     
     Token token = {};
     while (token.type != Token_EndOfStream)
