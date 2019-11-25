@@ -76,13 +76,61 @@ ParseUnaryExpression(Lexer* lexer)
         encountered_errors = ParseCastExpression(lexer);
     }
     
+    else
+    {
+        encountered_errors = ParsePostfixExpression(lexer);
+    }
+    
     return encountered_errors;
 }
 
 inline bool
+ParseType(Lexer* lexer);
+
+inline bool
 ParseCastExpression(Lexer* lexer)
 {
-    NOT_IMPLEMENTED;
+    bool encountered_errors = false;
+    
+    if (PeekToken(lexer).type == Token_OpenParen)
+    {
+        Lexer init_lexer_state = *lexer;
+        
+        SkipToken(lexer);
+        
+        encountered_errors = ParseType(lexer);
+        
+        if (!encountered_errors && RequireToken(lexer, Token_CloseParen))
+        {
+            if (PeekToken(&init_lexer_state, 1).type == Token_Identifier && PeekToken(&init_lexer_state, 2).type == Token_CloseParen)
+            {
+                // NOTE(soimn): This is either a cast expression or an identifier inside parens
+            }
+            
+            else
+            {
+                // NOTE(soimn): This is a cast expression
+            }
+            
+            encountered_errors = ParseCastExpression(lexer);
+            
+        }
+        
+        else
+        {
+            // NOTE(soimn): This is either a unary expression or an invalid cast expression
+            
+            *lexer = init_lexer_state;
+            encountered_errors = ParseUnaryExpression(lexer);
+        }
+    }
+    
+    else
+    {
+        encountered_errors = ParseUnaryExpression(lexer);
+    }
+    
+    return encountered_errors;
 }
 
 inline bool
@@ -401,7 +449,114 @@ ParseConditionalExpression(Lexer* lexer)
 inline bool
 ParseAssignmentExpression(Lexer* lexer)
 {
-    NOT_IMPLEMENTED;
+    bool encountered_errors = false;
+    
+    Lexer tmp_lexer = *lexer;
+    
+    bool unary_encountered_errors       = ParseUnaryExpression(lexer);
+    bool conditional_encountered_errors = ParseConditionalExpression(&tmp_lexer);
+    
+    encountered_errors = unary_encountered_errors || conditional_encountered_errors;
+    
+    if (!encountered_errors)
+    {
+        if (lexer->input.data == tmp_lexer.input.data)
+        {
+            // NOTE(soimn): If both succeed and stop at the same point, the expression must be an isolated unary 
+            //              expression
+            
+            // NOTE(soimn): Use result of ParseUnaryExpression
+            
+            Token token = PeekToken(lexer);
+            
+            // NOTE(soimn): Parse assignment if the next token is an assignment operator, else return
+            
+            if (token.type == Token_Equals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_PlusEquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_MinusEquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_MultiplyEquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_DivideEquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_ModuloEquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_LeftShiftEquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_RightShiftEquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_AndEquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_OrEquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+            
+            else if (token.type == Token_XOREquals)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseAssignmentExpression(lexer);
+            }
+        }
+        
+        else
+        {
+            *lexer = tmp_lexer;
+            // NOTE(soimn): Use result of ParseConditionalExpression
+        }
+    }
+    
+    return encountered_errors;
 }
 
 inline bool
@@ -603,7 +758,7 @@ ParseType(Lexer* lexer)
     {
         for (;;)
         {
-            if (token.type == Token_Ampersand)
+            if (token.type == Token_Asterisk)
             {
                 // ...
             }

@@ -17,7 +17,7 @@ Differences between Gremlin and C
  * The program being compiled can catch compile events and modify the compilation process
  * A defer "function" is supplied, which makes it possible to execute code on scope exit
  * Name before type
- * Pointers are declared with ampersand instead of asterisk (i.e. name: & type, instead of name: * type)
+// * Pointers are declared with ampersand instead of asterisk (i.e. name: & type, instead of name: * type)
 
 IMPORTANT NOTE: Due to feedback, clunky function pointer syntax and some weird differences between function and
                 variable declarations

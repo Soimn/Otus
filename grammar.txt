@@ -41,7 +41,7 @@ STATEMENT -> ';'
            | return EXPRESSION ';'
            | defer EXPRESSION ';'
 
-ASSIGNMENT_OPERATOR -> "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "|=" | "^="
+ASSIGNMENT_OPERATOR -> "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "|=" | "^=" | "="
 UNARY_OPERATOR      -> "&" | "*" | "+" | "-" | "~" | "!"
 
 EXPRESSION -> ASSIGNMENT_EXPRESSION
