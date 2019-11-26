@@ -24,6 +24,7 @@ enum TOKEN_TYPE
     
     Token_Identifier,
     Token_String,
+    Token_Number,
     
     /// Arithmetic
     Token_Plus,
@@ -92,6 +93,14 @@ enum TOKEN_TYPE
     TOKEN_TYPE_COUNT
 };
 
+enum TOKEN_NUMBER_TYPE
+{
+    Token_Number_U64,
+    Token_Number_I64,
+    Token_Number_F32,
+    Token_Number_F64
+};
+
 struct Token
 {
     Enum32(TOKEN_TYPE) type;
@@ -101,6 +110,19 @@ struct Token
     U32 column;
     
     String string;
+    
+    struct
+    {
+        Enum64(TOKEN_NUMBER_TYPE) type;
+        
+        union
+        {
+            U64 u64;
+            I64 i64;
+            F32 f32;
+            F64 f64;
+        };
+    } number;
 };
 
 inline String
@@ -114,6 +136,7 @@ GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
         case Token_EndOfStream:        result = CONST_STRING("Token_EndOfStream");        break;
         case Token_Identifier:         result = CONST_STRING("Token_Identifier");         break;
         case Token_String:             result = CONST_STRING("Token_String");             break;
+        case Token_Number:             result = CONST_STRING("Token_Number");             break;
         case Token_Plus:               result = CONST_STRING("Token_Plus");               break;
         case Token_PlusEquals:         result = CONST_STRING("Token_PlusEquals");         break;
         case Token_Increment:          result = CONST_STRING("Token_Increment");          break;
@@ -273,7 +296,7 @@ GetToken(Lexer* lexer)
         case 0: token.type = Token_EndOfStream; break;
         
         case '?': token.type = Token_Questionmark; break;
-        case ',': token.type = Token_Dot;          break;
+        case ',': token.type = Token_Comma;        break;
         
         case '(': token.type = Token_OpenParen;    break;
         case ')': token.type = Token_CloseParen;   break;
@@ -447,8 +470,94 @@ GetToken(Lexer* lexer)
             
             else if (IsNumeric(c))
             {
-                // TODO(soimn): Find out how numbers should be handled
-                NOT_IMPLEMENTED;
+                // IMPORTANT TODO(soimn): This routine is not robust and does not handles overflow, invalid exponent or number length
+                
+                token.type = Token_Number;
+                
+                F64 acc = c - '0';
+                I32 exp = 0;
+                
+                bool has_decimal_point = false;
+                
+                while (IsNumeric(lexer->peek[0]))
+                {
+                    acc *= 10;
+                    acc += lexer->peek[0] - '0';
+                    Advance(lexer, 1);
+                }
+                
+                if (lexer->peek[0] == '.')
+                {
+                    has_decimal_point = true;
+                    
+                    Advance(lexer, 1);
+                    
+                    while (IsNumeric(lexer->peek[0]))
+                    {
+                        acc *= 10;
+                        acc += lexer->peek[0] - '0';
+                        exp -= 1;
+                        Advance(lexer, 1);
+                    }
+                }
+                
+                if (ToLower(lexer->peek[0]) == 'e')
+                {
+                    Advance(lexer, 1);
+                    
+                    I32 post_exp     = 0;
+                    I8 post_exp_sign = 1;
+                    
+                    if (lexer->peek[0] == '-' || lexer->peek[0] == '+')
+                    {
+                        post_exp_sign = (lexer->peek[0] == '-' ? -1 : 1);
+                        Advance(lexer, 1);
+                    }
+                    
+                    while (IsNumeric(lexer->peek[0]))
+                    {
+                        post_exp *= 10;
+                        post_exp += lexer->peek[0] - '0';
+                    }
+                    
+                    exp += post_exp * post_exp_sign;
+                }
+                
+                if (exp < 0)
+                {
+                    exp = -exp;
+                    for (I32 i = 0; i < exp; ++i)
+                    {
+                        acc /= 10;
+                    }
+                }
+                
+                else
+                {
+                    for (I32 i = 0; i < exp; ++i)
+                    {
+                        acc *= 10;
+                    }
+                }
+                
+                if (lexer->peek[0] == 'f')
+                {
+                    Advance(lexer, 1);
+                    
+                    token.number.type = Token_Number_F32;
+                    token.number.f32  = (F32)acc;
+                }
+                
+                else if (has_decimal_point)
+                {
+                    token.number.type = Token_Number_F64;
+                    token.number.f64  = acc;
+                }
+                
+                else
+                {
+                    NOT_IMPLEMENTED;
+                }
             }
             
             else if (c == '"')

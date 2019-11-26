@@ -5,9 +5,104 @@
 #include "lexer.h"
 
 inline bool
+ParseAssignmentExpression(Lexer* lexer);
+
+inline bool
+ParseFunctionCallArguments(Lexer* lexer)
+{
+    bool encountered_errors = false;
+    
+    encountered_errors = !RequireToken(lexer, Token_OpenParen);
+    
+    Token token = PeekToken(lexer);
+    while (!encountered_errors)
+    {
+        if (token.type == Token_CloseParen)
+        {
+            SkipToken(lexer);
+            break;
+        }
+        
+        else
+        {
+            encountered_errors = ParseAssignmentExpression(lexer);
+            
+            token = PeekToken(lexer);
+            if (!encountered_errors && token.type != Token_CloseParen)
+            {
+                encountered_errors = !RequireToken(lexer, Token_Comma);
+            }
+        }
+    }
+    
+    return encountered_errors;
+}
+
+inline bool
+ParseExpression(Lexer* lexer);
+
+inline bool
 ParsePostfixExpression(Lexer* lexer)
 {
-    NOT_IMPLEMENTED;
+    bool encountered_errors = false;
+    
+    Token token = PeekToken(lexer);
+    
+    if (token.type == Token_Number)
+    {
+        // NOTE(soimn): numbers dont support postfix operators
+        Token number = GetToken(lexer);
+    }
+    
+    else if (token.type == Token_String)
+    {
+        // NOTE(soimn): strings dont support postfix operators
+        Token string = GetToken(lexer);
+    }
+    
+    else
+    {
+        while (!encountered_errors)
+        {
+            if (token.type == Token_Identifier)
+            {
+                SkipToken(lexer);
+            }
+            
+            else if (token.type == Token_OpenParen)
+            {
+                encountered_errors = ParseFunctionCallArguments(lexer);
+            }
+            
+            else if (token.type == Token_OpenBracket)
+            {
+                SkipToken(lexer);
+                
+                encountered_errors = ParseExpression(lexer) || !RequireToken(lexer, Token_CloseBracket);
+            }
+            
+            else if (token.type == Token_Dot)
+            {
+                SkipToken(lexer);
+            }
+            
+            else if (token.type == Token_Increment)
+            {
+                SkipToken(lexer);
+            }
+            
+            else if (token.type == Token_Decrement)
+            {
+                SkipToken(lexer);
+            }
+            
+            else break;
+            
+            token = PeekToken(lexer);
+        }
+    }
+    
+    return encountered_errors;
 }
 
 inline bool
@@ -720,25 +815,30 @@ ParseCompoundStatement(Lexer* lexer)
 {
     bool encountered_errors = false;
     
-    Token token = PeekToken(lexer);
-    while (!encountered_errors && token.type != Token_CloseBrace)
-    {
-        if (token.type == Token_OpenBrace)
-        {
-            encountered_errors = ParseCompoundStatement(lexer);
-        }
-        
-        else
-        {
-            encountered_errors = ParseStatement(lexer);
-        }
-        
-        token = PeekToken(lexer);
-    }
+    encountered_errors = !RequireToken(lexer, Token_OpenBrace);
     
     if (!encountered_errors)
     {
-        SkipToken(lexer);
+        Token token = PeekToken(lexer);
+        while (!encountered_errors && token.type != Token_CloseBrace)
+        {
+            if (token.type == Token_OpenBrace)
+            {
+                encountered_errors = ParseCompoundStatement(lexer);
+            }
+            
+            else
+            {
+                encountered_errors = ParseStatement(lexer);
+            }
+            
+            token = PeekToken(lexer);
+        }
+        
+        if (!encountered_errors)
+        {
+            SkipToken(lexer);
+        }
     }
     
     return encountered_errors;
@@ -881,6 +981,11 @@ ParseFunctionHeader(Lexer* lexer, bool require_return_type, bool allow_default_v
                                 encountered_errors = true;
                             }
                         }
+                        
+                        if (PeekToken(lexer).type != Token_CloseParen)
+                        {
+                            encountered_errors = !RequireToken(lexer, Token_Comma);
+                        }
                     }
                 }
                 
@@ -896,6 +1001,8 @@ ParseFunctionHeader(Lexer* lexer, bool require_return_type, bool allow_default_v
                 //// ERROR: Invalid expression in function argument list
                 encountered_errors = true;
             }
+            
+            token = PeekToken(lexer);
         }
         
         if (!encountered_errors)
@@ -959,18 +1066,51 @@ ParseVariableDeclaration(Lexer* lexer)
     bool encountered_errors = false;
     
     Token name = GetToken(lexer);
-    SkipToken(lexer); // TODO(soimn): Should this be an assert instead?
     
-    Token token = GetToken(lexer);
+    encountered_errors = !RequireToken(lexer, Token_Colon);
     
-    if (token.type != Token_Equals)
+    if (!encountered_errors)
     {
-        encountered_errors = ParseType(lexer);
+        Token token = PeekToken(lexer);
+        
+        if (token.type != Token_Equals)
+        {
+            encountered_errors = ParseType(lexer);
+            token = PeekToken(lexer);
+        }
+        
+        if (!encountered_errors && token.type == Token_Equals)
+        {
+            SkipToken(lexer);
+            
+            token = PeekToken(lexer);
+            if (token.type == Token_OpenParen)
+            {
+                Lexer tmp_lexer = *lexer;
+                
+                encountered_errors = ParseFunction(&tmp_lexer);
+                
+                if (!encountered_errors)
+                {
+                    *lexer = tmp_lexer;
+                }
+                
+                else
+                {
+                    encountered_errors = ParseExpression(lexer);
+                }
+            }
+            
+            else
+            {
+                encountered_errors = ParseExpression(lexer);
+            }
+        }
     }
     
-    if (!encountered_errors && token.type == Token_Equals)
+    else
     {
-        encountered_errors = ParseExpression(lexer);
+        //// ERROR: Expected colon after name in variable declaration
     }
     
     return encountered_errors || !RequireToken(lexer, Token_Semicolon);
@@ -989,7 +1129,6 @@ ParseExternalDeclaration(Lexer* lexer)
     bool encountered_errors = false;
     
     Token token = PeekToken(lexer);
-    
     while (!encountered_errors && token.type != Token_EndOfStream)
     {
         if (token.type == Token_Alpha)
@@ -1068,7 +1207,16 @@ ParseExternalDeclaration(Lexer* lexer)
             //// ERROR: Invalid token in external declaration
             encountered_errors = true;
         }
+        
+        token = PeekToken(lexer);
     }
     
     return !encountered_errors;
+}
+
+inline bool
+ParseModule(String input)
+{
+    Lexer lexer = LexString(input);
+    return ParseExternalDeclaration(&lexer);
 }
