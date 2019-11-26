@@ -118,7 +118,6 @@ struct Token
         union
         {
             U64 u64;
-            I64 i64;
             F32 f32;
             F64 f64;
         };
@@ -133,6 +132,7 @@ GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
     switch (type)
     {
         case Token_Unknown:            result = CONST_STRING("Token_Unknown");            break;
+        case Token_Error:              result = CONST_STRING("Token_Error");              break;
         case Token_EndOfStream:        result = CONST_STRING("Token_EndOfStream");        break;
         case Token_Identifier:         result = CONST_STRING("Token_Identifier");         break;
         case Token_String:             result = CONST_STRING("Token_String");             break;
@@ -251,21 +251,32 @@ EatAllCommentsAndWhitespace(String* string)
             
             else if (string->data[0] == '/' && string->data[1] == '*')
             {
-                while (string->size > 1 && !(string->data[0] == '*' && string->data[1] == '/'))
+                string->data += 2;
+                string->size -= 2;
+                
+                for (U32 nesting_level = 1; string->size && nesting_level != 0; )
                 {
+                    if (string->size > 1)
+                    {
+                        if (string->data[0] == '*' && string->data[1] == '/')
+                        {
+                            --nesting_level;
+                            string->data += 2;
+                            string->size -= 2;
+                            continue;
+                        }
+                        
+                        else if (string->data[0] == '/' && string->data[1] == '*')
+                        {
+                            ++nesting_level;
+                            string->data += 2;
+                            string->size -= 2;
+                            continue;
+                        }
+                    }
+                    
                     ++string->data;
                     --string->size;
-                }
-                
-                if (string->size > 1)
-                {
-                    string->data += 2;
-                    string->size -= 2;
-                }
-                
-                else
-                {
-                    string->size = 0;
                 }
             }
             
@@ -470,7 +481,7 @@ GetToken(Lexer* lexer)
             
             else if (IsNumeric(c))
             {
-                // IMPORTANT TODO(soimn): This routine is not robust and does not handles overflow, invalid exponent or number length
+                // IMPORTANT TODO(soimn): This routine is not robust and does not handle overflow, invalid exponent or invalid number length
                 
                 token.type = Token_Number;
                 
@@ -518,6 +529,7 @@ GetToken(Lexer* lexer)
                     {
                         post_exp *= 10;
                         post_exp += lexer->peek[0] - '0';
+                        Advance(lexer, 1);
                     }
                     
                     exp += post_exp * post_exp_sign;
@@ -556,7 +568,16 @@ GetToken(Lexer* lexer)
                 
                 else
                 {
-                    NOT_IMPLEMENTED;
+                    if (acc <= U64_MAX)
+                    {
+                        token.number.u64 = (U64)acc;
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Integer constant too out of range
+                        token.type = Token_Error;
+                    }
                 }
             }
             
