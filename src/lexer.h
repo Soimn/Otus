@@ -9,9 +9,7 @@ struct Lexer
 {
     String input;
     
-    U32 module_id;
-    U32 line;
-    U32 column;
+    File_Loc location;
     
     char peek[2];
 };
@@ -105,23 +103,10 @@ struct Token
 {
     Enum32(TOKEN_TYPE) type;
     
-    U32 module_id;
-    U32 line;
-    U32 column;
+    File_Loc location;
     
     String string;
-    
-    struct
-    {
-        Enum64(TOKEN_NUMBER_TYPE) type;
-        
-        union
-        {
-            U64 u64;
-            F32 f32;
-            F64 f64;
-        };
-    } number;
+    Number number;
 };
 
 inline String
@@ -556,20 +541,20 @@ GetToken(Lexer* lexer)
                 {
                     Advance(lexer, 1);
                     
-                    token.number.type = Token_Number_F32;
-                    token.number.f32  = (F32)acc;
+                    token.number.is_single_precision = true;
+                    token.number.f32 = (F32)acc;
                 }
                 
                 else if (has_decimal_point)
                 {
-                    token.number.type = Token_Number_F64;
-                    token.number.f64  = acc;
+                    token.number.f64 = acc;
                 }
                 
                 else
                 {
                     if (acc <= U64_MAX)
                     {
+                        token.number.is_integer = true;
                         token.number.u64 = (U64)acc;
                     }
                     

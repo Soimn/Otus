@@ -38,6 +38,29 @@ struct Buffer
 };
 
 typedef Buffer String;
+
+struct Number
+{
+    bool is_integer;
+    bool is_single_precision;
+    
+    union
+    {
+        U64 u64;
+        F32 f32;
+        F64 f64;
+    };
+};
+
+typedef U32 File_ID;
+
+struct File_Loc
+{
+    File_ID file;
+    U32 line;
+    U32 column;
+};
+
 #define CONST_STRING(cstring) {(U8*)cstring, sizeof(cstring) - 1}
 
 #define U8_MAX  (U8)  0xFF

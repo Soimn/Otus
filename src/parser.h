@@ -3,9 +3,34 @@
 #include "common.h"
 #include "memory.h"
 #include "lexer.h"
+#include "ast.h"
+
+inline bool
+ParseCastExpression(Lexer* lexer);
 
 inline bool
 ParseAssignmentExpression(Lexer* lexer);
+
+inline bool
+ParseExpression(Lexer* lexer);
+
+inline bool
+ParseCompoundStatement(Lexer* lexer);
+
+inline bool
+ParseType(Lexer* lexer);
+
+inline bool
+ParseFunctionHeader(Lexer* lexer, bool require_return_type, bool allow_default_values);
+
+inline bool
+ParseFunction(Lexer* lexer);
+
+inline bool
+ParseVariableDeclaration(Lexer* lexer);
+
+inline bool
+ParseConstantDeclaration(Lexer* lexer);
 
 inline bool
 ParseFunctionCallArguments(Lexer* lexer)
@@ -37,9 +62,6 @@ ParseFunctionCallArguments(Lexer* lexer)
     
     return encountered_errors;
 }
-
-inline bool
-ParseExpression(Lexer* lexer);
 
 inline bool
 ParsePostfixExpression(Lexer* lexer)
@@ -96,6 +118,11 @@ ParsePostfixExpression(Lexer* lexer)
                 SkipToken(lexer);
             }
             
+            else if (token.type == Token_Error)
+            {
+                encountered_errors = true;
+            }
+            
             else break;
             
             token = PeekToken(lexer);
@@ -104,9 +131,6 @@ ParsePostfixExpression(Lexer* lexer)
     
     return encountered_errors;
 }
-
-inline bool
-ParseCastExpression(Lexer* lexer);
 
 inline bool
 ParseUnaryExpression(Lexer* lexer)
@@ -180,9 +204,6 @@ ParseUnaryExpression(Lexer* lexer)
 }
 
 inline bool
-ParseType(Lexer* lexer);
-
-inline bool
 ParseCastExpression(Lexer* lexer)
 {
     bool encountered_errors = false;
@@ -191,32 +212,55 @@ ParseCastExpression(Lexer* lexer)
     {
         Lexer init_lexer_state = *lexer;
         
-        SkipToken(lexer);
+        encountered_errors = ParseFunctionHeader(lexer, true, false);
         
-        encountered_errors = ParseType(lexer);
-        
-        if (!encountered_errors && RequireToken(lexer, Token_CloseParen))
+        if (!encountered_errors)
         {
-            if (PeekToken(&init_lexer_state, 1).type == Token_Identifier && PeekToken(&init_lexer_state, 2).type == Token_CloseParen)
+            if (PeekToken(lexer).type == Token_OpenBrace)
             {
-                // NOTE(soimn): This is either a cast expression or an identifier inside parens
+                encountered_errors = ParseCompoundStatement(lexer);
             }
             
             else
             {
-                // NOTE(soimn): This is a cast expression
+                //// ERROR: Missing function body
+                encountered_errors = true;
             }
-            
-            encountered_errors = ParseCastExpression(lexer);
-            
         }
         
         else
         {
-            // NOTE(soimn): This is either a unary expression or an invalid cast expression
-            
             *lexer = init_lexer_state;
-            encountered_errors = ParseUnaryExpression(lexer);
+            
+            SkipToken(lexer);
+            
+            encountered_errors = ParseType(lexer);
+            
+            if (!encountered_errors && RequireToken(lexer, Token_CloseParen))
+            {
+                // IMPORTANT TODO(soimn): Check if this is a lambda
+                
+                if (PeekToken(&init_lexer_state, 1).type == Token_Identifier && PeekToken(&init_lexer_state, 2).type == Token_CloseParen)
+                {
+                    // NOTE(soimn): This is either a cast expression or an identifier inside parens
+                }
+                
+                else
+                {
+                    // NOTE(soimn): This is a cast expression
+                }
+                
+                encountered_errors = ParseCastExpression(lexer);
+                
+            }
+            
+            else
+            {
+                // NOTE(soimn): This is either a unary expression or an invalid cast expression
+                
+                *lexer = init_lexer_state;
+                encountered_errors = ParseUnaryExpression(lexer);
+            }
         }
     }
     
@@ -495,9 +539,6 @@ ParseLogicalOrExpression(Lexer* lexer)
 }
 
 inline bool
-ParseExpression(Lexer* lexer);
-
-inline bool
 ParseConditionalExpression(Lexer* lexer)
 {
     bool encountered_errors = false;
@@ -683,15 +724,6 @@ ParseExpression(Lexer* lexer)
     return encountered_errors;
 }
 
-inline bool
-ParseFunction(Lexer* lexer);
-
-inline bool
-ParseVariableDeclaration(Lexer* lexer);
-
-inline bool
-ParseConstantDeclaration(Lexer* lexer);
-
 // NOTE(soimn): This parses eveything that is legal in a function body
 inline bool
 ParseStatement(Lexer* lexer)
@@ -843,9 +875,6 @@ ParseCompoundStatement(Lexer* lexer)
     
     return encountered_errors;
 }
-
-inline bool
-ParseFunctionHeader(Lexer* lexer, bool require_return_type, bool allow_default_values);
 
 inline bool
 ParseType(Lexer* lexer)
@@ -1124,7 +1153,7 @@ ParseConstantDeclaration(Lexer* lexer)
 }
 
 inline bool
-ParseExternalDeclaration(Lexer* lexer)
+ParseExternalDeclaration(Lexer* lexer, AST_Module* module)
 {
     bool encountered_errors = false;
     
@@ -1214,9 +1243,13 @@ ParseExternalDeclaration(Lexer* lexer)
     return !encountered_errors;
 }
 
-inline bool
+inline AST_Module
 ParseModule(String input)
 {
     Lexer lexer = LexString(input);
-    return ParseExternalDeclaration(&lexer);
+    
+    AST_Module module = {};
+    module.is_valid = ParseExternalDeclaration(&lexer, &module);
+    
+    return module;
 }
