@@ -31,7 +31,11 @@ enum TOKEN_TYPE
     Token_Minus,
     Token_MinusEquals,
     Token_Decrement,
-    Token_Asterisk, // multiply or dereference
+    Token_Asterisk,
+    
+    Token_Multiply    = Token_Asterisk,
+    Token_Dereference = Token_Asterisk,
+    
     Token_MultiplyEquals,
     Token_Divide,
     Token_DivideEquals,
@@ -39,7 +43,11 @@ enum TOKEN_TYPE
     Token_ModuloEquals,
     
     /// Bitwise operators
-    Token_Ampersand, // and or reference
+    Token_Ampersand,
+    
+    Token_And       = Token_Ampersand,
+    Token_Reference = Token_Ampersand,
+    
     Token_AndEquals,
     Token_Or,
     Token_OrEquals,
@@ -205,63 +213,52 @@ LexString(String input)
     return lexer;
 }
 
-// TODO(soimn): This is an example of a function that would benefit of being local to another functions scope
 inline void
-EatAllCommentsAndWhitespace(String* string)
+EatAllCommentsAndWhitespace(Lexer* lexer)
 {
     for (;;)
     {
-        while (string->size && IsSpacing(*string->data))
+        while (IsSpacing(lexer->peek[0]))
         {
-            ++string->data;
-            --string->size;
+            Advance(lexer, 1);
         }
         
-        if (string->size > 1)
+        if (lexer->input.size > 1)
         {
-            if (string->data[0] == '/' && string->data[1] == '/')
+            if (lexer->peek[0] == '/' && lexer->peek[1] == '/')
             {
-                while (string->size && !IsEndOfLine(*string->data))
+                while (lexer->input.size && !IsEndOfLine(lexer->peek[0]))
                 {
-                    ++string->data;
-                    --string->size;
+                    Advance(lexer, 1);
                 }
                 
-                if (string->size)
+                if (lexer->input.size)
                 {
-                    ++string->data;
-                    --string->size;
+                    Advance(lexer, 1);
                 }
             }
             
-            else if (string->data[0] == '/' && string->data[1] == '*')
+            else if (lexer->peek[0] == '/' && lexer->peek[1] == '*')
             {
-                string->data += 2;
-                string->size -= 2;
+                Advance(lexer, 2);
                 
-                for (U32 nesting_level = 1; string->size && nesting_level != 0; )
+                for (U32 nesting_level = 1; lexer->input.size && nesting_level != 0; )
                 {
-                    if (string->size > 1)
+                    if (lexer->peek[0] == '*' && lexer->peek[1] == '/')
                     {
-                        if (string->data[0] == '*' && string->data[1] == '/')
-                        {
-                            --nesting_level;
-                            string->data += 2;
-                            string->size -= 2;
-                            continue;
-                        }
-                        
-                        else if (string->data[0] == '/' && string->data[1] == '*')
-                        {
-                            ++nesting_level;
-                            string->data += 2;
-                            string->size -= 2;
-                            continue;
-                        }
+                        --nesting_level;
+                        Advance(lexer, 2);
+                        continue;
                     }
                     
-                    ++string->data;
-                    --string->size;
+                    else if (lexer->peek[0] == '/' && lexer->peek[1] == '*')
+                    {
+                        ++nesting_level;
+                        Advance(lexer, 2);
+                        continue;
+                    }
+                    
+                    Advance(lexer, 1);
                 }
             }
             
@@ -278,8 +275,7 @@ GetToken(Lexer* lexer)
     Token token = {};
     token.type  = Token_Unknown;
     
-    EatAllCommentsAndWhitespace(&lexer->input);
-    Refill(lexer);
+    EatAllCommentsAndWhitespace(lexer);
     
     token.string      = {};
     token.string.data = lexer->input.data;

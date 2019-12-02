@@ -17,7 +17,7 @@ main(int argc, const char** argv)
     }
     */
     
-    AST_Module module = ParseModule(CONST_STRING("x :: \"hello\"; y :: (f: float, n: int) {func := (l: float) -> int {i++[1000000000000000];};}"));
+    AST_Unit unit = ParseUnit(CONST_STRING("x :: \"hello\"; y :: (f: float, n: int) {func := (l: float) -> int {i++[1000000000000000];};}"));
     
-    return module.is_valid;
+    return unit.is_valid;
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-struct AST_Module
+struct AST_Unit
 {
     File_ID file;
     
@@ -8,6 +8,22 @@ struct AST_Module
     struct AST_Statement* first_statement;
     
     bool is_valid;
+};
+
+struct AST_TypeTag
+{
+    union
+    {
+        String string;
+        
+        struct
+        {
+            struct AST_Statement* arguments;
+            String return_type;
+        };
+    };
+    
+    bool is_func;
 };
 
 enum AST_EXPRESSION_TYPE
@@ -65,6 +81,7 @@ enum AST_EXPRESSION_TYPE
     ASTExp_StringLiteral,
     
     /// Special
+    ASTExp_Lambda,
     ASTExp_FunctionCall,
     ASTExp_Subscript,
     ASTExp_Member,
@@ -80,6 +97,7 @@ enum AST_EXPRESSION_TYPE
 struct AST_Expression
 {
     Enum32(AST_EXPRESSION_TYPE) type;
+    
     AST_Expression* next;
     
     union
@@ -98,6 +116,14 @@ struct AST_Expression
                     // NOTE(soimn): Only left is used when the expression is unary
                     AST_Expression* left;
                     AST_Expression* right;
+                };
+                
+                /// Lambda
+                struct
+                {
+                    AST_Statement* func_body;
+                    AST_Statement* func_arguments;
+                    String return_type_string;
                 };
                 
                 /// Function call
@@ -125,8 +151,7 @@ struct AST_Expression
                 /// Type cast
                 struct
                 {
-                    // TODO(soimn): How to handle unresolved types?
-                    //AST_TypeSpecifier type;
+                    String type_string;
                     AST_Expression* exp_to_cast;
                 };
                 
@@ -152,6 +177,13 @@ enum AST_STATEMENT_TYPE
     ASTStmt_While,
     ASTStmt_Defer,
     ASTStmt_Return,
+    
+    ASTStmt_VarDecl,
+    ASTStmt_FuncDecl,
+    ASTStmt_ConstDecl,
+    ASTStmt_StructDecl,
+    
+    ASTStmt_Compound,
 };
 
 struct AST_Statement
@@ -180,44 +212,41 @@ struct AST_Statement
         
         /// ASTStmt_Defer
         AST_Statement* defer_statement;
-    };
-};
-
-enum AST_DECLARATION_TYPE
-{
-    ASTDecl_Invalid,
-    
-    ASTDecl_Variable,
-    ASTDecl_Constant,
-    ASTDecl_Struct,
-    ASTDecl_Function,
-};
-
-struct AST_Declaration
-{
-    File_Loc location;
-    
-    Enum32(AST_DECLARATION_TYPE) type;
-    
-    String name;
-    
-    union
-    {
-        /// Struct and function
-        AST_Statement* body;
         
-        /// Var and constant
-        AST_Expression* value;
+        struct
+        {
+            String name;
+            
+            union
+            {
+                /// ASTStmt_VarDecl
+                struct
+                {
+                    AST_Expression* value;
+                    bool is_func;
+                    
+                    AST_TypeTag type;
+                };
+                
+                /// ASTStmt_FuncDecl
+                struct
+                {
+                    AST_Statement* func_body;
+                    AST_Statement* func_arguments;
+                    String return_type_string;
+                };
+                
+                /// ASTStmt_ConstDecl
+                AST_Expression* const_value;
+                
+                /// ASTStmt_StructDecl
+                AST_Statement* struct_body;
+            };
+        };
+        
+        /// ASTStmt_Compound
+        AST_Statement* body;
     };
-};
-
-enum AST_NODE_TYPE
-{
-    ASTNode_Invalid,
-    
-    ASTNode_Expressionm,
-    ASTNode_Statement,
-    ASTNode_Declaration,
 };
 
 struct AST_Node
@@ -226,18 +255,36 @@ struct AST_Node
     {
         AST_Expression expression;
         AST_Statement statement;
-        AST_Declaration declaration;
     };
     
-    Enum8(AST_NODE_TYPE) type;
+    bool is_statement;
+    bool is_expression;
 };
 
-inline void*
-PushNode(AST_Module* module, Enum8(AST_NODE_TYPE) type)
+inline AST_Expression*
+PushExpression(AST_Unit* unit)
 {
-    AST_Node* node = (AST_Node*)PushElement(&module->container);
+    AST_Node* node = (AST_Node*)PushElement(&unit->container);
     
-    node->type = type;
+    *node = {};
+    node->is_expression = true;
     
-    return node;
+    return (AST_Expression*)&node->expression;
+}
+
+inline AST_Statement*
+PushStatement(AST_Unit* unit)
+{
+    AST_Node* node = (AST_Node*)PushElement(&unit->container);
+    
+    *node = {};
+    node->is_statement = true;
+    
+    return (AST_Statement*)&node->statement;
+}
+
+inline void
+DeleteExpression(AST_Unit* unit, AST_Expression* expression)
+{
+    // TODO(soimn): Remove node and all children from the unit container
 }
