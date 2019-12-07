@@ -85,6 +85,7 @@ PushElement(Bucket_Array* array)
     U8* start_of_bucket = Align(array->current_bucket, alignof(U64)) + sizeof(U64);
     
     void* result = start_of_bucket + array->current_bucket_offset * array->element_size;
+    ZeroSize(result, array->element_size);
     
     ++array->current_bucket_offset;
     

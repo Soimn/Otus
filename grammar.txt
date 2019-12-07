@@ -14,6 +14,7 @@ TYPE_NAME -> IDENT
            | "var"
 
 TYPE -> {'[' EXPRESSION ']'} {'*'} TYPE_NAME
+      | '('[IDENT ':' TYPE {',' IDENT ':' TYPE}]')' ["->" TYPE]
      
 MODULE -> {COMPILER_DIRECTIVE | USER_LEVEL_NOTE | CONSTANT_DECLARATION | VARIABLE_DECLARATION | TYPE_DECLARATION | FUNCTION_DECLARATION}
 
@@ -36,10 +37,8 @@ STATEMENT -> ';'
            | COMPOUND_STATEMENT
            | "if" '(' EXPRESSION ')' STATEMENT ["else" STATEMENT]
            | "while" '(' EXPRESSION ')' STATEMENT
-           | "do" ["while" '(' EXPRESSION ')'] STATEMENT
-           | "for" '(' [EXPRESSION] ';' [EXPRESSION] ';' [EXPRESSION] ')' STATEMENT
            | return EXPRESSION ';'
-           | defer EXPRESSION ';'
+           | defer STATEMENT
 
 ASSIGNMENT_OPERATOR -> "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "|=" | "^=" | "="
 UNARY_OPERATOR      -> "&" | "*" | "+" | "-" | "~" | "!"
@@ -94,7 +93,7 @@ MULTIPLICATIVE_EXPRESSION -> CAST_EXPRESSION
 
 
 CAST_EXPRESSION -> UNARY_EXPRESSION
-                 | '(' TYPE ')' CAST_EXPRESSION
+                 | "cast" '(' TYPE ')' CAST_EXPRESSION
 
 UNARY_EXPRESSION -> POSTFIX_EXPRESSION
                   | "++" UNARY_EXPRESSION

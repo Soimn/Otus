@@ -2,9 +2,6 @@
 
 #include "common.h"
 
-// ASSUMPTION(soimn): It is assumed that all whitespace and comments should be ignored
-// TODO(soimn): Find out how to track the current module
-
 struct Lexer
 {
     String input;
@@ -32,10 +29,6 @@ enum TOKEN_TYPE
     Token_MinusEquals,
     Token_Decrement,
     Token_Asterisk,
-    
-    Token_Multiply    = Token_Asterisk,
-    Token_Dereference = Token_Asterisk,
-    
     Token_MultiplyEquals,
     Token_Divide,
     Token_DivideEquals,
@@ -44,17 +37,14 @@ enum TOKEN_TYPE
     
     /// Bitwise operators
     Token_Ampersand,
-    
-    Token_And       = Token_Ampersand,
-    Token_Reference = Token_Ampersand,
-    
     Token_AndEquals,
     Token_Or,
     Token_OrEquals,
     Token_XOR,
     Token_XOREquals,
     Token_Not,
-    Token_NotEquals,
+    
+    Token_Equals,
     
     /// Logical operations
     Token_LogicalAnd,
@@ -69,19 +59,14 @@ enum TOKEN_TYPE
     Token_LessThan,
     Token_LessThanOrEqual,
     
+    Token_Questionmark,
+    
     /// Bitwise shift
     Token_RightShift,
     Token_RightShiftEquals,
     Token_LeftShift,
     Token_LeftShiftEquals,
     
-    Token_Equals,
-    Token_Dot,
-    Token_Elipsis,
-    Token_Comma,
-    Token_Questionmark,
-    Token_Colon,
-    Token_Semicolon,
     
     Token_OpenParen,
     Token_CloseParen,
@@ -92,19 +77,32 @@ enum TOKEN_TYPE
     
     /// Special
     Token_Arrow,
+    Token_Dot,
+    Token_Elipsis,
+    Token_Comma,
+    Token_Colon,
     Token_DoubleColon,
+    Token_Semicolon,
+    Token_TripleDash,
     Token_Alpha,
     Token_Hash,
+    Token_Keyword,
     
-    TOKEN_TYPE_COUNT
+    TOKEN_TYPE_COUNT,
 };
 
-enum TOKEN_NUMBER_TYPE
+enum LEXER_KEYWORD_TYPE
 {
-    Token_Number_U64,
-    Token_Number_I64,
-    Token_Number_F32,
-    Token_Number_F64
+    Keyword_If,
+    Keyword_Else,
+    Keyword_While,
+    Keyword_Defer,
+    Keyword_Return,
+    Keyword_Cast,
+    Keyword_Local,
+    Keyword_Global,
+    Keyword_Inline,
+    Keyword_NoInline,
 };
 
 struct Token
@@ -115,6 +113,7 @@ struct Token
     
     String string;
     Number number;
+    Enum32(LEXER_KEYWORD_TYPE) keyword;
 };
 
 inline String
@@ -149,7 +148,7 @@ GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
         case Token_XOR:                result = CONST_STRING("Token_XOR");                break;
         case Token_XOREquals:          result = CONST_STRING("Token_XOREquals");          break;
         case Token_Not:                result = CONST_STRING("Token_Not");                break;
-        case Token_NotEquals:          result = CONST_STRING("Token_NotEquals");          break;
+        case Token_Equals:             result = CONST_STRING("Token_Equals");             break;
         case Token_LogicalAnd:         result = CONST_STRING("Token_LogicalAnd");         break;
         case Token_LogicalOr:          result = CONST_STRING("Token_LogicalOr");          break;
         case Token_LogicalNot:         result = CONST_STRING("Token_LogicalNot");         break;
@@ -163,13 +162,6 @@ GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
         case Token_RightShiftEquals:   result = CONST_STRING("Token_RightShiftEquals");   break;
         case Token_LeftShift:          result = CONST_STRING("Token_LeftShift");          break;
         case Token_LeftShiftEquals:    result = CONST_STRING("Token_LeftShiftEquals");    break;
-        case Token_Equals:             result = CONST_STRING("Token_Equals");             break;
-        case Token_Dot:                result = CONST_STRING("Token_Dot");                break;
-        case Token_Elipsis:            result = CONST_STRING("Token_Elipsis");            break;
-        case Token_Comma:              result = CONST_STRING("Token_Comma");              break;
-        case Token_Questionmark:       result = CONST_STRING("Token_Questionmark");       break;
-        case Token_Colon:              result = CONST_STRING("Token_Colon");              break;
-        case Token_Semicolon:          result = CONST_STRING("Token_Semicolon");          break;
         case Token_OpenParen:          result = CONST_STRING("Token_OpenParen");          break;
         case Token_CloseParen:         result = CONST_STRING("Token_CloseParen");         break;
         case Token_OpenBrace:          result = CONST_STRING("Token_OpenBrace");          break;
@@ -177,9 +169,17 @@ GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
         case Token_OpenBracket:        result = CONST_STRING("Token_OpenBracket");        break;
         case Token_CloseBracket:       result = CONST_STRING("Token_CloseBracket");       break;
         case Token_Arrow:              result = CONST_STRING("Token_Arrow");              break;
+        case Token_Dot:                result = CONST_STRING("Token_Dot");                break;
+        case Token_Elipsis:            result = CONST_STRING("Token_Elipsis");            break;
+        case Token_Comma:              result = CONST_STRING("Token_Comma");              break;
+        case Token_Questionmark:       result = CONST_STRING("Token_Questionmark");       break;
+        case Token_Colon:              result = CONST_STRING("Token_Colon");              break;
         case Token_DoubleColon:        result = CONST_STRING("Token_DoubleColon");        break;
+        case Token_Semicolon:          result = CONST_STRING("Token_Semicolon");          break;
+        case Token_TripleDash:         result = CONST_STRING("Token_TripleDash");         break;
         case Token_Alpha:              result = CONST_STRING("Token_Alpha");              break;
         case Token_Hash:               result = CONST_STRING("Token_Hash");               break;
+        case Token_Keyword:            result = CONST_STRING("Token_Keyword");            break;
         INVALID_DEFAULT_CASE;
         
     }
@@ -302,6 +302,8 @@ GetToken(Lexer* lexer)
         
         case ';': token.type = Token_Semicolon;    break;
         
+        case '~': token.type = Token_Not;          break;
+        
         case ':':
         {
             if (lexer->peek[0] == ':')
@@ -370,12 +372,20 @@ GetToken(Lexer* lexer)
             }
         } break;
         
+        // NOTE(soimn): A fallthrough is wanted here
         case '-':
         {
             if (lexer->peek[0] == '>')
             {
                 token.type = Token_Arrow;
                 Advance(lexer, 1);
+                break;
+            }
+            
+            else if (lexer->peek[0] == '-' && lexer->peek[1] == '-')
+            {
+                token.type = Token_TripleDash;
+                Advance(lexer, 2);
                 break;
             }
         }
@@ -417,7 +427,6 @@ GetToken(Lexer* lexer)
         case '/':
         case '%':
         case '^':
-        case '~':
         case '=':
         case '!':
         {
@@ -427,7 +436,6 @@ GetToken(Lexer* lexer)
                 else if (c == '/') token.type = Token_DivideEquals;
                 else if (c == '%') token.type = Token_ModuloEquals;
                 else if (c == '^') token.type = Token_XOREquals;
-                else if (c == '~') token.type = Token_NotEquals;
                 else if (c == '=') token.type = Token_IsEqual;
                 else               token.type = Token_IsNotEqual;
                 
@@ -440,7 +448,6 @@ GetToken(Lexer* lexer)
                 else if (c == '/') token.type = Token_Divide;
                 else if (c == '%') token.type = Token_Modulo;
                 else if (c == '^') token.type = Token_XOR;
-                else if (c == '~') token.type = Token_Not;
                 else if (c == '=') token.type = Token_Equals;
                 else               token.type = Token_LogicalNot;
             }
@@ -458,6 +465,66 @@ GetToken(Lexer* lexer)
                 }
                 
                 token.string.size = lexer->input.data - token.string.data;
+                
+                if (StringCompare(token.string, CONST_STRING("if")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_If;
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("else")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_Else;
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("while")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_While;
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("defer")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_Defer;
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("return")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_Return;
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("cast")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_Cast;
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("local")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_Local;
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("global")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_Global;
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("inline")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_Inline;
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("no_inline")))
+                {
+                    token.type = Token_Keyword;
+                    token.keyword = Keyword_NoInline;
+                }
             }
             
             else if (IsNumeric(c))

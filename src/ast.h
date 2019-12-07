@@ -1,30 +1,8 @@
 #pragma once
 
-struct AST_Unit
-{
-    File_ID file;
-    
-    Bucket_Array container;
-    struct AST_Statement* first_statement;
-    
-    bool is_valid;
-};
+#include "common.h"
 
-struct AST_TypeTag
-{
-    union
-    {
-        String string;
-        
-        struct
-        {
-            struct AST_Statement* arguments;
-            String return_type;
-        };
-    };
-    
-    bool is_func;
-};
+// TODO(soimn): At the moment only cast(TYPE) is allowed. Should something like cast(typeof(var)) be supported?
 
 enum AST_EXPRESSION_TYPE
 {
@@ -76,12 +54,15 @@ enum AST_EXPRESSION_TYPE
     ASTExp_LeftShiftEquals,
     ASTExp_RightShiftEquals,
     
+    /// Assignment
+    ASTExp_Equals,
+    
     /// Literals
     ASTExp_NumericLiteral,
     ASTExp_StringLiteral,
     
     /// Special
-    ASTExp_Lambda,
+    ASTExp_Lambda, // TODO(soimn): Where should lamdas be defined, and how should duplicates be handled?
     ASTExp_FunctionCall,
     ASTExp_Subscript,
     ASTExp_Member,
@@ -90,82 +71,98 @@ enum AST_EXPRESSION_TYPE
     ASTExp_Reference,
     ASTExp_TypeCast,
     ASTExp_Identifier,
+};
+
+struct AST_Type
+{
+    bool is_function_type;
     
-    ASTExp_Ambiguity,
+    AST_Type* next;
+    
+    union
+    {
+        /// is_function_type : false
+        struct
+        {
+            // TODO(soimn): Some sort of abstraction of an ordered sequence of '&' and '[' EXPRESSION ']'
+            String type_name;
+        };
+        
+        /// is_function_type : true
+        struct
+        {
+            AST_Type* first_argument;
+            AST_Type* return_type;
+        };
+    };
 };
 
 struct AST_Expression
 {
     Enum32(AST_EXPRESSION_TYPE) type;
     
-    AST_Expression* next;
-    
     union
     {
-        /// ASTExp_Ambiguity
-        AST_Expression* interpretations[3];
-        
+        /// All binary and unary operations
         struct
         {
-            File_Loc location;
-            union
-            {
-                /// Unary and binary operators
-                struct
-                {
-                    // NOTE(soimn): Only left is used when the expression is unary
-                    AST_Expression* left;
-                    AST_Expression* right;
-                };
-                
-                /// Lambda
-                struct
-                {
-                    AST_Statement* func_body;
-                    AST_Statement* func_arguments;
-                    String return_type_string;
-                };
-                
-                /// Function call
-                struct
-                {
-                    String function_name;
-                    AST_Expression* arguments;
-                };
-                
-                /// Member access
-                struct
-                {
-                    AST_Expression* member_namespace;
-                    String member_name;
-                };
-                
-                /// Ternary
-                struct
-                {
-                    AST_Expression* condition;
-                    AST_Expression* true_exp;
-                    AST_Expression* false_exp;
-                };
-                
-                /// Type cast
-                struct
-                {
-                    String type_string;
-                    AST_Expression* exp_to_cast;
-                };
-                
-                /// Identifier
-                String identifier_name;
-                
-                /// Numeric literal
-                Number number;
-                
-                /// String literal
-                String string;
-            };
+            AST_Expression* left;
+            AST_Expression* right;
         };
+        
+        /// Numeric literal
+        Number number;
+        
+        /// String literal
+        String string;
+        
+        /// Lambda
+        struct
+        {
+            AST_Expression* lambda_arguments;
+            AST_Type lambda_return_type;
+            AST_Expression* lambda_capture_list;
+            struct AST_Scope* lambda_body;
+        };
+        
+        /// Function call
+        struct
+        {
+            AST_Expression* function_pointer;
+            AST_Expression* function_arguments;
+        };
+        
+        /// Ternary
+        struct
+        {
+            AST_Expression* condition;
+            AST_Expression* true_expr;
+            AST_Expression* false_expr;
+        };
+        
+        /// Type cast
+        struct
+        {
+            // TODO(soimn): This prevents cast(typeof(var)) and should maybe be altered once the parser is more 
+            //              complete / defined
+            AST_Type target_type; 
+            
+            AST_Expression* to_cast;
+        };
+        
+        /// Identifier
+        String identifier;
     };
+};
+
+typedef U64 AST_Scope_ID;
+#define AST_INVALID_SCOPE_ID 0
+#define AST_GLOBAL_SCOPE_ID  1
+
+struct AST_Scope
+{
+    AST_Scope_ID id;
+    struct AST_Statement* statements;
 };
 
 enum AST_STATEMENT_TYPE
@@ -183,69 +180,68 @@ enum AST_STATEMENT_TYPE
     ASTStmt_ConstDecl,
     ASTStmt_StructDecl,
     
-    ASTStmt_Compound,
+    ASTStmt_Scope,
 };
 
 struct AST_Statement
 {
-    File_Loc location;
-    
     Enum32(AST_STATEMENT_TYPE) type;
     
     AST_Statement* next;
     
     union
     {
-        /// ASTStmt_Expression and ASTStmt_Return
+        /// Expression
         AST_Expression* expression;
         
-        /// ASTStmt_If and ASTStmt_While
+        /// If and while
         struct
         {
             AST_Expression* condition;
-            
-            AST_Statement* true_body;
-            
-            // NOTE(soimn): While has no false body
-            AST_Statement* false_body;
+            AST_Scope true_body;
+            AST_Statement* false_statement;
         };
         
-        /// ASTStmt_Defer
-        AST_Statement* defer_statement;
+        /// Defer
+        AST_Scope defer_scope;
         
+        /// Return
+        AST_Expression* return_value;
+        
+        /// Variable declaration
         struct
         {
-            String name;
-            
-            union
-            {
-                /// ASTStmt_VarDecl
-                struct
-                {
-                    AST_Expression* value;
-                    bool is_func;
-                    
-                    AST_TypeTag type;
-                };
-                
-                /// ASTStmt_FuncDecl
-                struct
-                {
-                    AST_Statement* func_body;
-                    AST_Statement* func_arguments;
-                    String return_type_string;
-                };
-                
-                /// ASTStmt_ConstDecl
-                AST_Expression* const_value;
-                
-                /// ASTStmt_StructDecl
-                AST_Statement* struct_body;
-            };
+            String var_name;
+            AST_Type var_type;
+            AST_Expression* var_value;
+            bool var_is_uninitialized;
         };
         
-        /// ASTStmt_Compound
-        AST_Statement* body;
+        /// Function declaration
+        struct
+        {
+            String function_name;
+            AST_Expression** function_arguments;
+            AST_Type function_return_type;
+            AST_Scope function_scope;
+        };
+        
+        /// Constant declaration
+        struct
+        {
+            String constant_name;
+            AST_Expression* constant_value;
+        };
+        
+        /// Struct declaration
+        struct
+        {
+            String struct_name;
+            AST_Statement* struct_members;
+        };
+        
+        /// Scope
+        AST_Scope scope;
     };
 };
 
@@ -257,34 +253,55 @@ struct AST_Node
         AST_Statement statement;
     };
     
-    bool is_statement;
     bool is_expression;
 };
 
-inline AST_Expression*
-PushExpression(AST_Unit* unit)
+struct AST
 {
-    AST_Node* node = (AST_Node*)PushElement(&unit->container);
+    AST_Scope global_scope;
+    AST_Scope local_scope;
     
-    *node = {};
+    Bucket_Array container;
+    
+    bool is_valid;
+};
+
+inline AST_Expression*
+PushExpression(AST* ast)
+{
+    AST_Node* node = (AST_Node*)PushElement(&ast->container);
     node->is_expression = true;
     
-    return (AST_Expression*)&node->expression;
+    return &node->expression;
 }
 
 inline AST_Statement*
-PushStatement(AST_Unit* unit)
+PushStatement(AST* ast)
 {
-    AST_Node* node = (AST_Node*)PushElement(&unit->container);
+    AST_Node* node = (AST_Node*)PushElement(&ast->container);
+    node->is_expression = false;
     
-    *node = {};
-    node->is_statement = true;
-    
-    return (AST_Statement*)&node->statement;
+    return &node->statement;
 }
 
-inline void
-DeleteExpression(AST_Unit* unit, AST_Expression* expression)
+inline AST_Scope_ID
+GetNewScopeID()
 {
-    // TODO(soimn): Remove node and all children from the unit container
+    static AST_Scope_ID current_id = AST_GLOBAL_SCOPE_ID;
+    
+    return ++current_id;
 }
+
+
+
+
+/// //////////////////////////////////////////////////////////////////////////
+/// //////////////////////////////////////////////////////////////////////////
+/// //////////////////////////////////////////////////////////////////////////
+
+// IMPORTANT TODO(soimn): Remember to ensure all occurences of "()" are 
+//                        invalid when not used to define or call a function
+
+/// //////////////////////////////////////////////////////////////////////////
+/// //////////////////////////////////////////////////////////////////////////
+/// //////////////////////////////////////////////////////////////////////////
