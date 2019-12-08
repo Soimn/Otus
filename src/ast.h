@@ -10,9 +10,11 @@ enum AST_EXPRESSION_TYPE
     
     /// Arithmetic
     ASTExp_Plus,
+    ASTExp_UnaryPlus,
     ASTExp_PreIncrement,
     ASTExp_PostIncrement,
     ASTExp_Minus,
+    ASTExp_UnaryMinus,
     ASTExp_PreDecrement,
     ASTExp_PostDecrement,
     ASTExp_Multiply,
@@ -103,12 +105,15 @@ struct AST_Expression
     
     union
     {
-        /// All binary and unary operations
+        /// All binary operations
         struct
         {
             AST_Expression* left;
             AST_Expression* right;
         };
+        
+        /// All unary operations
+        AST_Expression* operand;
         
         /// Numeric literal
         Number number;
@@ -143,9 +148,9 @@ struct AST_Expression
         /// Type cast
         struct
         {
-            // TODO(soimn): This prevents cast(typeof(var)) and should maybe be altered once the parser is more 
+            // TODO(soimn): This prevents cast(typeof(var)) and should maybe be altered once the parser is more
             //              complete / defined
-            AST_Type target_type; 
+            AST_Type target_type;
             
             AST_Expression* to_cast;
         };
@@ -292,16 +297,26 @@ GetNewScopeID()
     return ++current_id;
 }
 
+inline bool
+IsPostfixExpression(AST_Expression* expression)
+{
+    Enum32(AST_EXPRESSION_TYPE) type = expression->type;
+    
+    return (type == ASTExp_StringLiteral || type == ASTExp_Identifier ||
+            type == ASTExp_FunctionCall  || type == ASTExp_Lambda     ||
+            type == ASTExp_Subscript     || type == ASTExp_Member);
+}
+
+inline bool
+IsUnaryExpression(AST_Expression* expression)
+{
+    Enum32(AST_EXPRESSION_TYPE) type = expression->type;
+    
+    return (type == ASTExp_PreIncrement || type == ASTExp_PreDecrement ||
+            type == ASTExp_Reference    || type == ASTExp_Dereference  ||
+            type == ASTExp_UnaryPlus    || type == ASTExp_UnaryMinus   ||
+            type == ASTExp_Not          || type == ASTExp_LogicalNot);
+}
 
 
-
-/// //////////////////////////////////////////////////////////////////////////
-/// //////////////////////////////////////////////////////////////////////////
-/// //////////////////////////////////////////////////////////////////////////
-
-// IMPORTANT TODO(soimn): Remember to ensure all occurences of "()" are 
-//                        invalid when not used to define or call a function
-
-/// //////////////////////////////////////////////////////////////////////////
-/// //////////////////////////////////////////////////////////////////////////
-/// //////////////////////////////////////////////////////////////////////////
+/// IMPORTANT TODO(soimn): Err on all postfix expressions after lambda other than function call

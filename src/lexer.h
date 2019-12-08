@@ -320,7 +320,7 @@ GetToken(Lexer* lexer)
         
         case '.':
         {
-            if (lexer->peek[0] == '.' && lexer->peek[1] == '.')
+            if (lexer->peek[0] == '.')
             {
                 token.type = Token_Elipsis;
                 Advance(lexer, 2);

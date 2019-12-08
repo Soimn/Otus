@@ -34,11 +34,636 @@ ParseType(Parser_State state, AST_Type* resulting_type)
 }
 
 inline bool
+ParseConditionalExpression(Parser_State state, AST_Expression** expression);
+
+inline bool
+ParseAssignmentExpression(Parser_State state, AST_Expression** expression);
+
+inline bool
+ParsePostfixExpression(Parser_State state, AST_Expression** expression)
+{
+    bool encountered_errors = false;
+    
+    auto ParseLambdaDeclaration = [](Parser_State state, AST_Expression** expression) -> bool
+    {
+        NOT_IMPLEMENTED;
+    };
+    
+    Token token = PeekToken(state.lexer);
+    
+    if (*expression != 0)
+    {
+        Enum32(AST_EXPRESSION_TYPE) expression_type = (*expression)->type;
+        bool is_postfix_expression = IsPostfixExpression(*expression);
+        
+        if (token.type == Token_Number)
+        {
+            if (!is_postfix_expression)
+            {
+                HARD_ASSERT(IsUnaryExpression(*expression));
+                
+                (*expression)->operand = PushExpression(state.ast);
+                (*expression)->operand->type   = ASTExp_NumericLiteral;
+                (*expression)->operand->number = token.number;
+                
+                SkipToken(state.lexer);
+            }
+            
+            else
+            {
+                //// ERROR: Invalid use of numeric literal after postfix expression
+                encountered_errors = true;
+            }
+        }
+        
+        else if (token.type == Token_String)
+        {
+            if (!is_postfix_expression)
+            {
+                HARD_ASSERT(IsUnaryExpression(*expression));
+                
+                (*expression)->operand = PushExpression(state.ast);
+                (*expression)->operand->type   = ASTExp_StringLiteral;
+                (*expression)->operand->string = token.string;
+                
+                SkipToken(state.lexer);
+                
+                if (ParsePostfixExpression(state, &(*expression)->operand))
+                {
+                    // Succeeded
+                }
+                
+                else
+                {
+                    //// ERROR: Failed to parse postfix expression after string literal
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Invalid use of string literal after postfix expression
+                encountered_errors = true;
+            }
+        }
+        
+        else if (token.type == Token_Identifier)
+        {
+            if (!is_postfix_expression)
+            {
+                HARD_ASSERT(IsUnaryExpression(*expression));
+                
+                (*expression)->operand = PushExpression(state.ast);
+                (*expression)->operand->type       = ASTExp_Identifier;
+                (*expression)->operand->identifier = token.string;
+                
+                SkipToken(state.lexer);
+                
+                if (ParsePostfixExpression(state, &(*expression)->operand))
+                {
+                    // Succeeded
+                }
+                
+                else
+                {
+                    //// ERROR: Failed to parse postfix expression after identifier
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                if (expression_type == ASTExp_Member)
+                {
+                    (*expression)->right = PushExpression(state.ast);
+                    (*expression)->right->type       = ASTExp_Identifier;
+                    (*expression)->right->identifier = token.string;
+                    
+                    SkipToken(state.lexer);
+                    
+                    if (ParsePostfixExpression(state, &(*expression)->right))
+                    {
+                        // Succeeded
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Failed to parse postfix expression after identifier
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Illegal use of identifier after postfix expression
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        else if (token.type == Token_Increment || token.type == Token_Decrement)
+        {
+            if (is_postfix_expression)
+            {
+                if (expression_type != ASTExp_Lambda && expression_type != ASTExp_Member)
+                {
+                    bool is_inc = (token.type == Token_Increment);
+                    SkipToken(state.lexer);
+                    
+                    AST_Expression* operand = *expression;
+                    
+                    *expression = PushExpression(state.ast);
+                    (*expression)->type    = (is_inc ? ASTExp_PostIncrement : ASTExp_PostDecrement);
+                    (*expression)->operand = operand;
+                    
+                    if (ParsePostfixExpression(state, expression))
+                    {
+                        // Succeeded
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Failed to parse postfix expression after post increment / decrement
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Illegal use of increment / decrement as postfix operator after lambda / member 
+                    ////        operator
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Missing expression before post increment / decrement
+                encountered_errors = true;
+            }
+        }
+        
+        else if (token.type == Token_Dot)
+        {
+            if (is_postfix_expression)
+            {
+                if (expression_type != ASTExp_Member)
+                {
+                    if (expression_type != ASTExp_Lambda)
+                    {
+                        AST_Expression* left = *expression;
+                        
+                        *expression = PushExpression(state.ast);
+                        (*expression)->type = ASTExp_Member;
+                        (*expression)->left = left;
+                        
+                        SkipToken(state.lexer);
+                        
+                        if (ParsePostfixExpression(state, expression))
+                        {
+                            // Succeeded
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Failed to parse the right hand side of member operator
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Illegal use of dot operator with lambda as left operand
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Invalid use of member operator with member operator as left operand
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Inavalid left operand of member operator
+                encountered_errors = true;
+            }
+        }
+        
+        else if (token.type == Token_OpenBracket)
+        {
+            if (is_postfix_expression)
+            {
+                if (expression_type != ASTExp_Member && expression_type != ASTExp_Lambda)
+                {
+                    AST_Expression* left = *expression;
+                    
+                    *expression = PushExpression(state.ast);
+                    (*expression)->type = ASTExp_Subscript;
+                    (*expression)->left = left;
+                    
+                    SkipToken(state.lexer);
+                    
+                    if (ParseConditionalExpression(state, &(*expression)->right))
+                    {
+                        if (RequireToken(state.lexer, Token_CloseBracket))
+                        {
+                            if (ParsePostfixExpression(state, expression))
+                            {
+                                // Succeeded
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Failed to parse postfix expression after subscript expression
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Missing closing bracket after expression in subscript operation
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Failed to parse subscript expression in subsript operation
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Illegal use of subscript operator with lambda / member operator as left operand
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Invalid operand for subscript expression
+                encountered_errors = true;
+            }
+        }
+        
+        else if (token.type == Token_OpenParen)
+        {
+            Enum32(AST_EXPRESSION_TYPE) type = ASTExp_Invalid;
+            
+            Token peek[2] = {};
+            peek[0] = PeekToken(state.lexer, 2);
+            peek[1] = PeekToken(state.lexer, 3);
+            
+            if (peek[0].type == Token_Identifier &&
+                peek[1].type == Token_Colon)
+            {
+                type = ASTExp_Lambda;
+            }
+            
+            else if (peek[0].type == Token_CloseParen)
+            {
+                if (peek[1].type == Token_Arrow || peek[1].type == Token_OpenBrace)
+                {
+                    type = ASTExp_Lambda;
+                }
+                
+                else
+                {
+                    type = ASTExp_FunctionCall;
+                }
+            }
+            
+            else if (is_postfix_expression)
+            {
+                type = ASTExp_FunctionCall;
+            }
+            
+            if (type == ASTExp_Lambda)
+            {
+                if (!is_postfix_expression)
+                {
+                    if (ParseLambdaDeclaration(state, &(*expression)->operand))
+                    {
+                        if (ParsePostfixExpression(state, &(*expression)->operand))
+                        {
+                            // NOTE(soimn): If the type of the resulting expression is a lambda no postfix operators 
+                            //              were parsed after the declaration
+                            if ((*expression)->operand->type == ASTExp_Lambda)
+                            {
+                                // TODO(soimn): Should the parser catch this error, or should it be passed on and 
+                                //              caught in type checking?
+                                
+                                //// ERROR: Invalid use of unary operator with lambda declaration as operand
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Failed to parse postfix expression after lambda declaration
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Failed to parse lambda declaration
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Illegal use of lambda declaration after postfix expression
+                    encountered_errors = true;
+                }
+            }
+            
+            else if (type == ASTExp_FunctionCall)
+            {
+                if (is_postfix_expression)
+                {
+                    NOT_IMPLEMENTED;
+                }
+                
+                else
+                {
+                    //// ERROR: Missing function pointer or identifier in function call expression
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                SkipToken(state.lexer);
+                
+                if (!is_postfix_expression)
+                {
+                    if (ParseAssignmentExpression(state, &(*expression)->right))
+                    {
+                        if (RequireToken(state.lexer, Token_CloseParen))
+                        {
+                            if (ParsePostfixExpression(state, &(*expression)->right))
+                            {
+                                // Succeeded
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Failed to parse postfix expression after expression enclosed in 
+                                ////        parentheses
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Missing closing parenthesis after expression
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Failed to parse expression enclosed in parentheses
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Invalid use of contained expression after postfix expression
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        else
+        {
+            if (is_postfix_expression)
+            {
+                if (expression_type == ASTExp_Member)
+                {
+                    //// ERROR: Missing operand on right hand side of member operator
+                    encountered_errors = true;
+                }
+                
+                else
+                {
+                    // NOTE(soimn): Do nothing
+                }
+            }
+            
+            else
+            {
+                HARD_ASSERT(IsUnaryExpression(*expression));
+                
+                //// ERROR: Missing right operand of unary operator
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    else
+    {
+        if (token.type == Token_Number)
+        {
+            *expression = PushExpression(state.ast);
+            (*expression)->type   = ASTExp_NumericLiteral;
+            (*expression)->number = token.number;
+            
+            SkipToken(state.lexer);
+        }
+        
+        else if (token.type == Token_String)
+        {
+            *expression = PushExpression(state.ast);
+            (*expression)->type   = ASTExp_StringLiteral;
+            (*expression)->string = token.string;
+            
+            SkipToken(state.lexer);
+            
+            if (ParsePostfixExpression(state, expression))
+            {
+                // Succeeded
+            }
+            
+            else
+            {
+                //// ERROR: Failed to parse postfix expression
+                encountered_errors = true;
+            }
+        }
+        
+        else if (token.type == Token_Identifier)
+        {
+            *expression = PushExpression(state.ast);
+            (*expression)->type       = ASTExp_Identifier;
+            (*expression)->identifier = token.string;
+            
+            SkipToken(state.lexer);
+            
+            if (ParsePostfixExpression(state, expression))
+            {
+                // Succeeded
+            }
+            
+            else
+            {
+                //// ERROR: Failed to parse postfix expression
+                encountered_errors = true;
+            }
+        }
+        
+        else if (token.type == Token_OpenParen)
+        {
+            Token peek[2] = {};
+            peek[0] = PeekToken(state.lexer, 2);
+            peek[1] = PeekToken(state.lexer, 3);
+            
+            if ((peek[0].type == Token_Identifier && peek[1].type == Token_Colon) ||
+                peek[0].type == Token_CloseParen)
+            {
+                if (ParseLambdaDeclaration(state, expression))
+                {
+                    if (ParsePostfixExpression(state, expression))
+                    {
+                        // NOTE(soimn): If the type of the resulting expression is a lambda no postfix operators 
+                        //              were parsed after the declaration
+                        if ((*expression)->operand->type == ASTExp_Lambda)
+                        {
+                            // TODO(soimn): Should the parser catch this error, or should it be passed on and 
+                            //              caught in type checking?
+                            
+                            //// ERROR: Invalid use of unary operator with lambda declaration as operand
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Failed to parse postfix expression after lambda declaration
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Failed to parse lambda declaration
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                SkipToken(state.lexer);
+                
+                if (ParseAssignmentExpression(state, expression))
+                {
+                    if (RequireToken(state.lexer, Token_CloseParen))
+                    {
+                        if (ParsePostfixExpression(state, expression))
+                        {
+                            // Succeeded
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Failed to parse postfix expression after expression enclosed in 
+                            ////        parentheses
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing closing parenthesis after expression
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Failed to parse expression enclosed in parentheses
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Encountered invalid token in expression
+            encountered_errors = true;
+        }
+    }
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParseCastExpression(Parser_State state, AST_Expression** expression);
+
+inline bool
 ParseUnaryExpression(Parser_State state, AST_Expression** expression)
 {
     bool encountered_errors = false;
     
-    NOT_IMPLEMENTED;
+    Token token = PeekToken(state.lexer);
+    
+    Enum32(AST_EXPRESSION_TYPE) type = ASTExp_Invalid;
+    
+    switch(token.type)
+    {
+        case Token_Increment:  type = ASTExp_PreIncrement; break;
+        case Token_Decrement:  type = ASTExp_PreDecrement; break;
+        case Token_Ampersand:  type = ASTExp_Reference;    break;
+        case Token_Asterisk:   type = ASTExp_Dereference;  break;
+        case Token_Plus:       type = ASTExp_UnaryPlus;    break;
+        case Token_Minus:      type = ASTExp_UnaryMinus;   break;
+        case Token_Not:        type = ASTExp_Not;          break;
+        case Token_LogicalNot: type = ASTExp_LogicalNot;   break;
+    }
+    
+    if (type != ASTExp_Invalid)
+    {
+        *expression = PushExpression(state.ast);
+        (*expression)->type = type;
+        
+        // NOTE(soimn): The reason for this assertion is to ensure the IsUnaryExpression function is up to date
+        HARD_ASSERT(IsUnaryExpression(*expression));
+        
+        SkipToken(state.lexer);
+        
+        if (ParseCastExpression(state, expression))
+        {
+            // Succeeded
+        }
+        
+        else
+        {
+            //// ERROR: Failed to parse operand of unary expression
+            encountered_errors = true;
+        }
+    }
+    
+    else
+    {
+        // NOTE(soimn): The reason for this assertion is to ensure the IsUnaryExpression function is up to date
+        HARD_ASSERT(!IsUnaryExpression(*expression));
+        
+        if (ParsePostfixExpression(state, expression))
+        {
+            // Succeeded
+        }
+        
+        else
+        {
+            //// ERROR: Failed to parse postfix expression
+            encountered_errors = true;
+        }
+    }
     
     return !encountered_errors;
 }
@@ -207,7 +832,7 @@ ParseShiftExpression(Parser_State state, AST_Expression** expression)
     
     if (ParseAdditiveExpression(state, expression))
     {
-        Token token = PeekToken(state.ast);
+        Token token = PeekToken(state.lexer);
         
         if (token.type == Token_LeftShift || token.type == Token_RightShift)
         {
@@ -253,7 +878,7 @@ ParseRelationalExpression(Parser_State state, AST_Expression** expression)
         switch(token.type)
         {
             case Token_LessThan:           type = ASTExp_IsLessThan;           break;
-            case Token_LessThanOrEqual:    type = ASTExp_IsLessThanOrEqual:    break;
+            case Token_LessThanOrEqual:    type = ASTExp_IsLessThanOrEqual;    break;
             case Token_GreaterThan:        type = ASTExp_IsGreaterThan;        break;
             case Token_GreaterThanOrEqual: type = ASTExp_IsGreaterThanOrEqual; break;
         }
@@ -295,7 +920,7 @@ ParseEqualityExpression(Parser_State state, AST_Expression** expression)
     
     if (ParseRelationalExpression(state, expression))
     {
-        Token token = PeekToken(state.ast);
+        Token token = PeekToken(state.lexer);
         
         if (token.type == Token_IsEqual || token.type == Token_IsNotEqual)
         {
@@ -369,11 +994,11 @@ ParseAndExpression(Parser_State state, AST_Expression** expression)
 inline bool
 ParseExclusiveOrExpression(Parser_State state, AST_Expression** expression)
 {
-    bool encountered_error = false;
+    bool encountered_errors = false;
     
     if (ParseAndExpression(state, expression))
     {
-        if (RequireToken(state.ast, Token_XOR))
+        if (RequireToken(state.lexer, Token_XOR))
         {
             AST_Expression* left = *expression;
             
@@ -552,6 +1177,11 @@ ParseConditionalExpression(Parser_State state, AST_Expression** expression)
                 encountered_errors = true;
             }
         }
+        
+        else
+        {
+            // NOTE(soimn): When there expression is not a ternary, do nothing
+        }
     }
     
     else
@@ -622,15 +1252,33 @@ ParseAssignmentExpression(Parser_State state, AST_Expression** resulting_express
 }
 
 inline bool
-ParseFunctionDeclaration(Parser_State state, AST_Statement** resulting_statement)
-{
-    NOT_IMPLEMENTED;
-}
-
-inline bool
 ParseConstantOrFunctionDeclaration(Parser_State state, AST_Statement** resulting_statement)
 {
-    NOT_IMPLEMENTED;
+    bool encountered_errors = false;
+    
+    *resulting_statement = PushStatement(state.ast);
+    
+    String name = GetToken(state.lexer).string;
+    SkipToken(state.lexer);
+    
+    if (PeekToken(state.lexer).type == Token_OpenParen)
+    {
+        Token peek = PeekToken(state.lexer, 2);
+        
+        if (peek.type == Token_Identifier && PeekToken(state.lexer, 3).type == Token_Colon || peek.type == Token_CloseParen)
+        {
+            /// This is a function declaration
+            NOT_IMPLEMENTED;
+        }
+    }
+    
+    if (!encountered_errors && *resulting_statement == 0)
+    {
+        /// This is a constant declaration
+        NOT_IMPLEMENTED;
+    }
+    
+    return !encountered_errors;
 }
 
 // NOTE(soimn): This is only called when the pattern IDENT ':' is found
