@@ -207,40 +207,31 @@ ParsePostfixExpression(Parser_State state, AST_Expression** expression)
         {
             if (is_postfix_expression)
             {
-                if (expression_type != ASTExp_Member)
+                if (expression_type != ASTExp_Lambda)
                 {
-                    if (expression_type != ASTExp_Lambda)
+                    AST_Expression* left = *expression;
+                    
+                    *expression = PushExpression(state.ast);
+                    (*expression)->type = ASTExp_Member;
+                    (*expression)->left = left;
+                    
+                    SkipToken(state.lexer);
+                    
+                    if (ParsePostfixExpression(state, expression))
                     {
-                        AST_Expression* left = *expression;
-                        
-                        *expression = PushExpression(state.ast);
-                        (*expression)->type = ASTExp_Member;
-                        (*expression)->left = left;
-                        
-                        SkipToken(state.lexer);
-                        
-                        if (ParsePostfixExpression(state, expression))
-                        {
-                            // Succeeded
-                        }
-                        
-                        else
-                        {
-                            //// ERROR: Failed to parse the right hand side of member operator
-                            encountered_errors = true;
-                        }
+                        // Succeeded
                     }
                     
                     else
                     {
-                        //// ERROR: Illegal use of dot operator with lambda as left operand
+                        //// ERROR: Failed to parse the right hand side of member operator
                         encountered_errors = true;
                     }
                 }
                 
                 else
                 {
-                    //// ERROR: Invalid use of member operator with member operator as left operand
+                    //// ERROR: Invalid use of member operator with lambda declaration as left operand
                     encountered_errors = true;
                 }
             }
