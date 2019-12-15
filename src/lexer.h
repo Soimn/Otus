@@ -13,8 +13,7 @@ struct Lexer
 
 enum TOKEN_TYPE
 {
-    Token_Unknown = 0,
-    Token_Error,
+    Token_Error = 0,
     Token_EndOfStream,
     
     Token_Identifier,
@@ -122,7 +121,6 @@ GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
     
     switch (type)
     {
-        case Token_Unknown:            result = CONST_STRING("Token_Unknown");            break;
         case Token_Error:              result = CONST_STRING("Token_Error");              break;
         case Token_EndOfStream:        result = CONST_STRING("Token_EndOfStream");        break;
         case Token_Identifier:         result = CONST_STRING("Token_Identifier");         break;
@@ -216,7 +214,7 @@ inline Token
 GetToken(Lexer* lexer)
 {
     Token token = {};
-    token.type  = Token_Unknown;
+    token.type  = Token_Error;
     
     for (;;)
     {
@@ -645,7 +643,7 @@ GetToken(Lexer* lexer)
             
             else
             {
-                token.type = Token_Unknown;
+                token.type = Token_Error;
             }
         } break;
     }

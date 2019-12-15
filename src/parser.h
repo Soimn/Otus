@@ -217,7 +217,400 @@ ParsePostfixExpression(Parser_State state, AST_Node** result)
 {
     bool encountered_errors = true;
     
-    NOT_IMPLEMENTED;
+    Token token = PeekToken(state.lexer);
+    
+    if (token.type == Token_Error || token.type == Token_EndOfStream)
+    {
+        //// ERROR: Invalid token in expression
+        encountered_errors = true;
+    }
+    
+    else if (token.type == Token_Number)
+    {
+        if (*result == 0)
+        {
+            *result = PushNode(state.ast);
+            (*result)->node_type = ASTNode_Expression;
+            (*result)->expr_type = ASTExpr_NumericLiteral;
+            (*result)->numeric_literal = token.number;
+            
+            SkipToken(state.lexer);
+        }
+        
+        else
+        {
+            //// ERROR: Invalid use of numeric constant as postix operator
+            encountered_errors = true;
+        }
+    }
+    
+    else if (token.type == Token_String)
+    {
+        if (*result == 0)
+        {
+            *result = PushNode(state.ast);
+            (*result)->node_type = ASTNode_Expression;
+            (*result)->expr_type = ASTExpr_StringLiteral;
+            (*result)->string_literal = token.string;
+            
+            SkipToken(state.lexer);
+            
+            if (ParsePostfixExpression(state, result))
+            {
+                // Succeeded
+            }
+            
+            else
+            {
+                //// ERROR: Failed to parse postix expression after string literal
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Invalid use of numeric constant as postix operator
+            encountered_errors = true;
+        }
+    }
+    
+    else if (token.type == Token_Identifier)
+    {
+        if (*result != 0)
+        {
+            if ((*result)->expr_type == ASTExpr_Member)
+            {
+                if ((*result)->right == 0)
+                {
+                    (*result)->right = PushNode(state.ast);
+                    (*result)->right->node_type = ASTNode_Expression;
+                    (*result)->right->expr_type = ASTExpr_Identifier;
+                    (*result)->right->identifier = token.string;
+                    
+                    SkipToken(state.lexer);
+                    
+                    if (ParsePostfixExpression(state, result))
+                    {
+                        // Succeeded
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Failed to parse postix expression after identifier
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Invalid use of identifier as a postfix expression
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Invalid use of identifier as a postfix expression
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            *result = PushNode(state.ast);
+            (*result)->node_type = ASTNode_Expression;
+            (*result)->expr_type = ASTExpr_Identifier;
+            (*result)->identifier = token.string;
+            
+            SkipToken(state.lexer);
+            
+            if (ParsePostfixExpression(state, result))
+            {
+                // Succeeded
+            }
+            
+            else
+            {
+                //// ERROR: Failed to parse postix expression after identifier
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    else if (token.type == Token_Dot)
+    {
+        if (*result != 0)
+        {
+            SkipToken(state.lexer);
+            
+            AST_Node* left = *result;
+            
+            *result = PushNode(state.ast);
+            (*result)->node_type = ASTNode_Expression;
+            (*result)->expr_type = ASTExpr_Member;
+            (*result)->left      = left;
+            
+            if (ParsePostfixExpression(state, result))
+            {
+                if ((*result)->right == 0)
+                {
+                    //// ERROR: Missing right operand of member operator
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Failed to parse right hand side of member operator
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Invalid use of member operator with no left operand
+            encountered_errors = true;
+        }
+    }
+    
+    else if (token.type == Token_OpenBracket)
+    {
+        if (*result != 0)
+        {
+            if ((*result)->expr_type == ASTExpr_Member && (*result)->right == 0)
+            {
+                //// ERROR: Invalid use of subscript operator with member operator as left operand
+                encountered_errors = true;
+            }
+            
+            else
+            {
+                AST_Node* left = *result;
+                
+                *result = PushNode(state.ast);
+                (*result)->node_type = ASTNode_Expression;
+                (*result)->expr_type = ASTExpr_Subscript;
+                (*result)->left      = left;
+                
+                SkipToken(state.lexer);
+                
+                // TODO(soimn): Should this be ParseConditionalExpression instead?
+                if (ParseAssignmentExpression(state, &(*result)->right))
+                {
+                    if (MetRequiredToken(state.lexer, Token_CloseBracket))
+                    {
+                        if (ParsePostfixExpression(state, result))
+                        {
+                            // Succeeded
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Failed to parse postfix expression after subscript
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing closing bracket after index in subscript postfix expression
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Failed to parse index in a subscript postfix expression
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Invalid use of subscript operator with no left operand
+            encountered_errors = true;
+        }
+    }
+    
+    else if (token.type == Token_Keyword && token.keyword == Keyword_Proc)
+    {
+        if (*result == 0)
+        {
+            if (ParseFunctionDeclaration(state, result))
+            {
+                if (ParsePostfixExpression(state, result))
+                {
+                    // Succeeded
+                }
+                
+                else
+                {
+                    //// ERROR: Failed to parse postfix expression after lambda declaration
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Failed to parse lambda declaration
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Invalid use of lambda declaration as a postfix expression
+            encountered_errors = true;
+        }
+    }
+    
+    else if (token.type == Token_Increment || token.type == Token_Decrement)
+    {
+        if (*result != 0)
+        {
+            if ((*result)->expr_type == ASTExpr_Member && (*result)->right == 0)
+            {
+                //// ERROR: Invalid use of post increment / decrement with member operator as operand
+                encountered_errors = true;
+            }
+            
+            else
+            {
+                AST_Node* operand = *result;
+                
+                *result = PushNode(state.ast);
+                (*result)->node_type = ASTNode_Expression;
+                (*result)->expr_type = (token.type == Token_Increment ? ASTExpr_PostIncrement : ASTExpr_PostDecrement);
+                (*result)->operand = operand;
+                
+                SkipToken(state.lexer);
+                
+                if (ParsePostfixExpression(state, result))
+                {
+                    // Succeeded
+                }
+                
+                else
+                {
+                    //// ERROR: Failed to parse postix expression after post increment / decrement
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Invalid use of post increment / decrement with no operand
+            encountered_errors = true;
+        }
+    }
+    
+    else if (token.type == Token_OpenParen)
+    {
+        if (*result != 0)
+        {
+            if ((*result)->expr_type != ASTExpr_Member && (*result)->expr_type != ASTExpr_StringLiteral)
+            {
+                SkipToken(state.lexer);
+                
+                AST_Node* call_function = *result;
+                
+                *result = PushNode(state.ast);
+                (*result)->node_type = ASTNode_Expression;
+                (*result)->expr_type = ASTExpr_FunctionCall;
+                (*result)->call_function = call_function;
+                
+                AST_Node** current_argument = &(*result)->call_arguments;
+                
+                do
+                {
+                    token = PeekToken(state.lexer);
+                    
+                    if (token.type == Token_CloseParen)
+                    {
+                        SkipToken(state.lexer);
+                        break;
+                    }
+                    
+                    else
+                    {
+                        // TODO(soimn): Should this be ParseConditionalExpression instead?
+                        if (ParseAssignmentExpression(state, current_argument))
+                        {
+                            current_argument = &(*current_argument)->next;
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Failed to parse argument in function call expression
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                } while (!encountered_errors);
+                
+                if (!encountered_errors)
+                {
+                    if (ParsePostfixExpression(state, result))
+                    {
+                        // Succeeded
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Failed to parse postfix expression after function call
+                        encountered_errors = true;
+                    }
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Invalid use of function call operator on non-callable expression
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            SkipToken(state.lexer);
+            
+            if (ParseAssignmentExpression(state, result))
+            {
+                if (MetRequiredToken(state.lexer, Token_CloseParen))
+                {
+                    if (ParsePostfixExpression(state, result))
+                    {
+                        // Succeeded
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Failed to parse postix expression after parenthesized expression
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Missing closing parenthesis at end of parenthesized expression
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Failed to parse contents of parenthesized expression
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    else
+    {
+        // NOTE(soimn): Do nothing
+    }
     
     return !encountered_errors;
 }
@@ -265,7 +658,12 @@ ParseUnaryExpression(Parser_State state, AST_Node** result)
     {
         if (ParsePostfixExpression(state, result))
         {
-            // Succeeded
+            // NOTE(soimn): If this is true the expression is "empty" which is invalid
+            if (*result != 0)
+            {
+                //// ERROR: Failed to parse expression as the expression is empty
+                encountered_errors = true;
+            }
         }
         
         else
@@ -946,7 +1344,102 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                 {
                     SkipToken(state.lexer);
                     (*result)->node_type = ASTNode_StructDecl;
-                    NOT_IMPLEMENTED;
+                    
+                    if (MetRequiredToken(state.lexer, Token_OpenBrace))
+                    {
+                        AST_Node** current_member = &(*result)->members;
+                        
+                        do
+                        {
+                            token = PeekToken(state.lexer);
+                            
+                            if (token.type == Token_CloseBrace)
+                            {
+                                SkipToken(state.lexer);
+                                break;
+                            }
+                            
+                            else if (token.type == Token_Identifier)
+                            {
+                                *current_member = PushNode(state.ast);
+                                (*current_member)->node_type = ASTNode_StructMember;
+                                (*current_member)->name      = token.string;
+                                
+                                SkipToken(state.lexer);
+                                
+                                if (MetRequiredToken(state.lexer, Token_Colon))
+                                {
+                                    token = PeekToken(state.lexer);
+                                    
+                                    if (token.type != Token_Equals)
+                                    {
+                                        if (ParseType(state, &(*current_member)->type))
+                                        {
+                                            token = PeekToken(state.lexer);
+                                        }
+                                        
+                                        else
+                                        {
+                                            //// ERROR: Failed to parse type of member in struct declaration
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                    
+                                    if (token.type == Token_Equals)
+                                    {
+                                        SkipToken(state.lexer);
+                                        
+                                        if (ParseAssignmentExpression(state, &(*current_member)->value))
+                                        {
+                                            token = PeekToken(state.lexer);
+                                        }
+                                        
+                                        else
+                                        {
+                                            //// ERROR: Failed to parse right hand side of assignment expression struct 
+                                            ////        declaration
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                    
+                                    if (token.type != Token_CloseParen)
+                                    {
+                                        if (MetRequiredToken(state.lexer, Token_Semicolon))
+                                        {
+                                            // Succeeded
+                                            current_member = &(*current_member)->next;
+                                        }
+                                        
+                                        else
+                                        {
+                                            //// ERROR: Missing separating semicolon between members struct declaration
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    //// ERROR: Missing colon after agrument name in members of function / lambda 
+                                    ////        declaration
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Invalid token in struct declaration
+                                encountered_errors = true;
+                            }
+                            
+                        } while (!encountered_errors);
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing struct body
+                        encountered_errors = true;
+                    }
                 }
                 
                 else if (token.keyword == Keyword_Enum)
@@ -1014,6 +1507,7 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                                     if (MetRequiredToken(state.lexer, Token_Comma))
                                     {
                                         // Succeeded
+                                        current_member = &(*current_member)->next;
                                     }
                                     
                                     else

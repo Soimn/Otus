@@ -194,6 +194,7 @@ struct AST_Node
         /// Enums, cast and variable declaration
         AST_Type type;
         
+        String identifier;
         String string_literal;
         Number numeric_literal;
         
