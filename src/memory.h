@@ -46,9 +46,37 @@ ZeroSize(void* ptr, UMM size)
 #define ZeroStruct(type) (*(type) = {})
 #define ZeroArray(type, count) ZeroSize(type, sizeof((type)[0]) * (count))
 
+inline void*
+AllocateMemory(UMM size)
+{
+    void* result = SystemAllocateMemory(size + 15);
+    
+    // TODO(soimn): Memory allocation failure recovery
+    HARD_ASSERT(result == 0);
+    
+    U8* aligned = (U8*)Align(result, alignof(U64));
+    
+    if (aligned - (U8*)result == 0)
+    {
+        aligned = (U8*)Align((U8*)result + 1, alignof(U64));
+    }
+    
+    *(aligned - 1) = (U8)(aligned - (U8*)result);
+    
+    return aligned;
+}
+
+inline void
+FreeMemory(void* ptr)
+{
+    U8* memory = (U8*)ptr - *((U8*)ptr - 1);
+    SystemFreeMemory(memory);
+}
+
+
 struct Bucket_Array
 {
-    void** buckets;
+    void** bucket_list;
     void* current_bucket;
     U32 current_bucket_offset;
     U32 bucket_size;
@@ -56,38 +84,37 @@ struct Bucket_Array
     U32 element_size;
 };
 
-#define BUCKET_ARRAY(type, bucket_size) {0, 0, 0, (bucket_size), 0, RoundSize(sizeof(type), alignof(type))}
+#define BUCKET_ARRAY(type, bucket_size) {0, 0, 0, (bucket_size), 0, (U32)RoundSize(sizeof(type), alignof(type))}
 
 inline void*
 PushElement(Bucket_Array* array)
 {
-    if (!array->current_bucket || array->bucket_size - array->current_bucket_offset == 0)
+    void* result = 0;
+    
+    if (!array->bucket_count || array->current_bucket_offset == sizeof(U64) + array->bucket_size * array->element_size)
     {
-        UMM header_size = (alignof(U64) - 1) + sizeof(U64);
-        UMM bucket_size = array->element_size * array->bucket_size;
+        HARD_ASSERT(array->bucket_count != U32_MAX);
         
-        void* new_bucket = AllocateMemory(header_size + bucket_size);
+        void* new_bucket = AllocateMemory(sizeof(U64) + array->bucket_size * array->element_size);
+        ZeroSize(new_bucket, sizeof(U64));
         
-        if (array->current_bucket)
+        if (!array->bucket_count)
         {
-            *(void**)Align(array->current_bucket, alignof(U64)) = new_bucket;
+            array->bucket_list = &new_bucket;
         }
         
         else
         {
-            array->buckets = (void**)new_bucket;
+            *(void**)array->current_bucket = new_bucket;
         }
         
-        array->current_bucket        = new_bucket;
-        array->current_bucket_offset = 0;
+        array->current_bucket       = new_bucket;
+        array->current_bucket_offset = sizeof(U64);
+        ++array->bucket_count;
     }
     
-    U8* start_of_bucket = Align(array->current_bucket, alignof(U64)) + sizeof(U64);
-    
-    void* result = start_of_bucket + array->current_bucket_offset * array->element_size;
-    ZeroSize(result, array->element_size);
-    
-    ++array->current_bucket_offset;
+    result = (U8*)array->current_bucket + array->current_bucket_offset;
+    array->current_bucket_offset += array->element_size;
     
     return result;
 }
@@ -95,15 +122,15 @@ PushElement(Bucket_Array* array)
 inline void
 ClearArray(Bucket_Array* array)
 {
-    void** bucket = array->buckets;
+    void** bucket = array->bucket_list;
     
     while (bucket != 0)
     {
-        void** temp = (void**)*bucket;
+        void** next = (void**)*bucket;
         
         FreeMemory(bucket);
         
-        bucket = temp;
+        bucket = next;
     }
 }
 
@@ -112,27 +139,49 @@ ElementAt(Bucket_Array* array, UMM index)
 {
     void* result = 0;
     
-    UMM bucket_index  = index / array->bucket_size;
-    U32 bucket_offset = index % array->bucket_size;
+    U32 bucket_index = (U32)(index / array->bucket_size);
+    U32 offset = sizeof(U64) + (index % array->bucket_size) * array->element_size;
     
-    if (bucket_index < array->bucket_count && (bucket_index != array->bucket_count - 1 || bucket_offset < array->current_bucket_offset))
+    if (bucket_index == array->bucket_count - 1)
     {
-        void** scan = array->buckets;
-        
-        for (U32 i = 0; i < bucket_index; ++i)
+        if (offset < array->current_bucket_offset)
         {
-            scan = (void**)*scan;
+            result = (U8*)array->current_bucket + offset;
+        }
+    }
+    
+    else if (bucket_index < array->bucket_count - 1)
+    {
+        void** bucket = array->bucket_list;
+        
+        for (U32 i = 0; i < index; ++i)
+        {
+            bucket = (void**)*bucket;
         }
         
-        result = Align(scan, alignof(U64)) + array->element_size * bucket_offset;
+        result = (U8*)bucket + offset;
     }
     
     return result;
 }
 
+inline UMM
+ElementCount(Bucket_Array* array)
+{
+    UMM count = 0;
+    
+    if (array->bucket_count)
+    {
+        U32 elements_in_last_bucket = (array->current_bucket_offset - sizeof(U64)) / array->element_size;
+        count = (array->bucket_count - 1) * array->bucket_size + elements_in_last_bucket;
+    }
+    
+    return count;
+}
+
 struct Bucket_Array_Iterator
 {
-    void** current_bucket;
+    void* current_bucket;
     UMM current_index;
     U32 last_bucket_offset;
     U32 bucket_count;
@@ -146,12 +195,17 @@ Iterate(Bucket_Array* array)
 {
     Bucket_Array_Iterator iterator = {};
     
-    iterator.current_bucket     = array->buckets;
-    iterator.current_index      = 0;
-    iterator.last_bucket_offset = array->current_bucket_offset;
-    iterator.bucket_count       = array->bucket_count;
-    iterator.bucket_size        = array->bucket_size;
-    iterator.element_size       = array->element_size;
+    if (array->bucket_count)
+    {
+        iterator.current_bucket     = (void*)array->bucket_list;
+        iterator.current_index      = 0;
+        iterator.last_bucket_offset = array->current_bucket_offset;
+        iterator.bucket_count       = array->bucket_count;
+        iterator.bucket_size        = array->bucket_size;
+        iterator.element_size       = array->element_size;
+        
+        iterator.current = (U8*)iterator.current_bucket + sizeof(U64);
+    }
     
     return iterator;
 }
@@ -159,20 +213,24 @@ Iterate(Bucket_Array* array)
 inline void
 Advance(Bucket_Array_Iterator* iterator)
 {
+    HARD_ASSERT(iterator->current != 0);
+    
     iterator->current = 0;
     
     ++iterator->current_index;
     
-    UMM bucket_index  = iterator->current_index / iterator->bucket_size;
-    U32 bucket_offset = iterator->current_index % iterator->bucket_size;
+    U32 bucket_index  = (U32)(iterator->current_index / iterator->bucket_size);
+    U32 bucket_offset = (U32)(iterator->current_index % iterator->bucket_size);
     
-    if (bucket_index < iterator->bucket_count && (bucket_index != iterator->bucket_count - 1 || bucket_offset < iterator->last_bucket_offset))
+    U32 offset = sizeof(U64) + bucket_offset * iterator->element_size;
+    
+    if (bucket_index < iterator->bucket_count - 1 || (bucket_index == iterator->bucket_count - 1 && offset < iterator->last_bucket_offset))
     {
-        if (iterator->current_index % iterator->bucket_size == 0)
+        if (bucket_offset == 0)
         {
-            iterator->current_bucket = (void**)*iterator->current_bucket;
+            iterator->current_bucket = *(void**)iterator->current_bucket;
         }
         
-        iterator->current = Align(iterator->current_bucket, alignof(U64)) + iterator->element_size * bucket_offset;
+        iterator->current = (U8*)iterator->current_bucket + offset;
     }
 }

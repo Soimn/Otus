@@ -2,321 +2,297 @@
 
 #include "common.h"
 
-// TODO(soimn): At the moment only cast(TYPE) is allowed. Should something like cast(typeof(var)) be supported?
+#define AST_NODE_BUCKET_SIZE 64
+#define AST_GLOBAL_SCOPE_ID 0
+#define AST_FIRST_VALID_NONSPECIAL_SCOPE_ID 1
+
+enum AST_NODE_TYPE
+{
+    ASTNode_Invalid,
+    
+    ASTNode_Expression,
+    
+    ASTNode_Scope,
+    
+    ASTNode_If,
+    ASTNode_While,
+    ASTNode_Defer,
+    ASTNode_Return,
+    
+    ASTNode_VarDecl,
+    ASTNode_StructDecl,
+    ASTNode_EnumDecl,
+    ASTNode_ConstDecl,
+    ASTNode_FuncDecl,
+    
+    // TODO(soimn): These could all be ASTNode_VarDecl, but is that benefitial?
+    ASTNode_StructMember,
+    ASTNode_EnumMember,
+    ASTNode_FuncArgument,
+    
+    AST_NODE_TYPE_COUNT
+};
 
 enum AST_EXPRESSION_TYPE
 {
-    ASTExp_Invalid,
+    ASTExpr_Invalid,
     
-    /// Arithmetic
-    ASTExp_Plus,
-    ASTExp_UnaryPlus,
-    ASTExp_PreIncrement,
-    ASTExp_PostIncrement,
-    ASTExp_Minus,
-    ASTExp_UnaryMinus,
-    ASTExp_PreDecrement,
-    ASTExp_PostDecrement,
-    ASTExp_Multiply,
-    ASTExp_Divide,
-    ASTExp_Modulus,
+    // Unary
+    ASTExpr_UnaryPlus,
+    ASTExpr_UnaryMinus,
+    ASTExpr_PreIncrement,
+    ASTExpr_PreDecrement,
+    ASTExpr_PostIncrement,
+    ASTExpr_PostDecrement,
     
-    /// Assignment - arithmetic
-    ASTExp_PlusEquals,
-    ASTExp_MinusEquals,
-    ASTExp_MultiplyEquals,
-    ASTExp_DivideEquals,
-    ASTExp_ModulusEquals,
+    ASTExpr_BitwiseNot,
     
-    /// Logical
-    ASTExp_LogicalNot,
-    ASTExp_LogicalAnd,
-    ASTExp_LogicalOr,
+    ASTExpr_LogicalNot,
     
-    /// Comparative
-    ASTExp_IsEqual,
-    ASTExp_IsNotEqual,
-    ASTExp_IsGreaterThan,
-    ASTExp_IsGreaterThanOrEqual,
-    ASTExp_IsLessThan,
-    ASTExp_IsLessThanOrEqual,
+    ASTExpr_Reference,
+    ASTExpr_Dereference,
     
-    /// Bitwise
-    ASTExp_Not,
-    ASTExp_And,
-    ASTExp_Or,
-    ASTExp_XOR,
-    ASTExp_LeftShift,
-    ASTExp_RightShift,
+    // Binary
+    ASTExpr_Addition,
+    ASTExpr_Subtraction,
+    ASTExpr_Multiplication,
+    ASTExpr_Division,
+    ASTExpr_Modulus,
     
-    /// Assignment - bitwise
-    ASTExp_AndEquals,
-    ASTExp_OrEquals,
-    ASTExp_XOREquals,
-    ASTExp_LeftShiftEquals,
-    ASTExp_RightShiftEquals,
+    ASTExpr_BitwiseAnd,
+    ASTExpr_BitwiseOr,
+    ASTExpr_BitwiseXOR,
+    ASTExpr_BitwiseLeftShift,
+    ASTExpr_BitwiseRightShift,
     
-    /// Assignment
-    ASTExp_Equals,
+    ASTExpr_LogicalAnd,
+    ASTExpr_LogicalOr,
     
-    /// Literals
-    ASTExp_NumericLiteral,
-    ASTExp_StringLiteral,
+    ASTExpr_AddEquals,
+    ASTExpr_SubEquals,
+    ASTExpr_MultEquals,
+    ASTExpr_DivEquals,
+    ASTExpr_ModEquals,
+    ASTExpr_BitwiseAndEquals,
+    ASTExpr_BitwiseOrEquals,
+    ASTExpr_BitwiseXOREquals,
+    ASTExpr_BitwiseLeftShiftEquals,
+    ASTExpr_BitwiseRightShiftEquals,
     
-    /// Special
-    ASTExp_Lambda, // TODO(soimn): Where should lamdas be defined, and how should duplicates be handled?
-    ASTExp_FunctionCall,
-    ASTExp_Subscript,
-    ASTExp_Member,
-    ASTExp_Ternary,
-    ASTExp_Dereference,
-    ASTExp_Reference,
-    ASTExp_TypeCast,
-    ASTExp_Identifier,
+    ASTExpr_Equals,
+    
+    ASTExpr_IsEqual,
+    ASTExpr_IsNotEqual,
+    ASTExpr_IsGreaterThan,
+    ASTExpr_IsLessThan,
+    ASTExpr_IsGreaterThanOrEqual,
+    ASTExpr_IsLessThanOrEqual,
+    
+    ASTExpr_Subscript,
+    ASTExpr_Member,
+    
+    // Special
+    ASTExpr_Ternary,
+    ASTExpr_Identifier,
+    ASTExpr_NumericLiteral,
+    ASTExpr_StringLiteral,
+    ASTExpr_LambdaDecl,
+    ASTExpr_FunctionCall,
+    ASTExpr_TypeCast,
+    
+    AST_EXPRESSION_TYPE_COUNT
 };
 
+// TODO(soimn): How should types in the parsing stage be handled?
 struct AST_Type
 {
-    bool is_function_type;
-    
-    AST_Type* next;
-    
-    union
-    {
-        /// is_function_type : false
-        struct
-        {
-            // TODO(soimn): Some sort of abstraction of an ordered sequence of '&' and '[' EXPRESSION ']'
-            String type_name;
-        };
-        
-        /// is_function_type : true
-        struct
-        {
-            AST_Type* first_argument;
-            AST_Type* return_type;
-        };
-    };
+    U64 value;
 };
 
-struct AST_Expression
+typedef U64 AST_Scope_ID;
+
+struct AST_Node
 {
-    Enum32(AST_EXPRESSION_TYPE) type;
+    Enum32(AST_NODE_TYPE) node_type;
+    Enum32(AST_EXPRESSION_TYPE) expr_type;
+    
+    AST_Node* next;
+    String name;
     
     union
     {
-        /// All binary operations
+        AST_Node* children[3];
+        
+        /// Binary operators
         struct
         {
-            AST_Expression* left;
-            AST_Expression* right;
+            AST_Node* left;
+            AST_Node* right;
         };
         
-        /// All unary operations
-        AST_Expression* operand;
+        /// Unary operators
+        AST_Node* operand;
         
-        /// Numeric literal
-        Number number;
-        
-        /// String literal
-        String string;
-        
-        /// Lambda
+        /// Function and lambda declaration
         struct
         {
-            AST_Expression* lambda_arguments;
-            AST_Type lambda_return_type;
-            AST_Expression* lambda_capture_list;
-            struct AST_Scope* lambda_body;
+            AST_Node* arguments;
+            AST_Node* body;
+        };
+        
+        /// Struct and enums
+        struct
+        {
+            AST_Node* members;
         };
         
         /// Function call
         struct
         {
-            AST_Expression* function_pointer;
-            AST_Expression* function_arguments;
+            AST_Node* call_function;
+            AST_Node* call_arguments;
         };
         
-        /// Ternary
+        /// Variable and constant declaration, return statement, enum member
         struct
         {
-            AST_Expression* condition;
-            AST_Expression* true_expr;
-            AST_Expression* false_expr;
+            AST_Node* value;
         };
         
-        /// Type cast
+        /// If, ternary and while
         struct
         {
-            // TODO(soimn): This prevents cast(typeof(var)) and should maybe be altered once the parser is more
-            //              complete / defined
-            AST_Type target_type;
-            
-            AST_Expression* to_cast;
+            AST_Node* condition;
+            AST_Node* true_body;
+            AST_Node* false_body;
         };
         
-        /// Identifier
-        String identifier;
-    };
-};
-
-typedef U64 AST_Scope_ID;
-#define AST_INVALID_SCOPE_ID 0
-#define AST_GLOBAL_SCOPE_ID  1
-
-struct AST_Scope
-{
-    AST_Scope_ID id;
-    struct AST_Statement* statements;
-};
-
-enum AST_STATEMENT_TYPE
-{
-    ASTStmt_Invalid,
-    
-    ASTStmt_Expression,
-    ASTStmt_If,
-    ASTStmt_While,
-    ASTStmt_Defer,
-    ASTStmt_Return,
-    
-    ASTStmt_VarDecl,
-    ASTStmt_FuncDecl,
-    ASTStmt_ConstDecl,
-    ASTStmt_StructDecl,
-    
-    ASTStmt_Scope,
-};
-
-struct AST_Statement
-{
-    Enum32(AST_STATEMENT_TYPE) type;
-    
-    AST_Statement* next;
-    
-    union
-    {
-        /// Expression
-        AST_Expression* expression;
-        
-        /// If and while
+        /// Cast
         struct
         {
-            AST_Expression* condition;
-            AST_Scope true_body;
-            AST_Statement* false_statement;
+            AST_Node* to_cast;
         };
         
         /// Defer
-        AST_Scope defer_scope;
-        
-        /// Return
-        AST_Expression* return_value;
-        
-        /// Variable declaration
         struct
         {
-            String var_name;
-            AST_Type var_type;
-            AST_Expression* var_value;
-            bool var_is_uninitialized;
+            AST_Node* statement;
         };
         
-        /// Function declaration
-        struct
-        {
-            String function_name;
-            AST_Expression** function_arguments;
-            AST_Type function_return_type;
-            AST_Scope function_scope;
-        };
-        
-        /// Constant declaration
-        struct
-        {
-            String constant_name;
-            AST_Expression* constant_value;
-        };
-        
-        /// Struct declaration
-        struct
-        {
-            String struct_name;
-            AST_Statement* struct_members;
-        };
-        
-        /// Scope
-        AST_Scope scope;
-    };
-};
-
-struct AST_Node
-{
-    union
-    {
-        AST_Expression expression;
-        AST_Statement statement;
+        AST_Node* scope;
     };
     
-    bool is_expression;
+    union
+    {
+        /// Function and lambda declaration
+        struct
+        {
+            AST_Type return_type;
+            // modifiers
+        };
+        
+        /// Enums, cast and variable declaration
+        AST_Type type;
+        
+        String string_literal;
+        Number numeric_literal;
+        
+        /// Scope
+        AST_Scope_ID scope_id;
+    };
 };
 
 struct AST
 {
-    AST_Scope global_scope;
-    AST_Scope local_scope;
-    
+    AST_Node* root;
     Bucket_Array container;
-    
     bool is_valid;
 };
 
-inline AST_Expression*
-PushExpression(AST* ast)
+inline AST_Node*
+PushNode(AST* ast)
 {
     AST_Node* node = (AST_Node*)PushElement(&ast->container);
-    node->is_expression = true;
     
-    return &node->expression;
-}
-
-inline AST_Statement*
-PushStatement(AST* ast)
-{
-    AST_Node* node = (AST_Node*)PushElement(&ast->container);
-    node->is_expression = false;
+    ZeroStruct(node);
     
-    return &node->statement;
+    return node;
 }
 
 inline AST_Scope_ID
 GetNewScopeID()
 {
-    static AST_Scope_ID current_id = AST_GLOBAL_SCOPE_ID;
-    
-    return ++current_id;
+    static AST_Scope_ID current_id = AST_FIRST_VALID_NONSPECIAL_SCOPE_ID;
+    return current_id++;
 }
 
-inline bool
-IsPostfixExpression(AST_Expression* expression)
+inline void
+FlattenAST(AST* ast);
+
+/*
+
+Function declaration syntax
+// FunctionName :: proc(parameter_name_0: parameter_type_0 ... ) -> return_type {}
+
+Struct declaration
+// Struct_Name :: struct {}
+
+Constant declaration
+// ConstantName :: VALUE
+
+
+Lambdas
+// proc(f: float) -> float
+
+//
+//  func := proc(f: float) -> float
+//  {
+//       return f * f;
+//  };
+
+Operators
+
+// the usual: + += - -= * *= / /= [] () ! > < <= >= == != & && | || << >> %
+// reference: &
+// dereference: *
+// member: . (automatically dereferences)
+
+// bitwise not, xor, nand, nor, etc?
+
+*/
+
+/*
+/// Pointers are memory pointers that can store any address (also addresses that are illegal to access)
+/// References are memory pointers that can only store valid addresses
+
+
+// 1
+pointer_to_value:   & AST_Node;
+reference_to_value: * AST_Node;
+
+// 2
+pointer_to_value:   * AST_Node;
+reference_to_value: & AST_Node;
+
+/// Usage
+value := 2;
+
+pointer_to_value = &value;
+assert(value == *pointer_to_value);
+
+reference_to_value = &value;
+assert(value == *reference_to_value);
+
+// Usage with syntax nr. 1
+Function :: (reference: * AST_Node) // asserts that any pointer passed is non null
 {
-    Enum32(AST_EXPRESSION_TYPE) type = expression->type;
-    
-    return (type == ASTExp_StringLiteral || type == ASTExp_Identifier ||
-            type == ASTExp_FunctionCall  || type == ASTExp_Lambda     ||
-            type == ASTExp_Subscript     || type == ASTExp_Member);
+    if (reference); // allways true
+    else;           // allways false
 }
 
-inline bool
-IsUnaryExpression(AST_Expression* expression)
-{
-    Enum32(AST_EXPRESSION_TYPE) type = expression->type;
-    
-    return (type == ASTExp_PreIncrement || type == ASTExp_PreDecrement ||
-            type == ASTExp_Reference    || type == ASTExp_Dereference  ||
-            type == ASTExp_UnaryPlus    || type == ASTExp_UnaryMinus   ||
-            type == ASTExp_Not          || type == ASTExp_LogicalNot);
-}
+Function(0); // compile time error
+Function(1); // valid but requires explicit conversion from int to pointer
 
-
-/// IMPORTANT TODO(soimn): Err on all postfix expressions after lambda other than function call
+Function(pointer_to_value); // runtime check if enabled
+Function(reference_to_value); // No check
+*/

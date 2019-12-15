@@ -99,10 +99,9 @@ enum LEXER_KEYWORD_TYPE
     Keyword_Defer,
     Keyword_Return,
     Keyword_Cast,
-    Keyword_Local,
-    Keyword_Global,
-    Keyword_Inline,
-    Keyword_NoInline,
+    Keyword_Struct,
+    Keyword_Enum,
+    Keyword_Proc,
 };
 
 struct Token
@@ -213,9 +212,12 @@ LexString(String input)
     return lexer;
 }
 
-inline void
-EatAllCommentsAndWhitespace(Lexer* lexer)
+inline Token
+GetToken(Lexer* lexer)
 {
+    Token token = {};
+    token.type  = Token_Unknown;
+    
     for (;;)
     {
         while (IsSpacing(lexer->peek[0]))
@@ -267,15 +269,6 @@ EatAllCommentsAndWhitespace(Lexer* lexer)
         
         else break;
     }
-}
-
-inline Token
-GetToken(Lexer* lexer)
-{
-    Token token = {};
-    token.type  = Token_Unknown;
-    
-    EatAllCommentsAndWhitespace(lexer);
     
     token.string      = {};
     token.string.data = lexer->input.data;
@@ -372,7 +365,6 @@ GetToken(Lexer* lexer)
             }
         } break;
         
-        // NOTE(soimn): A fallthrough is wanted here
         case '-':
         {
             if (lexer->peek[0] == '>')
@@ -387,6 +379,11 @@ GetToken(Lexer* lexer)
                 token.type = Token_TripleDash;
                 Advance(lexer, 2);
                 break;
+            }
+            
+            else
+            {
+                // Fallthrough
             }
         }
         
@@ -502,28 +499,22 @@ GetToken(Lexer* lexer)
                     token.keyword = Keyword_Cast;
                 }
                 
-                else if (StringCompare(token.string, CONST_STRING("local")))
+                else if (StringCompare(token.string, CONST_STRING("struct")))
                 {
                     token.type = Token_Keyword;
-                    token.keyword = Keyword_Local;
+                    token.keyword = Keyword_Struct;
                 }
                 
-                else if (StringCompare(token.string, CONST_STRING("global")))
+                else if (StringCompare(token.string, CONST_STRING("enum")))
                 {
                     token.type = Token_Keyword;
-                    token.keyword = Keyword_Global;
+                    token.keyword = Keyword_Enum;
                 }
                 
-                else if (StringCompare(token.string, CONST_STRING("inline")))
+                else if (StringCompare(token.string, CONST_STRING("proc")))
                 {
                     token.type = Token_Keyword;
-                    token.keyword = Keyword_Inline;
-                }
-                
-                else if (StringCompare(token.string, CONST_STRING("no_inline")))
-                {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_NoInline;
+                    token.keyword = Keyword_Proc;
                 }
             }
             
@@ -686,7 +677,7 @@ SkipToken(Lexer* lexer)
 }
 
 inline bool
-RequireToken(Lexer* lexer, Enum32(TOKEN_TYPE) type)
+MetRequiredToken(Lexer* lexer, Enum32(TOKEN_TYPE) type)
 {
     Token token = PeekToken(lexer);
     

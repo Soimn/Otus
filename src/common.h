@@ -96,6 +96,7 @@ struct File_Loc
 #ifdef GREMLIN_DEBUG
 #define HARD_ASSERT(EX) if (EX); else *(volatile int*)0 = 0
 #define NOT_IMPLEMENTED HARD_ASSERT(!"NOT IMPLEMENTED")
+#define INVALID_CODE_PATH HARD_ASSERT(!"INVALID CODE PATH")
 #define INVALID_DEFAULT_CASE default: HARD_ASSERT(!"INVALID DEFAULT CASE"); break
 #else
 #define HARD_ASSERT(EX)
@@ -104,18 +105,13 @@ struct File_Loc
 #endif
 
 inline void*
-AllocateMemory(UMM size)
+SystemAllocateMemory(UMM size)
 {
-    void* result = malloc(size);
-    
-    // TODO(soimn): Memory allocation failure recovery
-    HARD_ASSERT(result == 0);
-    
-    return result;
+    return malloc(size);
 }
 
 inline void
-FreeMemory(void* ptr)
+SystemFreeMemory(void* ptr)
 {
     free(ptr);
 }
