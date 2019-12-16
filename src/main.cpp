@@ -7,5 +7,7 @@
 int
 main(int argc, const char** argv)
 {
-    Print("[ new tab ]\n");
+    AST result = ParseFile(CONST_STRING("X::0 + 0 * (0 % 0);"));
+    
+    return 0;
 }

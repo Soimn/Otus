@@ -52,13 +52,13 @@ AllocateMemory(UMM size)
     void* result = SystemAllocateMemory(size + 15);
     
     // TODO(soimn): Memory allocation failure recovery
-    HARD_ASSERT(result == 0);
+    HARD_ASSERT(result != 0);
     
     U8* aligned = (U8*)Align(result, alignof(U64));
     
     if (aligned - (U8*)result == 0)
     {
-        aligned = (U8*)Align((U8*)result + 1, alignof(U64));
+        aligned = (U8*)Align((U8*)result + alignof(U64) - 1, alignof(U64));
     }
     
     *(aligned - 1) = (U8)(aligned - (U8*)result);
@@ -100,7 +100,7 @@ PushElement(Bucket_Array* array)
         
         if (!array->bucket_count)
         {
-            array->bucket_list = &new_bucket;
+            array->bucket_list = (void**)new_bucket;
         }
         
         else
@@ -108,7 +108,7 @@ PushElement(Bucket_Array* array)
             *(void**)array->current_bucket = new_bucket;
         }
         
-        array->current_bucket       = new_bucket;
+        array->current_bucket        = new_bucket;
         array->current_bucket_offset = sizeof(U64);
         ++array->bucket_count;
     }

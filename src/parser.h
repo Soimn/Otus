@@ -15,7 +15,11 @@ struct Parser_State
 inline bool
 ParseType(Parser_State state, AST_Type* result)
 {
+    bool encountered_errors = false;
+    
     NOT_IMPLEMENTED;
+    
+    return encountered_errors;
 }
 
 inline bool
@@ -80,7 +84,7 @@ ParseFunctionDeclaration(Parser_State state, AST_Node** result)
                     else if (token.type == Token_Identifier)
                     {
                         *current_argument = PushNode(state.ast);
-                        (*current_argument)->node_type = ASTNode_FuncArgument;
+                        (*current_argument)->node_type = ASTNode_VarDecl;
                         (*current_argument)->name      = token.string;
                         
                         SkipToken(state.lexer);
@@ -215,7 +219,7 @@ ParseFunctionDeclaration(Parser_State state, AST_Node** result)
 inline bool
 ParsePostfixExpression(Parser_State state, AST_Node** result)
 {
-    bool encountered_errors = true;
+    bool encountered_errors = false;
     
     Token token = PeekToken(state.lexer);
     
@@ -642,6 +646,8 @@ ParseUnaryExpression(Parser_State state, AST_Node** result)
         (*result)->node_type = ASTNode_Expression;
         (*result)->expr_type = type;
         
+        SkipToken(state.lexer);
+        
         if (ParseUnaryExpression(state, &(*result)->operand))
         {
             
@@ -659,7 +665,7 @@ ParseUnaryExpression(Parser_State state, AST_Node** result)
         if (ParsePostfixExpression(state, result))
         {
             // NOTE(soimn): If this is true the expression is "empty" which is invalid
-            if (*result != 0)
+            if (*result == 0)
             {
                 //// ERROR: Failed to parse expression as the expression is empty
                 encountered_errors = true;
@@ -775,6 +781,8 @@ ParseMultiplicativeExpression(Parser_State state, AST_Node** result)
             (*result)->expr_type = type;
             (*result)->left      = left;
             
+            SkipToken(state.lexer);
+            
             if (ParseMultiplicativeExpression(state, &(*result)->right))
             {
                 // Succeeded
@@ -814,6 +822,8 @@ ParseAdditiveExpression(Parser_State state, AST_Node** result)
             (*result)->expr_type = (token.type == Token_Plus ? ASTExpr_Addition : ASTExpr_Subtraction);
             (*result)->left      = left;
             
+            SkipToken(state.lexer);
+            
             if (ParseAdditiveExpression(state, &(*result)->right))
             {
                 // Succeeded
@@ -852,6 +862,8 @@ ParseBitwiseShiftExpression(Parser_State state, AST_Node** result)
             (*result)->node_type = ASTNode_Expression;
             (*result)->expr_type = (token.type == Token_LeftShift ? ASTExpr_BitwiseLeftShift : ASTExpr_BitwiseRightShift);
             (*result)->left      = left;
+            
+            SkipToken(state.lexer);
             
             if (ParseBitwiseShiftExpression(state, &(*result)->right))
             {
@@ -903,6 +915,8 @@ ParseRelationalExpression(Parser_State state, AST_Node** result)
             (*result)->expr_type = type;
             (*result)->left      = left;
             
+            SkipToken(state.lexer);
+            
             if (ParseRelationalExpression(state, &(*result)->right))
             {
                 // Succeeded
@@ -941,6 +955,8 @@ ParseEqualityExpression(Parser_State state, AST_Node** result)
             (*result)->node_type = ASTNode_Expression;
             (*result)->expr_type = (token.type == Token_IsEqual ? ASTExpr_IsEqual : ASTExpr_IsNotEqual);
             (*result)->left      = left;
+            
+            SkipToken(state.lexer);
             
             if (ParseEqualityExpression(state, &(*result)->right))
             {
@@ -1218,7 +1234,7 @@ ParseConditionalExpression(Parser_State state, AST_Node** result)
 inline bool
 ParseAssignmentExpression(Parser_State state, AST_Node** result)
 {
-    bool encountered_errors = true;
+    bool encountered_errors = false;
     
     if (ParseConditionalExpression(state, result))
     {
@@ -1249,6 +1265,8 @@ ParseAssignmentExpression(Parser_State state, AST_Node** result)
             (*result)->node_type = ASTNode_Expression;
             (*result)->expr_type = type;
             (*result)->left      = left;
+            
+            SkipToken(state.lexer);
             
             if (ParseAssignmentExpression(state, &(*result)->right))
             {
@@ -1362,7 +1380,7 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                             else if (token.type == Token_Identifier)
                             {
                                 *current_member = PushNode(state.ast);
-                                (*current_member)->node_type = ASTNode_StructMember;
+                                (*current_member)->node_type = ASTNode_VarDecl;
                                 (*current_member)->name      = token.string;
                                 
                                 SkipToken(state.lexer);
@@ -1480,7 +1498,7 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                             else if (token.type == Token_Identifier)
                             {
                                 *current_member = PushNode(state.ast);
-                                (*current_member)->node_type = ASTNode_EnumMember;
+                                (*current_member)->node_type = ASTNode_VarDecl;
                                 (*current_member)->name = token.string;
                                 
                                 SkipToken(state.lexer);
@@ -1934,7 +1952,7 @@ ParseFile(String input)
     
     AST_Node** current_statement = &ast.root->scope;
     
-    while (token.type != Token_EndOfStream)
+    while (!encountered_errors && token.type != Token_EndOfStream)
     {
         if (token.type == Token_Identifier && (peek.type == Token_Colon || peek.type == Token_DoubleColon))
         {
@@ -1955,6 +1973,8 @@ ParseFile(String input)
             //// ERROR: Encountered invalid token in global scope
             encountered_errors = true;
         }
+        
+        token = PeekToken(state.lexer);
     }
     
     if (!encountered_errors)

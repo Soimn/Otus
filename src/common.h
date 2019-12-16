@@ -93,6 +93,8 @@ struct File_Loc
 #define Enum32(type) U32
 #define Enum64(type) U64
 
+#define ARRAY_COUNT(X) (sizeof(X) / sizeof((X)[0]))
+
 #ifdef GREMLIN_DEBUG
 #define HARD_ASSERT(EX) if (EX); else *(volatile int*)0 = 0
 #define NOT_IMPLEMENTED HARD_ASSERT(!"NOT IMPLEMENTED")

@@ -25,11 +25,6 @@ enum AST_NODE_TYPE
     ASTNode_ConstDecl,
     ASTNode_FuncDecl,
     
-    // TODO(soimn): These could all be ASTNode_VarDecl, but is that benefitial?
-    ASTNode_StructMember,
-    ASTNode_EnumMember,
-    ASTNode_FuncArgument,
-    
     AST_NODE_TYPE_COUNT
 };
 
@@ -153,7 +148,7 @@ struct AST_Node
             AST_Node* call_arguments;
         };
         
-        /// Variable and constant declaration, return statement, enum member
+        /// Variable and constant declaration, return statement, enum member, struct member, function argument
         struct
         {
             AST_Node* value;
@@ -227,8 +222,107 @@ GetNewScopeID()
     return current_id++;
 }
 
+// NOTE(soimn): This would be a great example of a function that would benefit of being locally scoped
 inline void
-FlattenAST(AST* ast);
+FlattenAST_FlattenASTNode(Bucket_Array* array, AST_Node* node)
+{
+    if (node->node_type == ASTNode_Scope)
+    {
+        AST_Node* prev_scan = 0;
+        AST_Node* scan = node->scope;
+        
+        while (scan != 0)
+        {
+            AST_Node* new_node = (AST_Node*)PushElement(array);
+            *new_node = *scan;
+            
+            if (prev_scan)
+            {
+                prev_scan->next = scan;
+            }
+            
+            prev_scan = scan;
+            scan = scan->next;
+        }
+        
+        scan = node->scope;
+        
+        while (scan != 0)
+        {
+            FlattenAST_FlattenASTNode(array, scan);
+            
+            scan = scan->next;
+        }
+    }
+    
+    else
+    {
+        for (U32 i = 0; i < ARRAY_COUNT(node->children); ++i)
+        {
+            if (node->children[i] != 0)
+            {
+                AST_Node* new_node = (AST_Node*)PushElement(array);
+                *new_node = *node->children[i];
+                
+                node->children[i] = new_node;
+            }
+        }
+        
+        for (U32 i = 0; i < ARRAY_COUNT(node->children); ++i)
+        {
+            if (node->children[i] != 0)
+            {
+                FlattenAST_FlattenASTNode(array, node->children[i]);
+            }
+        }
+    }
+}
+
+inline void
+FlattenAST(AST* ast)
+{
+    U32 new_bucket_size = ast->container.bucket_size;
+    Bucket_Array new_storage = BUCKET_ARRAY(AST_Node, new_bucket_size);
+    
+    AST_Node* new_root = (AST_Node*)PushElement(&new_storage);
+    *new_root = *ast->root;
+    
+    FlattenAST_FlattenASTNode(&new_storage, new_root);
+    
+    Bucket_Array test = BUCKET_ARRAY(int, 8);
+    for (U32 i = 0; i < 8; ++i)
+    {
+        *(int*)PushElement(&test) = U32_MAX;
+    }
+    
+    ClearArray(&test);
+    
+    ast->container = new_storage;
+}
+
+inline void
+DEBUGDumpASTToFile(AST* ast, const char* file_name)
+{
+    FILE* file = fopen(file_name, "wb");
+    
+    U32 magic_value = 0x00FF00DD;
+    U32 node_count  = (U32)ElementCount(&ast->container);
+    
+    fwrite(&magic_value, 1, 4, file);
+    fwrite(&node_count,  1, 4, file);
+    fwrite(&node_count,  1, 4, file);
+    
+    struct Node_Format
+    {
+        U32 tag_color;
+        U32 text_index;
+        U32 first_child;
+        U32 num_children;
+        B32 is_small;
+    };
+    
+    NOT_IMPLEMENTED;
+}
 
 /*
 
