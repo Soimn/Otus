@@ -7,7 +7,9 @@
 int
 main(int argc, const char** argv)
 {
-    AST result = ParseFile(CONST_STRING("X::0 + 0 * (0 % 0);"));
+    AST result = ParseFile(CONST_STRING("X::0 + 0 + (0%2) + 1;"));
+    
+    DEBUGDumpASTToFile(&result, "tree_dump.bin");
     
     return 0;
 }

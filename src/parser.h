@@ -13,7 +13,7 @@ struct Parser_State
 
 // NOTE(soimn): types consists of zero or more '&', '*' and '[' ... ']' tokens and end in an identifier
 inline bool
-ParseType(Parser_State state, AST_Type* result)
+ParseType(Parser_State state, AST_Type** result)
 {
     bool encountered_errors = false;
     

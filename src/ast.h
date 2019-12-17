@@ -144,8 +144,8 @@ struct AST_Node
         /// Function call
         struct
         {
-            AST_Node* call_function;
             AST_Node* call_arguments;
+            AST_Node* call_function;
         };
         
         /// Variable and constant declaration, return statement, enum member, struct member, function argument
@@ -182,12 +182,12 @@ struct AST_Node
         /// Function and lambda declaration
         struct
         {
-            AST_Type return_type;
+            AST_Type* return_type;
             // modifiers
         };
         
         /// Enums, cast and variable declaration
-        AST_Type type;
+        AST_Type* type;
         
         String identifier;
         String string_literal;
@@ -303,14 +303,12 @@ FlattenAST(AST* ast)
 inline void
 DEBUGDumpASTToFile(AST* ast, const char* file_name)
 {
-    FILE* file = fopen(file_name, "wb");
+#pragma warning(push)
+#pragma warning(disable:4996;disable:4189) 
+    
     
     U32 magic_value = 0x00FF00DD;
     U32 node_count  = (U32)ElementCount(&ast->container);
-    
-    fwrite(&magic_value, 1, 4, file);
-    fwrite(&node_count,  1, 4, file);
-    fwrite(&node_count,  1, 4, file);
     
     struct Node_Format
     {
@@ -321,7 +319,418 @@ DEBUGDumpASTToFile(AST* ast, const char* file_name)
         B32 is_small;
     };
     
-    NOT_IMPLEMENTED;
+    struct String_Format
+    {
+        U32 size;
+        U32 offset;
+    };
+    
+    UMM scratch_memory_size = 4 * sizeof(U32) + 2 * node_count * sizeof(Node_Format);
+    void* scratch_node_memory = AllocateMemory(scratch_memory_size);
+    UMM scratch_node_memory_offset = 0;
+    ZeroSize(scratch_node_memory, scratch_memory_size);
+    
+    auto Write = [&scratch_node_memory, &scratch_node_memory_offset, scratch_memory_size] (U8* value, UMM size)
+    {
+        Copy(value, (U8*)scratch_node_memory + scratch_node_memory_offset, size);
+        scratch_node_memory_offset += size;
+        HARD_ASSERT(scratch_node_memory_offset < scratch_memory_size);
+    };
+    
+    Bucket_Array string_storage = BUCKET_ARRAY(char, 4000);
+    Bucket_Array string_array   = BUCKET_ARRAY(String_Format, 60);
+    
+    auto PushString = [&string_storage, &string_array](String string) -> U32
+    {
+        U32 index = (U32)ElementCount(&string_array);
+        
+        String_Format* format = (String_Format*)PushElement(&string_array);
+        
+        format->size = 0;
+        format->offset = (U32)ElementCount(&string_storage);
+        
+        for (U32 i = 0; i < string.size; ++i, ++format->size)
+        {
+            *(char*)PushElement(&string_storage) = string.data[i];
+        }
+        
+        return index;
+    };
+    
+    U32 if_string        = PushString(CONST_STRING("If"));
+    U32 while_string     = PushString(CONST_STRING("While"));
+    U32 defer_string     = PushString(CONST_STRING("Defer"));
+    U32 return_string    = PushString(CONST_STRING("Return"));
+    U32 scope_string     = PushString(CONST_STRING("{...}"));
+    U32 arguments_string = PushString(CONST_STRING("Args"));
+    U32 lambda_string    = PushString(CONST_STRING("Lambda"));
+    U32 ternary_string   = PushString(CONST_STRING("Ternary"));
+    U32 cast_string      = PushString(CONST_STRING("Cast"));
+    U32 call_string      = PushString(CONST_STRING("Call"));
+    
+    U32 expression_strings[AST_EXPRESSION_TYPE_COUNT] = {};
+    
+    for (U32 i = 0; i < AST_EXPRESSION_TYPE_COUNT; ++i)
+    {
+        switch(i)
+        {
+            case ASTExpr_UnaryPlus:               expression_strings[i] = PushString(CONST_STRING("Unary +"));   break;
+            case ASTExpr_UnaryMinus:              expression_strings[i] = PushString(CONST_STRING("Unary -"));   break;
+            case ASTExpr_PreIncrement:            expression_strings[i] = PushString(CONST_STRING("Pre  ++"));   break;
+            case ASTExpr_PreDecrement:            expression_strings[i] = PushString(CONST_STRING("Pre  --"));   break;
+            case ASTExpr_PostIncrement:           expression_strings[i] = PushString(CONST_STRING("Post ++"));   break;
+            case ASTExpr_PostDecrement:           expression_strings[i] = PushString(CONST_STRING("Post --"));   break;
+            case ASTExpr_BitwiseNot:              expression_strings[i] = PushString(CONST_STRING("~"));         break;
+            case ASTExpr_LogicalNot:              expression_strings[i] = PushString(CONST_STRING("!"));         break;
+            case ASTExpr_Reference:               expression_strings[i] = PushString(CONST_STRING("Ref"));       break;
+            case ASTExpr_Dereference:             expression_strings[i] = PushString(CONST_STRING("Deref"));     break;
+            case ASTExpr_Addition:                expression_strings[i] = PushString(CONST_STRING("+"));         break;
+            case ASTExpr_Subtraction:             expression_strings[i] = PushString(CONST_STRING("-"));         break;
+            case ASTExpr_Multiplication:          expression_strings[i] = PushString(CONST_STRING("*"));         break;
+            case ASTExpr_Division:                expression_strings[i] = PushString(CONST_STRING("/"));         break;
+            case ASTExpr_Modulus:                 expression_strings[i] = PushString(CONST_STRING("%"));         break;
+            case ASTExpr_BitwiseAnd:              expression_strings[i] = PushString(CONST_STRING("&"));         break;
+            case ASTExpr_BitwiseOr:               expression_strings[i] = PushString(CONST_STRING("|"));         break;
+            case ASTExpr_BitwiseXOR:              expression_strings[i] = PushString(CONST_STRING("^"));         break;
+            case ASTExpr_BitwiseLeftShift:        expression_strings[i] = PushString(CONST_STRING("<<"));        break;
+            case ASTExpr_BitwiseRightShift:       expression_strings[i] = PushString(CONST_STRING(">>"));        break;
+            case ASTExpr_LogicalAnd:              expression_strings[i] = PushString(CONST_STRING("&&"));        break;
+            case ASTExpr_LogicalOr:               expression_strings[i] = PushString(CONST_STRING("||"));        break;
+            case ASTExpr_AddEquals:               expression_strings[i] = PushString(CONST_STRING("+="));        break;
+            case ASTExpr_SubEquals:               expression_strings[i] = PushString(CONST_STRING("-="));        break;
+            case ASTExpr_MultEquals:              expression_strings[i] = PushString(CONST_STRING("*="));        break;
+            case ASTExpr_DivEquals:               expression_strings[i] = PushString(CONST_STRING("/="));        break;
+            case ASTExpr_ModEquals:               expression_strings[i] = PushString(CONST_STRING("%="));        break;
+            case ASTExpr_BitwiseAndEquals:        expression_strings[i] = PushString(CONST_STRING("&="));        break;
+            case ASTExpr_BitwiseOrEquals:         expression_strings[i] = PushString(CONST_STRING("|="));        break;
+            case ASTExpr_BitwiseXOREquals:        expression_strings[i] = PushString(CONST_STRING("^="));        break;
+            case ASTExpr_BitwiseLeftShiftEquals:  expression_strings[i] = PushString(CONST_STRING("<<="));       break;
+            case ASTExpr_BitwiseRightShiftEquals: expression_strings[i] = PushString(CONST_STRING(">>="));       break;
+            case ASTExpr_Equals:                  expression_strings[i] = PushString(CONST_STRING("="));         break;
+            case ASTExpr_IsEqual:                 expression_strings[i] = PushString(CONST_STRING("=="));        break;
+            case ASTExpr_IsNotEqual:              expression_strings[i] = PushString(CONST_STRING("!="));        break;
+            case ASTExpr_IsGreaterThan:           expression_strings[i] = PushString(CONST_STRING(">"));         break;
+            case ASTExpr_IsLessThan:              expression_strings[i] = PushString(CONST_STRING("<"));         break;
+            case ASTExpr_IsGreaterThanOrEqual:    expression_strings[i] = PushString(CONST_STRING(">="));        break;
+            case ASTExpr_IsLessThanOrEqual:       expression_strings[i] = PushString(CONST_STRING("<="));        break;
+            case ASTExpr_Subscript:               expression_strings[i] = PushString(CONST_STRING("Subscript")); break;
+            case ASTExpr_Member:                  expression_strings[i] = PushString(CONST_STRING("Member"));    break;
+        }
+    }
+    
+    U32 operator_expression_color   = 0x00AF1212;
+    U32 literal_expression_color    = 0x001212AF;
+    U32 identifier_expression_color = 0x001212AF;
+    U32 lambda_expression_color     = 0x0012AF12;
+    U32 conditional_statement_color = 0x00AFAF12;
+    U32 declaration_statement_color = 0x00AF12AF;
+    U32 arguments_statement_color   = 0x00FFFFFF;
+    U32 misc_statement_color        = 0x00222222;
+    
+    B32 last_was_function            = false;
+    U32 function_argument_count      = 0;
+    U32 remaining_function_arguments = 0;
+    
+    // IMPORTANT TODO(soimn): Child offset
+    for (Bucket_Array_Iterator it = Iterate(&ast->container);
+         it.current;
+         Advance(&it))
+    {
+        Node_Format format          = {};
+        Node_Format argument_format = {};
+        Node_Format scope_format    = {};
+        
+        AST_Node* node = (AST_Node*)it.current;
+        
+        format.first_child = (U32)it.current_index + 1;
+        
+        if (last_was_function)
+        {
+            if (remaining_function_arguments == 0)
+            {
+                // NOTE(soimn): Skip the scope node, since it has been 
+                //              inserted by the function
+                last_was_function = false;
+                continue;
+            }
+            
+            else
+            {
+                --remaining_function_arguments;
+            }
+        }
+        
+        if (node->node_type == ASTNode_Scope)
+        {
+            format.tag_color    = misc_statement_color;
+            format.text_index   = scope_string;
+            
+            for (AST_Node* scan = node->scope; scan; )
+            {
+                ++format.num_children;
+                scan = scan->next;
+            }
+        }
+        
+        else if (node->node_type == ASTNode_If)
+        {
+            format.tag_color    = conditional_statement_color;
+            format.text_index   = if_string;
+            format.num_children = 3;
+        }
+        
+        else if (node->node_type == ASTNode_While)
+        {
+            format.tag_color    = conditional_statement_color;
+            format.text_index   = while_string;
+            format.num_children = 2;
+        }
+        
+        else if (node->node_type == ASTNode_Defer)
+        {
+            format.tag_color    = misc_statement_color;
+            format.text_index   = defer_string;
+            format.num_children = 1;
+        }
+        
+        else if (node->node_type == ASTNode_Return)
+        {
+            format.tag_color    = misc_statement_color;
+            format.text_index   = return_string;
+            format.num_children = 1;
+        }
+        
+        else if (node->node_type == ASTNode_VarDecl)
+        {
+            format.tag_color     = declaration_statement_color;
+            format.text_index    = PushString(node->name);
+            format.num_children += (node->value != 0 ? 1 : 0);
+            format.num_children += (node->type  != 0 ? 1 : 0);
+        }
+        
+        else if (node->node_type == ASTNode_StructDecl || node->node_type == ASTNode_EnumDecl)
+        {
+            format.tag_color  = declaration_statement_color;
+            format.text_index = PushString(node->name);
+            
+            for (AST_Node* scan = node->members; scan; )
+            {
+                ++format.num_children;
+                scan = scan->next;
+            }
+        }
+        
+        else if (node->node_type == ASTNode_ConstDecl)
+        {
+            format.tag_color     = declaration_statement_color;
+            format.text_index    = PushString(node->name);
+            format.num_children += (node->value != 0 ? 1 : 0);
+        }
+        
+        else if (node->node_type == ASTNode_FuncDecl)
+        {
+            format.tag_color     = declaration_statement_color;
+            format.text_index    = PushString(node->name);
+            format.num_children  = 2;
+            
+            argument_format.tag_color   = arguments_statement_color;
+            argument_format.text_index  = arguments_string;
+            argument_format.first_child = format.first_child + 2;
+            
+            for (AST_Node* scan = node->arguments; scan; )
+            {
+                ++argument_format.num_children;
+                scan = scan->next;
+            }
+            
+            last_was_function       = true;
+            function_argument_count = argument_format.num_children;
+            remaining_function_arguments = function_argument_count;
+            
+            scope_format.tag_color    = misc_statement_color;
+            scope_format.text_index   = scope_string;
+            scope_format.first_child  = argument_format.first_child + argument_format.num_children;
+            
+            for (AST_Node* scan = node->body; scan; )
+            {
+                ++scope_format.num_children;
+                scan = scan->next;
+            }
+        }
+        
+        else if (node->node_type == ASTNode_Expression)
+        {
+            switch(node->expr_type)
+            {
+                case ASTExpr_NumericLiteral:
+                {
+                    format.tag_color   = literal_expression_color;
+                    format.is_small    = true;
+                    format.first_child = 0;
+                    
+                    Number num = node->numeric_literal;
+                    
+                    char buffer[20] = {};
+                    U32 length      = 0;
+                    
+                    if (num.is_integer)
+                    {
+                        length = snprintf(buffer, 0, "%llu", num.u64);
+                        snprintf(buffer, 20, "%llu", num.u64);
+                    }
+                    
+                    else if (num.is_single_precision)
+                    {
+                        length = snprintf(buffer, 0, "%g", num.f32);
+                        snprintf(buffer, 20, "%g", num.f32);
+                    }
+                    
+                    else
+                    {
+                        length = snprintf(buffer, 0, "%g", num.f64);
+                        snprintf(buffer, 20, "%g", num.f64);
+                    }
+                    
+                    String string = {};
+                    string.data = (U8*)buffer;
+                    string.size = length;
+                    
+                    format.text_index = PushString(string);
+                } break;
+                
+                case ASTExpr_Ternary:
+                {
+                    format.tag_color    = conditional_statement_color;
+                    format.text_index   = ternary_string;
+                    format.num_children = 3;
+                } break;
+                
+                case ASTExpr_StringLiteral:
+                {
+                    format.tag_color  = literal_expression_color;
+                    format.text_index = PushString(node->string_literal);
+                } break;
+                
+                case ASTExpr_Identifier:
+                {
+                    format.tag_color  = identifier_expression_color;
+                    format.text_index = PushString(node->identifier);
+                } break;
+                
+                case ASTExpr_FunctionCall:
+                {
+                    // TODO(soimn): Write proper function calls
+                    format.tag_color    = lambda_expression_color;
+                    format.text_index   = call_string;
+                } break;
+                
+                case ASTExpr_LambdaDecl:
+                {
+                    format.tag_color     = lambda_expression_color;
+                    format.text_index    = lambda_string;
+                    format.num_children  = 2;
+                    
+                    argument_format.tag_color   = arguments_statement_color;
+                    argument_format.text_index  = arguments_string;
+                    argument_format.first_child = format.first_child + 2;
+                    
+                    for (AST_Node* scan = node->arguments; scan; )
+                    {
+                        ++argument_format.num_children;
+                        scan = scan->next;
+                    }
+                    
+                    last_was_function       = true;
+                    function_argument_count = argument_format.num_children;
+                    remaining_function_arguments = function_argument_count;
+                    
+                    scope_format.tag_color    = misc_statement_color;
+                    scope_format.text_index   = scope_string;
+                    scope_format.first_child  = argument_format.first_child + argument_format.num_children;
+                    
+                    for (AST_Node* scan = node->body; scan; )
+                    {
+                        ++scope_format.num_children;
+                        scan = scan->next;
+                    }
+                } break;
+                
+                case ASTExpr_TypeCast:
+                {
+                    format.tag_color    = lambda_expression_color;
+                    format.text_index   = cast_string;
+                    format.num_children = 2;
+                    
+                    argument_format.tag_color = conditional_statement_color;
+                    argument_format.text_index = PushString(CONST_STRING("Type"));
+                };
+                
+                default:
+                {
+                    format.tag_color = operator_expression_color;
+                    format.num_children = (node->right ? 2 : 1);
+                    format.text_index = expression_strings[node->expr_type];
+                    format.is_small = true;
+                } break;
+            }
+        }
+        
+        format.text_index          += 1;
+        argument_format.text_index += 1;
+        scope_format.text_index    += 1;
+        
+        Write((U8*)&format.tag_color,    4);
+        Write((U8*)&format.text_index,   4);
+        Write((U8*)&format.first_child,  4);
+        Write((U8*)&format.num_children, 4);
+        Write((U8*)&format.is_small,     4);
+        
+        if (argument_format.tag_color != 0)
+        {
+            Write((U8*)&argument_format.tag_color,    4);
+            Write((U8*)&argument_format.text_index,   4);
+            Write((U8*)&argument_format.first_child,  4);
+            Write((U8*)&argument_format.num_children, 4);
+            Write((U8*)&argument_format.is_small,     4);
+        }
+        
+        if (scope_format.tag_color != 0)
+        {
+            Write((U8*)&scope_format.tag_color,    4);
+            Write((U8*)&scope_format.text_index,   4);
+            Write((U8*)&scope_format.first_child,  4);
+            Write((U8*)&scope_format.num_children, 4);
+            Write((U8*)&scope_format.is_small,     4);
+        }
+    }
+    
+    U32 string_count = (U32)ElementCount(&string_array);
+    
+    FILE* file = fopen("tree.bin", "wb");
+    
+    fwrite(&magic_value,  1, 4, file);
+    fwrite(&node_count,   1, 4, file);
+    fwrite(&string_count, 1, 4, file);
+    fwrite(scratch_node_memory, 1, scratch_node_memory_offset, file);
+    
+    for (Bucket_Array_Iterator it = Iterate(&string_array);
+         it.current;
+         Advance(&it))
+    {
+        fwrite(&((String_Format*)it.current)->size,   1, 4, file);
+        fwrite(&((String_Format*)it.current)->offset, 1, 4, file);
+    }
+    
+    for (Bucket_Array_Iterator it = Iterate(&string_storage);
+         it.current;
+         Advance(&it))
+    {
+        fwrite((char*)it.current, 1, 1, file);
+    }
+    
+    fclose(file);
+    
+#pragma warning(pop)
 }
 
 /*
