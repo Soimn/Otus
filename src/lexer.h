@@ -195,7 +195,12 @@ inline void
 Advance(Lexer* lexer, U32 amount)
 {
     lexer->input.data += amount;
-    lexer->input.size -= amount;
+    
+    if (amount >= lexer->input.size)
+    {
+        lexer->input.size = 0;
+    }
+    
     Refill(lexer);
 }
 

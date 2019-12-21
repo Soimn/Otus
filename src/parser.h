@@ -13,13 +13,204 @@ struct Parser_State
 
 // NOTE(soimn): types consists of zero or more '&', '*' and '[' ... ']' tokens and end in an identifier
 inline bool
-ParseType(Parser_State state, AST_Type** result)
+ParseType(Parser_State state, AST_Type* result, bool is_declaration = false)
 {
     bool encountered_errors = false;
     
-    NOT_IMPLEMENTED;
+    String string = {};
+    string.data = state.lexer->input.data;
     
-    return encountered_errors;
+    bool has_passed_first_token = false;
+    while (!encountered_errors)
+    {
+        Token token = PeekToken(state.lexer);
+        
+        if (token.type == Token_Identifier)
+        {
+            SkipToken(state.lexer);
+            break;
+        }
+        
+        else if (token.type == Token_Keyword)
+        {
+            if (token.keyword == Keyword_Proc)
+            {
+                SkipToken(state.lexer);
+                
+                if (MetRequiredToken(state.lexer, Token_OpenParen))
+                {
+                    while (!encountered_errors)
+                    {
+                        token = PeekToken(state.lexer);
+                        Token peek =  PeekToken(state.lexer, 2);
+                        
+                        if (token.type == Token_CloseParen)
+                        {
+                            SkipToken(state.lexer);
+                            break;
+                        }
+                        
+                        else if (token.type == Token_Identifier && peek.type == Token_Colon)
+                        {
+                            SkipToken(state.lexer);
+                            SkipToken(state.lexer);
+                            
+                            token = PeekToken(state.lexer);
+                            
+                            if (ParseType(state, 0))
+                            {
+                                token = PeekToken(state.lexer);
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Failed to parse type of argument in function type
+                                encountered_errors = true;
+                            }
+                            
+                        }
+                        
+                        else
+                        {
+                            if (ParseType(state, 0))
+                            {
+                                // Succeeded
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Invalid token in agruments of function type
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        if (!encountered_errors && token.type != Token_CloseParen)
+                        {
+                            if (MetRequiredToken(state.lexer, Token_Comma))
+                            {
+                                // Succeeded
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Missing separating comma between arguments in function type
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        token = PeekToken(state.lexer);
+                        
+                        if (token.type == Token_Arrow)
+                        {
+                            SkipToken(state.lexer);
+                            
+                            if (ParseType(state, 0))
+                            {
+                                token = PeekToken(state.lexer);
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Failed to parse return type in function type
+                                encountered_errors = true;
+                            }
+                        }
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Missing open paren before arguments in function type
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Invalid use of keyword in type
+                encountered_errors = true;
+            }
+            
+            break;
+        }
+        
+        else if (token.type == Token_Ampersand || token.type == Token_Asterisk)
+        {
+            SkipToken(state.lexer);
+        }
+        
+        else if (token.type == Token_OpenBracket)
+        {
+            SkipToken(state.lexer);
+            token = PeekToken(state.lexer);
+            
+            if (token.type == Token_CloseBracket)
+            {
+                SkipToken(state.lexer);
+            }
+            
+            else if (token.type == Token_Number || token.type == Token_Elipsis)
+            {
+                if (!has_passed_first_token && is_declaration)
+                {
+                    SkipToken(state.lexer);
+                    
+                    if (MetRequiredToken(state.lexer, Token_CloseBracket))
+                    {
+                        // Succeeded
+                    }
+                    
+                    else
+                    {
+                        //// Missing bracket after number / elipsis in array storage specifier of type
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    if (!is_declaration)
+                    {
+                        //// ERROR: Encountered array storage specifier in non-declaration type
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Encountered array storage specifier after first token in type
+                    }
+                    
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Encountered illegal token after open bracket in type
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Encountered illegal token in type
+            encountered_errors = true;
+        }
+        
+        has_passed_first_token = true;
+    }
+    
+    string.size = state.lexer->input.data - string.data;
+    
+    if (result != 0)
+    {
+        result->string = string;
+    }
+    
+    return !encountered_errors;
 }
 
 inline bool
@@ -41,9 +232,9 @@ ParseFunctionDeclaration(Parser_State state, AST_Node** result)
     
     if (token.type == Token_Identifier)
     {
-        (*result)->node_type = ASTNode_FuncDecl;
-        (*result)->expr_type = ASTExpr_Invalid;
-        (*result)->name      = token.string;
+        (*result)->node_type   = ASTNode_FuncDecl;
+        (*result)->expr_type   = ASTExpr_Invalid;
+        (*result)->name.string = token.string;
         
         SkipToken(state.lexer);
         
@@ -71,7 +262,7 @@ ParseFunctionDeclaration(Parser_State state, AST_Node** result)
             {
                 AST_Node** current_argument = &(*result)->arguments;
                 
-                do
+                while (!encountered_errors)
                 {
                     token = PeekToken(state.lexer);
                     
@@ -84,8 +275,8 @@ ParseFunctionDeclaration(Parser_State state, AST_Node** result)
                     else if (token.type == Token_Identifier)
                     {
                         *current_argument = PushNode(state.ast);
-                        (*current_argument)->node_type = ASTNode_VarDecl;
-                        (*current_argument)->name      = token.string;
+                        (*current_argument)->node_type   = ASTNode_VarDecl;
+                        (*current_argument)->name.string = token.string;
                         
                         SkipToken(state.lexer);
                         
@@ -155,7 +346,7 @@ ParseFunctionDeclaration(Parser_State state, AST_Node** result)
                         encountered_errors = true;
                     }
                     
-                } while (!encountered_errors);
+                }
                 
                 if (!encountered_errors)
                 {
@@ -289,7 +480,7 @@ ParsePostfixExpression(Parser_State state, AST_Node** result)
                     (*result)->right = PushNode(state.ast);
                     (*result)->right->node_type = ASTNode_Expression;
                     (*result)->right->expr_type = ASTExpr_Identifier;
-                    (*result)->right->identifier = token.string;
+                    (*result)->right->identifier.string = token.string;
                     
                     SkipToken(state.lexer);
                     
@@ -324,7 +515,7 @@ ParsePostfixExpression(Parser_State state, AST_Node** result)
             *result = PushNode(state.ast);
             (*result)->node_type = ASTNode_Expression;
             (*result)->expr_type = ASTExpr_Identifier;
-            (*result)->identifier = token.string;
+            (*result)->identifier.string = token.string;
             
             SkipToken(state.lexer);
             
@@ -1299,23 +1490,20 @@ ParseDeclaration(Parser_State state, AST_Node** result)
     
     if (token.type == Token_Identifier)
     {
-        *result = PushNode(state.ast);
-        (*result)->name = token.string;
+        Token peek = PeekToken(state.lexer, 2);
         
-        SkipToken(state.lexer);
-        token = PeekToken(state.lexer);
-        
-        if (token.type == Token_Colon)
+        if (peek.type == Token_Colon)
         {
-            (*result)->node_type = ASTNode_VarDecl;
+            *result = PushNode(state.ast);
+            (*result)->name.string = token.string;
+            (*result)->node_type   = ASTNode_VarDecl;
             
+            SkipToken(state.lexer);
             SkipToken(state.lexer);
             token = PeekToken(state.lexer);
             
             if (token.type != Token_Equals)
             {
-                SkipToken(state.lexer);
-                
                 if (ParseType(state, &(*result)->type))
                 {
                     token = PeekToken(state.lexer);
@@ -1351,17 +1539,21 @@ ParseDeclaration(Parser_State state, AST_Node** result)
             }
         }
         
-        else if (token.type == Token_DoubleColon)
+        else if (peek.type == Token_DoubleColon)
         {
-            SkipToken(state.lexer);
-            token = PeekToken(state.lexer);
+            peek = PeekToken(state.lexer, 3);
             
-            if (token.type == Token_Keyword)
+            if (peek.type == Token_Keyword)
             {
-                if (token.keyword == Keyword_Struct)
+                if (peek.keyword == Keyword_Struct)
                 {
+                    *result = PushNode(state.ast);
+                    (*result)->name.string = token.string;
+                    (*result)->node_type   = ASTNode_StructDecl;
+                    
                     SkipToken(state.lexer);
-                    (*result)->node_type = ASTNode_StructDecl;
+                    SkipToken(state.lexer);
+                    SkipToken(state.lexer);
                     
                     if (MetRequiredToken(state.lexer, Token_OpenBrace))
                     {
@@ -1380,8 +1572,8 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                             else if (token.type == Token_Identifier)
                             {
                                 *current_member = PushNode(state.ast);
-                                (*current_member)->node_type = ASTNode_VarDecl;
-                                (*current_member)->name      = token.string;
+                                (*current_member)->node_type   = ASTNode_VarDecl;
+                                (*current_member)->name.string = token.string;
                                 
                                 SkipToken(state.lexer);
                                 
@@ -1460,10 +1652,15 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                     }
                 }
                 
-                else if (token.keyword == Keyword_Enum)
+                else if (peek.keyword == Keyword_Enum)
                 {
+                    *result = PushNode(state.ast);
+                    (*result)->name.string = token.string;
+                    (*result)->node_type   = ASTNode_EnumDecl;
+                    
                     SkipToken(state.lexer);
-                    (*result)->node_type = ASTNode_EnumDecl;
+                    SkipToken(state.lexer);
+                    SkipToken(state.lexer);
                     
                     token = PeekToken(state.lexer);
                     
@@ -1498,8 +1695,8 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                             else if (token.type == Token_Identifier)
                             {
                                 *current_member = PushNode(state.ast);
-                                (*current_member)->node_type = ASTNode_VarDecl;
-                                (*current_member)->name = token.string;
+                                (*current_member)->node_type   = ASTNode_VarDecl;
+                                (*current_member)->name.string = token.string;
                                 
                                 SkipToken(state.lexer);
                                 token = PeekToken(state.lexer);
@@ -1553,7 +1750,7 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                     }
                 }
                 
-                else if (token.keyword == Keyword_Proc)
+                else if (peek.keyword == Keyword_Proc)
                 {
                     if (ParseFunctionDeclaration(state, result))
                     {
@@ -1576,7 +1773,12 @@ ParseDeclaration(Parser_State state, AST_Node** result)
             
             else
             {
-                (*result)->node_type = ASTNode_ConstDecl;
+                *result = PushNode(state.ast);
+                (*result)->name.string = token.string;
+                (*result)->node_type   = ASTNode_ConstDecl;
+                
+                SkipToken(state.lexer);
+                SkipToken(state.lexer);
                 
                 if (ParseAssignmentExpression(state, &(*result)->value))
                 {
@@ -1980,7 +2182,6 @@ ParseFile(String input)
     if (!encountered_errors)
     {
         ast.is_valid = true;
-        FlattenAST(&ast);
     }
     
     return ast;
