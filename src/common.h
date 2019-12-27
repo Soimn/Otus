@@ -95,6 +95,9 @@ struct File_Loc
 
 #define ARRAY_COUNT(X) (sizeof(X) / sizeof((X)[0]))
 
+#define MAX(X, Y) ((X) > (Y) ? (X) : (Y))
+#define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
+
 #ifdef GREMLIN_DEBUG
 #define HARD_ASSERT(EX) if (EX); else *(volatile int*)0 = 0
 #define NOT_IMPLEMENTED HARD_ASSERT(!"NOT IMPLEMENTED")

@@ -319,7 +319,7 @@ GetToken(Lexer* lexer)
             if (lexer->peek[0] == '.')
             {
                 token.type = Token_Elipsis;
-                Advance(lexer, 2);
+                Advance(lexer, 1);
             }
             
             else

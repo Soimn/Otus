@@ -89,6 +89,9 @@ struct Bucket_Array
 inline void*
 PushElement(Bucket_Array* array)
 {
+    HARD_ASSERT(array->element_size != 0);
+    HARD_ASSERT(array->bucket_size  != 0);
+    
     void* result = 0;
     
     if (!array->bucket_count || array->current_bucket_offset == sizeof(U64) + array->bucket_size * array->element_size)
@@ -122,6 +125,9 @@ PushElement(Bucket_Array* array)
 inline void
 ClearArray(Bucket_Array* array)
 {
+    HARD_ASSERT(array->element_size != 0);
+    HARD_ASSERT(array->bucket_size  != 0);
+    
     void** bucket = array->bucket_list;
     
     while (bucket != 0)
@@ -137,6 +143,9 @@ ClearArray(Bucket_Array* array)
 inline void*
 ElementAt(Bucket_Array* array, UMM index)
 {
+    HARD_ASSERT(array->element_size != 0);
+    HARD_ASSERT(array->bucket_size  != 0);
+    
     void* result = 0;
     
     U32 bucket_index = (U32)(index / array->bucket_size);
@@ -168,6 +177,9 @@ ElementAt(Bucket_Array* array, UMM index)
 inline UMM
 ElementCount(Bucket_Array* array)
 {
+    HARD_ASSERT(array->element_size != 0);
+    HARD_ASSERT(array->bucket_size  != 0);
+    
     UMM count = 0;
     
     if (array->bucket_count)
@@ -193,6 +205,9 @@ struct Bucket_Array_Iterator
 inline Bucket_Array_Iterator
 Iterate(Bucket_Array* array)
 {
+    HARD_ASSERT(array->element_size != 0);
+    HARD_ASSERT(array->bucket_size  != 0);
+    
     Bucket_Array_Iterator iterator = {};
     
     if (array->bucket_count)
@@ -213,8 +228,6 @@ Iterate(Bucket_Array* array)
 inline void
 Advance(Bucket_Array_Iterator* iterator)
 {
-    HARD_ASSERT(iterator->current != 0);
-    
     iterator->current = 0;
     
     ++iterator->current_index;
@@ -232,5 +245,166 @@ Advance(Bucket_Array_Iterator* iterator)
         }
         
         iterator->current = (U8*)iterator->current_bucket + offset;
+    }
+}
+
+struct Dynamic_Array
+{
+    void* memory;
+    UMM size;
+    UMM capacity;
+    U32 element_size;
+    F32 growth_factor;
+};
+
+#define DYNAMIC_ARRAY(type, growth_factor) {0, 0, 0, (U32)RoundSize(sizeof(type), alignof(type)), growth_factor}
+
+inline void*
+PushElement(Dynamic_Array* array, UMM count = 1)
+{
+    HARD_ASSERT(array->element_size != 0 && count > 0);
+    
+    if (array->size + count >= array->capacity)
+    {
+        if (array->memory)
+        {
+            UMM new_capacity = (UMM)(array->capacity * array->growth_factor + 0.5f) + 1;
+            
+            new_capacity = MAX(new_capacity, array->size + count);
+            
+            void* new_memory = AllocateMemory(new_capacity * array->element_size);
+            
+            Copy(array->memory, new_memory, array->size * array->element_size);
+            FreeMemory(array->memory);
+            
+            array->memory   = new_memory;
+            array->capacity = new_capacity;
+        }
+        
+        else
+        {
+            array->memory   = AllocateMemory(array->element_size);
+            array->capacity = 1;
+        }
+    }
+    
+    void* result = (U8*)array->memory + array->element_size * array->size;
+    array->size += count;
+    
+    return result;
+}
+
+inline void
+Reserve(Dynamic_Array* array, UMM size)
+{
+    HARD_ASSERT(array->element_size != 0);
+    
+    if (size)
+    {
+        if (array->memory)
+        {
+            void* new_memory = AllocateMemory(size * array->element_size);
+            
+            Copy(array->memory, new_memory, array->size * array->element_size);
+            FreeMemory(array->memory);
+            
+            array->memory   = new_memory;
+            array->capacity = size;
+        }
+        
+        else
+        {
+            array->memory   = AllocateMemory(size * array->element_size);
+            array->capacity = size;
+        }
+    }
+}
+
+inline void
+ClearArray(Dynamic_Array* array)
+{
+    HARD_ASSERT(array->element_size != 0);
+    
+    FreeMemory(array->memory);
+    array->size     = 0;
+    array->capacity = 0;
+}
+
+inline void
+ResetArray(Dynamic_Array* array, IMM new_capacity = -1)
+{
+    HARD_ASSERT(array->element_size != 0);
+    
+    array->size = 0;
+    
+    if (new_capacity != -1)
+    {
+        HARD_ASSERT(new_capacity >= 0);
+        
+        ClearArray(array);
+        Reserve(array, new_capacity);
+    }
+}
+
+inline void*
+ElementAt(Dynamic_Array* array, UMM index)
+{
+    HARD_ASSERT(array->element_size != 0);
+    
+    void* result = 0;
+    
+    if (index < array->size)
+    {
+        result = (U8*)array->memory + index * array->element_size;
+    }
+    
+    return result;
+}
+
+inline UMM
+ElementCount(Dynamic_Array* array)
+{
+    HARD_ASSERT(array->element_size != 0);
+    return array->size;
+}
+
+struct Dynamic_Array_Iterator
+{
+    void* memory;
+    UMM size;
+    UMM current_index;
+    U32 element_size;
+    
+    void* current;
+};
+
+inline Dynamic_Array_Iterator
+Iterate(Dynamic_Array* array)
+{
+    HARD_ASSERT(array->element_size != 0);
+    
+    Dynamic_Array_Iterator iterator = {};
+    
+    iterator.memory        = array->memory;
+    iterator.size          = array->size;
+    iterator.current_index = 0;
+    iterator.element_size  = array->element_size;
+    
+    iterator.current = iterator.memory;
+    
+    return iterator;
+}
+
+inline void
+Advance(Dynamic_Array_Iterator* iterator)
+{
+    HARD_ASSERT(iterator->element_size != 0);
+    
+    ++iterator->current_index;
+    iterator->current = (U8*)iterator->current + iterator->element_size;
+    
+    if (iterator->current_index >= iterator->size)
+    {
+        iterator->current = 0;
     }
 }

@@ -104,7 +104,11 @@ union AST_String
     String string;
 };
 
-typedef AST_String AST_Type;
+union AST_Type
+{
+    U64 id;
+    String string;
+};
 
 typedef U64 AST_Scope_ID;
 
@@ -204,8 +208,6 @@ struct AST
 {
     AST_Node* root;
     Bucket_Array container;
-    bool is_refined;
-    bool is_valid;
 };
 
 inline AST_Node*
@@ -223,6 +225,134 @@ GetNewScopeID()
 {
     static AST_Scope_ID current_id = AST_FIRST_VALID_NONSPECIAL_SCOPE_ID;
     return current_id++;
+}
+
+inline void
+PrintASTNodeAndChildren(AST_Node* node, U32 indentation_level = 0)
+{
+    for (U32 i = 0; i < indentation_level; ++i)
+    {
+        PrintChar('\t');
+    }
+    
+    if (node->node_type != ASTNode_Expression)
+    {
+        String string_to_print = {};
+        
+        switch (node->node_type)
+        {
+            case ASTNode_Invalid:    string_to_print = CONST_STRING("ASTNode_Invalid");    break;
+            case ASTNode_Scope:      string_to_print = CONST_STRING("ASTNode_Scope");      break;
+            case ASTNode_If:         string_to_print = CONST_STRING("ASTNode_If");         break;
+            case ASTNode_While:      string_to_print = CONST_STRING("ASTNode_While");      break;
+            case ASTNode_Defer:      string_to_print = CONST_STRING("ASTNode_Defer");      break;
+            case ASTNode_Return:     string_to_print = CONST_STRING("ASTNode_Return");     break;
+            case ASTNode_VarDecl:    string_to_print = CONST_STRING("ASTNode_VarDecl");    break;
+            case ASTNode_StructDecl: string_to_print = CONST_STRING("ASTNode_StructDecl"); break;
+            case ASTNode_EnumDecl:   string_to_print = CONST_STRING("ASTNode_EnumDecl");   break;
+            case ASTNode_ConstDecl:  string_to_print = CONST_STRING("ASTNode_ConstDecl");  break;
+            case ASTNode_FuncDecl:   string_to_print = CONST_STRING("ASTNode_FuncDecl");   break;
+            INVALID_DEFAULT_CASE;
+        }
+        
+        
+        Print("%S", string_to_print);
+    }
+    
+    else
+    {
+        String string_to_print = {};
+        
+        switch (node->expr_type)
+        {
+            case ASTExpr_Invalid:         string_to_print = CONST_STRING("ASTExpr_Invalid");         break;
+            case ASTExpr_UnaryPlus:       string_to_print = CONST_STRING("ASTExpr_UnaryPlus");       break;
+            case ASTExpr_UnaryMinus:      string_to_print = CONST_STRING("ASTExpr_UnaryMinus");      break;
+            case ASTExpr_PreIncrement:    string_to_print = CONST_STRING("ASTExpr_PreIncrement");    break;
+            case ASTExpr_PreDecrement:    string_to_print = CONST_STRING("ASTExpr_PreDecrement");    break;
+            case ASTExpr_PostIncrement:   string_to_print = CONST_STRING("ASTExpr_PostIncrement");   break;
+            case ASTExpr_PostDecrement:   string_to_print = CONST_STRING("ASTExpr_PostDecrement");   break;
+            case ASTExpr_BitwiseNot:      string_to_print = CONST_STRING("ASTExpr_BitwiseNot");      break;
+            case ASTExpr_LogicalNot:      string_to_print = CONST_STRING("ASTExpr_LogicalNot");      break;
+            case ASTExpr_Reference:       string_to_print = CONST_STRING("ASTExpr_Reference");       break;
+            case ASTExpr_Dereference:     string_to_print = CONST_STRING("ASTExpr_Dereference");     break;
+            case ASTExpr_Addition:        string_to_print = CONST_STRING("ASTExpr_Addition");        break;
+            case ASTExpr_Subtraction:     string_to_print = CONST_STRING("ASTExpr_Subtraction");     break;
+            case ASTExpr_Multiplication:  string_to_print = CONST_STRING("ASTExpr_Multiplication");  break;
+            case ASTExpr_Division:        string_to_print = CONST_STRING("ASTExpr_Division");        break;
+            case ASTExpr_Modulus:         string_to_print = CONST_STRING("ASTExpr_Modulus");         break;
+            case ASTExpr_BitwiseAnd:      string_to_print = CONST_STRING("ASTExpr_BitwiseAnd");      break;
+            case ASTExpr_BitwiseOr:       string_to_print = CONST_STRING("ASTExpr_BitwiseOr");       break;
+            case ASTExpr_BitwiseXOR:      string_to_print = CONST_STRING("ASTExpr_BitwiseXOR");      break;
+            case ASTExpr_LogicalAnd:      string_to_print = CONST_STRING("ASTExpr_LogicalAnd");      break;
+            case ASTExpr_LogicalOr:       string_to_print = CONST_STRING("ASTExpr_LogicalOr");       break;
+            case ASTExpr_AddEquals:       string_to_print = CONST_STRING("ASTExpr_AddEquals");       break;
+            case ASTExpr_SubEquals:       string_to_print = CONST_STRING("ASTExpr_SubEquals");       break;
+            case ASTExpr_MultEquals:      string_to_print = CONST_STRING("ASTExpr_MultEquals");      break;
+            case ASTExpr_DivEquals:       string_to_print = CONST_STRING("ASTExpr_DivEquals");       break;
+            case ASTExpr_ModEquals:       string_to_print = CONST_STRING("ASTExpr_ModEquals");       break;
+            case ASTExpr_BitwiseOrEquals: string_to_print = CONST_STRING("ASTExpr_BitwiseOrEquals"); break;
+            case ASTExpr_Equals:          string_to_print = CONST_STRING("ASTExpr_Equals");          break;
+            case ASTExpr_IsGreaterThan:   string_to_print = CONST_STRING("ASTExpr_IsGreaterThan");   break;
+            case ASTExpr_IsEqual:         string_to_print = CONST_STRING("ASTExpr_IsEqual");         break;
+            case ASTExpr_IsNotEqual:      string_to_print = CONST_STRING("ASTExpr_IsNotEqual");      break;
+            case ASTExpr_IsLessThan:      string_to_print = CONST_STRING("ASTExpr_IsLessThan");      break;
+            case ASTExpr_Subscript:       string_to_print = CONST_STRING("ASTExpr_Subscript");       break;
+            case ASTExpr_Member:          string_to_print = CONST_STRING("ASTExpr_Member");          break;
+            case ASTExpr_Ternary:         string_to_print = CONST_STRING("ASTExpr_Ternary");         break;
+            case ASTExpr_NumericLiteral:  string_to_print = CONST_STRING("ASTExpr_NumericLiteral");  break;
+            case ASTExpr_Identifier:      string_to_print = CONST_STRING("ASTExpr_Identifier");      break;
+            case ASTExpr_StringLiteral:   string_to_print = CONST_STRING("ASTExpr_StringLiteral");   break;
+            case ASTExpr_LambdaDecl:      string_to_print = CONST_STRING("ASTExpr_LambdaDecl");      break;
+            case ASTExpr_FunctionCall:    string_to_print = CONST_STRING("ASTExpr_FunctionCall");    break;
+            case ASTExpr_TypeCast:        string_to_print = CONST_STRING("ASTExpr_TypeCast");        break;
+            
+            case ASTExpr_BitwiseAndEquals:  string_to_print = CONST_STRING("ASTExpr_BitwiseAndEquals");  break;
+            case ASTExpr_BitwiseXOREquals:  string_to_print = CONST_STRING("ASTExpr_BitwiseXOREquals");  break;
+            case ASTExpr_BitwiseLeftShift:  string_to_print = CONST_STRING("ASTExpr_BitwiseLeftShift");  break;
+            case ASTExpr_BitwiseRightShift: string_to_print = CONST_STRING("ASTExpr_BitwiseRightShift"); break;
+            case ASTExpr_IsLessThanOrEqual: string_to_print = CONST_STRING("ASTExpr_IsLessThanOrEqual"); break;
+            
+            case ASTExpr_IsGreaterThanOrEqual:
+            string_to_print = CONST_STRING("ASTExpr_IsGreaterThanOrEqual");
+            break;
+            
+            case ASTExpr_BitwiseLeftShiftEquals:
+            string_to_print = CONST_STRING("ASTExpr_BitwiseLeftShiftEquals");
+            break;
+            
+            case ASTExpr_BitwiseRightShiftEquals:
+            string_to_print = CONST_STRING("ASTExpr_BitwiseRightShiftEquals"); 
+            break;
+            
+        }
+        
+        Print("%S", string_to_print);
+    }
+    
+    PrintChar('\n');
+    
+    if (node->node_type == ASTNode_Scope)
+    {
+        AST_Node* scan = node->scope;
+        
+        while (scan)
+        {
+            PrintASTNodeAndChildren(scan, indentation_level + 1);
+            scan = scan->next;
+        }
+    }
+    
+    else
+    {
+        for (U32 i = 0; i < ARRAY_COUNT(node->children); ++i)
+        {
+            if (node->children[i] != 0)
+            {
+                PrintASTNodeAndChildren(node->children[i], indentation_level + 1);
+            }
+        }
+    }
 }
 
 /*

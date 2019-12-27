@@ -1,0 +1,2 @@
+* The parser accepts assignment expressions on all levels. Err on all assignments that are 
+not on the statement level

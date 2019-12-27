@@ -4,6 +4,7 @@
 #include "string.h"
 #include "lexer.h"
 #include "ast.h"
+#include "module.h"
 
 struct Parser_State
 {
@@ -11,7 +12,8 @@ struct Parser_State
     Lexer* lexer;
 };
 
-// NOTE(soimn): types consists of zero or more '&', '*' and '[' ... ']' tokens and end in an identifier
+// NOTE(soimn): types consists of an optional sequence of "[..]" or '[' NUM ']' followed by zero or more '&', '*' 
+//              and "[]" tokens and end in an identifier
 inline bool
 ParseType(Parser_State state, AST_Type* result, bool is_declaration = false)
 {
@@ -20,7 +22,7 @@ ParseType(Parser_State state, AST_Type* result, bool is_declaration = false)
     String string = {};
     string.data = state.lexer->input.data;
     
-    bool has_passed_first_token = false;
+    bool has_passed_storage_declaration = false;
     while (!encountered_errors)
     {
         Token token = PeekToken(state.lexer);
@@ -146,51 +148,66 @@ ParseType(Parser_State state, AST_Type* result, bool is_declaration = false)
         else if (token.type == Token_OpenBracket)
         {
             SkipToken(state.lexer);
-            token = PeekToken(state.lexer);
             
-            if (token.type == Token_CloseBracket)
+            for (;;)
             {
-                SkipToken(state.lexer);
-            }
-            
-            else if (token.type == Token_Number || token.type == Token_Elipsis)
-            {
-                if (!has_passed_first_token && is_declaration)
+                token = PeekToken(state.lexer);
+                
+                if (token.type == Token_CloseBracket)
                 {
                     SkipToken(state.lexer);
-                    
-                    if (MetRequiredToken(state.lexer, Token_CloseBracket))
+                }
+                
+                else if (token.type == Token_Number || token.type == Token_Elipsis)
+                {
+                    if (!has_passed_storage_declaration && is_declaration)
                     {
-                        // Succeeded
+                        SkipToken(state.lexer);
+                        
+                        if (MetRequiredToken(state.lexer, Token_CloseBracket))
+                        {
+                            if (MetRequiredToken(state.lexer, Token_OpenBracket))
+                            {
+                                continue;
+                            }
+                            
+                            else
+                            {
+                                // Succeeded
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// Missing bracket after number / elipsis in array storage specifier of type
+                            encountered_errors = true;
+                        }
                     }
                     
                     else
                     {
-                        //// Missing bracket after number / elipsis in array storage specifier of type
+                        if (!is_declaration)
+                        {
+                            //// ERROR: Encountered array storage specifier in non-declaration type
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Encountered array storage specifier after first token in type
+                        }
+                        
                         encountered_errors = true;
                     }
                 }
                 
                 else
                 {
-                    if (!is_declaration)
-                    {
-                        //// ERROR: Encountered array storage specifier in non-declaration type
-                    }
-                    
-                    else
-                    {
-                        //// ERROR: Encountered array storage specifier after first token in type
-                    }
-                    
+                    //// ERROR: Encountered illegal token after open bracket in type
                     encountered_errors = true;
                 }
-            }
-            
-            else
-            {
-                //// ERROR: Encountered illegal token after open bracket in type
-                encountered_errors = true;
+                
+                has_passed_storage_declaration = true;
+                break;
             }
         }
         
@@ -200,7 +217,7 @@ ParseType(Parser_State state, AST_Type* result, bool is_declaration = false)
             encountered_errors = true;
         }
         
-        has_passed_first_token = true;
+        has_passed_storage_declaration = true;
     }
     
     string.size = state.lexer->input.data - string.data;
@@ -589,7 +606,6 @@ ParsePostfixExpression(Parser_State state, AST_Node** result)
                 
                 SkipToken(state.lexer);
                 
-                // TODO(soimn): Should this be ParseConditionalExpression instead?
                 if (ParseAssignmentExpression(state, &(*result)->right))
                 {
                     if (MetRequiredToken(state.lexer, Token_CloseBracket))
@@ -718,7 +734,7 @@ ParsePostfixExpression(Parser_State state, AST_Node** result)
                 
                 AST_Node** current_argument = &(*result)->call_arguments;
                 
-                do
+                while (!encountered_errors)
                 {
                     token = PeekToken(state.lexer);
                     
@@ -730,7 +746,6 @@ ParsePostfixExpression(Parser_State state, AST_Node** result)
                     
                     else
                     {
-                        // TODO(soimn): Should this be ParseConditionalExpression instead?
                         if (ParseAssignmentExpression(state, current_argument))
                         {
                             current_argument = &(*current_argument)->next;
@@ -743,7 +758,7 @@ ParsePostfixExpression(Parser_State state, AST_Node** result)
                         }
                     }
                     
-                } while (!encountered_errors);
+                }
                 
                 if (!encountered_errors)
                 {
@@ -823,8 +838,8 @@ ParseUnaryExpression(Parser_State state, AST_Node** result)
     {
         case Token_Increment:  type = ASTExpr_PreIncrement; break;
         case Token_Decrement:  type = ASTExpr_PreDecrement; break;
-        case Token_Ampersand:  type = ASTExpr_Reference;    break;
-        case Token_Asterisk:   type = ASTExpr_Dereference;  break;
+        case Token_Ampersand:  type = ASTExpr_Dereference;  break;
+        case Token_Asterisk:   type = ASTExpr_Reference;    break;
         case Token_Plus:       type = ASTExpr_UnaryPlus;    break;
         case Token_Minus:      type = ASTExpr_UnaryMinus;   break;
         case Token_Not:        type = ASTExpr_BitwiseNot;   break;
@@ -1504,7 +1519,7 @@ ParseDeclaration(Parser_State state, AST_Node** result)
             
             if (token.type != Token_Equals)
             {
-                if (ParseType(state, &(*result)->type))
+                if (ParseType(state, &(*result)->type, true))
                 {
                     token = PeekToken(state.lexer);
                 }
@@ -1559,7 +1574,7 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                     {
                         AST_Node** current_member = &(*result)->members;
                         
-                        do
+                        while (!encountered_errors)
                         {
                             token = PeekToken(state.lexer);
                             
@@ -1642,7 +1657,7 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                                 encountered_errors = true;
                             }
                             
-                        } while (!encountered_errors);
+                        }
                     }
                     
                     else
@@ -1682,7 +1697,7 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                     
                     if (MetRequiredToken(state.lexer, Token_OpenBrace))
                     {
-                        do
+                        while (!encountered_errors)
                         {
                             token = PeekToken(state.lexer);
                             
@@ -1739,7 +1754,7 @@ ParseDeclaration(Parser_State state, AST_Node** result)
                                 encountered_errors = true;
                             }
                             
-                        } while (!encountered_errors);
+                        }
                         
                     }
                     
@@ -1944,7 +1959,7 @@ ParseStatement(Parser_State state, AST_Node** result)
             
             if (MetRequiredToken(state.lexer, Token_OpenParen))
             {
-                if (ParseConditionalExpression(state, &(*result)->condition))
+                if (ParseAssignmentExpression(state, &(*result)->condition))
                 {
                     if (MetRequiredToken(state.lexer, Token_CloseParen))
                     {
@@ -2044,7 +2059,7 @@ ParseStatement(Parser_State state, AST_Node** result)
             *result = PushNode(state.ast);
             (*result)->node_type = ASTNode_Return;
             
-            if (ParseConditionalExpression(state, &(*result)->value))
+            if (ParseAssignmentExpression(state, &(*result)->value))
             {
                 if (MetRequiredToken(state.lexer, Token_Semicolon))
                 {
@@ -2131,28 +2146,27 @@ ParseStatement(Parser_State state, AST_Node** result)
     return !encountered_errors;
 }
 
-inline AST
-ParseFile(String input)
+inline bool
+ParseFile(Module* module, File* file, String file_contents)
 {
-    AST ast     = {};
-    Lexer lexer = LexString(input);
+    Lexer lexer = LexString(file_contents);
     
-    ast.container = BUCKET_ARRAY(AST_Node, AST_NODE_BUCKET_SIZE);
+    file->ast.container = BUCKET_ARRAY(AST_Node, AST_NODE_BUCKET_SIZE);
     
     Parser_State state = {};
-    state.ast   = &ast;
+    state.ast   = &file->ast;
     state.lexer = &lexer;
     
-    ast.root = PushNode(&ast);
-    ast.root->node_type = ASTNode_Scope;
-    ast.root->scope_id  = AST_GLOBAL_SCOPE_ID;
+    state.ast->root = PushNode(state.ast);
+    state.ast->root->node_type = ASTNode_Scope;
+    state.ast->root->scope_id  = GetNewScopeID();
     
     bool encountered_errors = false;
     
     Token token = PeekToken(state.lexer, 1);
     Token peek  = PeekToken(state.lexer, 2);
     
-    AST_Node** current_statement = &ast.root->scope;
+    AST_Node** current_statement = &state.ast->root->scope;
     
     while (!encountered_errors && token.type != Token_EndOfStream)
     {
@@ -2170,6 +2184,58 @@ ParseFile(String input)
             }
         }
         
+        else if (token.type == Token_Hash)
+        {
+            if (peek.type == Token_Identifier)
+            {
+                if (StringCompare(peek.string, CONST_STRING("load")))
+                {
+                    SkipToken(state.lexer);
+                    SkipToken(state.lexer);
+                    
+                    token = PeekToken(state.lexer);
+                    
+                    if (token.type == Token_String)
+                    {
+                        String file_path = token.string;
+                        
+                        SkipToken(state.lexer);
+                        
+                        File_ID* loaded_file = (File_ID*)PushElement(&file->loaded_files);
+                        
+                        if (LoadFileForCompilation(module, file_path, loaded_file))
+                        {
+                            // Successfully loaded file for compilation
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Failed to load file referenced in *file*
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing path after load directive
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Unknown compiler directive
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Encountered invalid token in global scope
+                encountered_errors = true;
+            }
+        }
+        
         else
         {
             //// ERROR: Encountered invalid token in global scope
@@ -2179,10 +2245,5 @@ ParseFile(String input)
         token = PeekToken(state.lexer);
     }
     
-    if (!encountered_errors)
-    {
-        ast.is_valid = true;
-    }
-    
-    return ast;
+    return !encountered_errors;
 }
