@@ -2,10 +2,6 @@
 
 #include "common.h"
 
-#define AST_NODE_BUCKET_SIZE 64
-#define AST_GLOBAL_SCOPE_ID 0
-#define AST_FIRST_VALID_NONSPECIAL_SCOPE_ID 1
-
 enum AST_NODE_TYPE
 {
     ASTNode_Invalid,
@@ -98,89 +94,77 @@ enum AST_EXPRESSION_TYPE
     AST_EXPRESSION_TYPE_COUNT
 };
 
-union AST_String
-{
-    U64 id;
-    String string;
-};
-
-union AST_Type
-{
-    U64 id;
-    String string;
-};
-
 typedef U64 AST_Scope_ID;
 
-struct AST_Node
+struct Parser_AST_Node
 {
     Enum32(AST_NODE_TYPE) node_type;
     Enum32(AST_EXPRESSION_TYPE) expr_type;
     
-    AST_Node* next;
-    AST_String name;
+    Parser_AST_Node* next;
+    String name;
     
     union
     {
-        AST_Node* children[3];
+        Parser_AST_Node* children[3];
         
         /// Binary operators
         struct
         {
-            AST_Node* left;
-            AST_Node* right;
+            Parser_AST_Node* left;
+            Parser_AST_Node* right;
         };
         
         /// Unary operators
-        AST_Node* operand;
+        Parser_AST_Node* operand;
         
         /// Function and lambda declaration
         struct
         {
-            AST_Node* arguments;
-            AST_Node* body;
+            Parser_AST_Node* arguments;
+            Parser_AST_Node* body;
         };
         
         /// Struct and enums
         struct
         {
-            AST_Node* members;
+            Parser_AST_Node* members;
         };
         
         /// Function call
         struct
         {
-            AST_Node* call_arguments;
-            AST_Node* call_function;
+            Parser_AST_Node* call_arguments;
+            Parser_AST_Node* call_function;
         };
         
         /// Variable and constant declaration, return statement, enum member, struct member, function argument
         struct
         {
-            AST_Node* value;
+            Parser_AST_Node* value;
         };
         
         /// If, ternary and while
         struct
         {
-            AST_Node* condition;
-            AST_Node* true_body;
-            AST_Node* false_body;
+            Parser_AST_Node* condition;
+            Parser_AST_Node* true_body;
+            Parser_AST_Node* false_body;
         };
         
         /// Cast
         struct
         {
-            AST_Node* to_cast;
+            Parser_AST_Node* to_cast;
         };
         
         /// Defer
         struct
         {
-            AST_Node* statement;
+            Parser_AST_Node* statement;
         };
         
-        AST_Node* scope;
+        Parser_AST_Node* scope;
     };
     
     union
@@ -188,14 +172,14 @@ struct AST_Node
         /// Function and lambda declaration
         struct
         {
-            AST_Type return_type;
+            String return_type_string;
             // modifiers
         };
         
         /// Enums, cast and variable declaration
-        AST_Type type;
+        String type_string;
         
-        AST_String identifier;
+        String identifier;
         String string_literal;
         Number numeric_literal;
         
@@ -204,16 +188,16 @@ struct AST_Node
     };
 };
 
-struct AST
+struct Parser_AST
 {
-    AST_Node* root;
-    Bucket_Array container;
+    Parser_AST_Node* root;
+    Bucket_Array container = BUCKET_ARRAY(Parser_AST_Node, 256);
 };
 
-inline AST_Node*
-PushNode(AST* ast)
+inline Parser_AST_Node*
+PushNode(Parser_AST* ast)
 {
-    AST_Node* node = (AST_Node*)PushElement(&ast->container);
+    Parser_AST_Node* node = (Parser_AST_Node*)PushElement(&ast->container);
     
     ZeroStruct(node);
     
@@ -223,12 +207,12 @@ PushNode(AST* ast)
 inline AST_Scope_ID
 GetNewScopeID()
 {
-    static AST_Scope_ID current_id = AST_FIRST_VALID_NONSPECIAL_SCOPE_ID;
+    static AST_Scope_ID current_id = 0;
     return current_id++;
 }
 
 inline void
-PrintASTNodeAndChildren(AST_Node* node, U32 indentation_level = 0)
+PrintASTNodeAndChildren(Parser_AST_Node* node, U32 indentation_level = 0)
 {
     for (U32 i = 0; i < indentation_level; ++i)
     {
@@ -334,7 +318,7 @@ PrintASTNodeAndChildren(AST_Node* node, U32 indentation_level = 0)
     
     if (node->node_type == ASTNode_Scope)
     {
-        AST_Node* scan = node->scope;
+        Parser_AST_Node* scan = node->scope;
         
         while (scan)
         {
@@ -353,6 +337,527 @@ PrintASTNodeAndChildren(AST_Node* node, U32 indentation_level = 0)
             }
         }
     }
+}
+
+inline void
+PrintASTExpressionAsSourceCode(Parser_AST_Node* expression)
+{
+    void PrintASTNodeAndChildrenAsSourceCode(Parser_AST_Node* node, bool is_root = false, String separation_string = CONST_STRING("\n"), U32 indentation_level = 0, bool should_indent = true);
+    
+    switch (expression->expr_type)
+    {
+        case ASTExpr_UnaryPlus: PrintChar('+'); break;
+        case ASTExpr_UnaryMinus: PrintChar('-'); break;
+        case ASTExpr_PreIncrement: Print("++"); break;
+        case ASTExpr_PreDecrement: Print("--"); break;
+        case ASTExpr_BitwiseNot: PrintChar('~'); break;
+        case ASTExpr_LogicalNot: PrintChar('!'); break;
+        case ASTExpr_Reference: PrintChar('&'); break;
+        case ASTExpr_Dereference: PrintChar('*'); break;
+        
+        case ASTExpr_PostIncrement:
+        case ASTExpr_PostDecrement:
+        {
+            PrintASTExpressionAsSourceCode(expression->operand);
+            Print("%s", (expression->expr_type == ASTExpr_PostIncrement ? "++" : "--"));
+        } break;
+        
+        case ASTExpr_Addition:
+        case ASTExpr_Subtraction:
+        case ASTExpr_Multiplication:
+        case ASTExpr_Division:
+        case ASTExpr_Modulus:
+        case ASTExpr_BitwiseAnd:
+        case ASTExpr_BitwiseOr:
+        case ASTExpr_BitwiseXOR:
+        case ASTExpr_BitwiseLeftShift:
+        case ASTExpr_BitwiseRightShift:
+        case ASTExpr_LogicalAnd:
+        case ASTExpr_LogicalOr:
+        case ASTExpr_AddEquals:
+        case ASTExpr_SubEquals:
+        case ASTExpr_MultEquals:
+        case ASTExpr_DivEquals:
+        case ASTExpr_ModEquals:
+        case ASTExpr_BitwiseAndEquals:
+        case ASTExpr_BitwiseOrEquals:
+        case ASTExpr_BitwiseXOREquals:
+        case ASTExpr_BitwiseLeftShiftEquals:
+        case ASTExpr_BitwiseRightShiftEquals:
+        case ASTExpr_Equals:
+        case ASTExpr_IsEqual:
+        case ASTExpr_IsNotEqual:
+        case ASTExpr_IsGreaterThan:
+        case ASTExpr_IsLessThan:
+        case ASTExpr_IsGreaterThanOrEqual:
+        case ASTExpr_IsLessThanOrEqual:
+        {
+            if (expression->left->expr_type != ASTExpr_NumericLiteral) PrintChar('(');
+            PrintASTExpressionAsSourceCode(expression->left);
+            if (expression->left->expr_type != ASTExpr_NumericLiteral) PrintChar(')');
+            PrintChar(' ');
+            
+            switch (expression->expr_type)
+            {
+                case ASTExpr_Addition: PrintChar('+'); break;
+                case ASTExpr_Subtraction: PrintChar('-'); break;
+                case ASTExpr_Multiplication: PrintChar('*'); break;
+                case ASTExpr_Division: PrintChar('/'); break;
+                case ASTExpr_Modulus: PrintChar('%'); break;
+                case ASTExpr_BitwiseAnd: PrintChar('&'); break;
+                case ASTExpr_BitwiseOr: PrintChar('|'); break;
+                case ASTExpr_BitwiseXOR: PrintChar('^'); break;
+                case ASTExpr_BitwiseLeftShift: Print("<<"); break;
+                case ASTExpr_BitwiseRightShift: Print(">>"); break;
+                case ASTExpr_LogicalAnd: Print("&&"); break;
+                case ASTExpr_LogicalOr: Print("||"); break;
+                case ASTExpr_AddEquals: Print("+="); break;
+                case ASTExpr_SubEquals: Print("-="); break;
+                case ASTExpr_MultEquals: Print("*="); break;
+                case ASTExpr_DivEquals: Print("/="); break;
+                case ASTExpr_ModEquals: Print("%="); break;
+                case ASTExpr_BitwiseAndEquals: Print("&="); break;
+                case ASTExpr_BitwiseOrEquals: Print("|="); break;
+                case ASTExpr_BitwiseXOREquals: Print("^="); break;
+                case ASTExpr_BitwiseLeftShiftEquals: Print("<<="); break;
+                case ASTExpr_BitwiseRightShiftEquals: Print(">>="); break;
+                case ASTExpr_Equals: PrintChar('='); break;
+                case ASTExpr_IsEqual: Print("=="); break;
+                case ASTExpr_IsNotEqual: Print("!="); break;
+                case ASTExpr_IsGreaterThan: PrintChar('>'); break;
+                case ASTExpr_IsLessThan: PrintChar('<'); break;
+                case ASTExpr_IsGreaterThanOrEqual: Print(">="); break;
+                case ASTExpr_IsLessThanOrEqual: Print("<="); break;
+            }
+            
+            PrintChar(' ');
+            if (expression->right->expr_type != ASTExpr_NumericLiteral) PrintChar('(');
+            PrintASTExpressionAsSourceCode(expression->right);
+            if (expression->right->expr_type != ASTExpr_NumericLiteral) PrintChar(')');
+        } break;
+        
+        case ASTExpr_Subscript:
+        {
+            PrintASTExpressionAsSourceCode(expression->left);
+            PrintChar('[');
+            PrintASTExpressionAsSourceCode(expression->right);
+            PrintChar(']');
+        } break;
+        
+        case ASTExpr_Member:
+        {
+            PrintASTExpressionAsSourceCode(expression->left);
+            PrintChar('.');
+            PrintASTExpressionAsSourceCode(expression->right);
+        } break;
+        
+        case ASTExpr_Ternary:
+        {
+            PrintChar('(');
+            PrintASTExpressionAsSourceCode(expression->condition);
+            Print(" ? ");
+            PrintASTExpressionAsSourceCode(expression->true_body);
+            Print(" : ");
+            PrintASTExpressionAsSourceCode(expression->false_body);
+            PrintChar(')');
+        } break;
+        
+        case ASTExpr_Identifier:
+        {
+            Print("%S", expression->identifier);
+        } break;
+        
+        case ASTExpr_NumericLiteral:
+        {
+            if (expression->numeric_literal.is_integer)
+            {
+                Print("%U", expression->numeric_literal.u64);
+            }
+            
+            else
+            {
+                Print("FLOAT");
+            }
+        } break;
+        
+        case ASTExpr_StringLiteral:
+        {
+            Print("\"%S\"", expression->string_literal);
+        } break;
+        
+        case ASTExpr_LambdaDecl:
+        {
+            Print("proc(", expression->name);
+            
+            Parser_AST_Node* arg_scan = expression->arguments;
+            
+            while (arg_scan)
+            {
+                Print("%S", expression->name);
+                
+                if (expression->type_string.size != 0)
+                {
+                    Print(": %S", expression->type_string);
+                }
+                
+                else
+                {
+                    Print(" :");
+                }
+                
+                if (expression->value)
+                {
+                    Print("%s= ", (expression->node_type ? " " : ""));
+                    PrintASTExpressionAsSourceCode(expression->value);
+                }
+                
+                if (arg_scan->next)
+                {
+                    Print(", ");
+                }
+                
+                arg_scan = arg_scan->next;
+            }
+            
+            PrintChar(')');
+            
+            if (expression->return_type_string.size != 0)
+            {
+                Print(" -> %S", expression->return_type_string);
+            }
+            
+            PrintChar('\n');
+            
+            PrintASTNodeAndChildrenAsSourceCode(expression->body, false, CONST_STRING(" "), 0, false);
+        } break;
+        
+        case ASTExpr_FunctionCall:
+        {
+            PrintASTExpressionAsSourceCode(expression->call_function);
+            PrintChar('(');
+            
+            Parser_AST_Node* arg_scan = expression->call_arguments;
+            
+            while (arg_scan)
+            {
+                PrintASTExpressionAsSourceCode(arg_scan);
+                
+                if (arg_scan->next)
+                {
+                    Print(", ");
+                }
+                
+                arg_scan = arg_scan->next;
+            }
+            
+            PrintChar(')');
+            
+        } break;
+        
+        case ASTExpr_TypeCast:
+        {
+            Print("cast(%S) ", expression->type_string);
+            PrintASTExpressionAsSourceCode(expression->to_cast);
+        } break;
+    }
+    
+    switch (expression->expr_type)
+    {
+        case ASTExpr_UnaryPlus:
+        case ASTExpr_UnaryMinus:
+        case ASTExpr_PreIncrement:
+        case ASTExpr_PreDecrement:
+        case ASTExpr_BitwiseNot:
+        case ASTExpr_LogicalNot:
+        case ASTExpr_Reference:
+        case ASTExpr_Dereference:
+        {
+            PrintASTExpressionAsSourceCode(expression->operand);
+        } break;
+    }
+}
+
+inline void
+PrintASTNodeAndChildrenAsSourceCode(Parser_AST_Node* node, bool is_root = false, String separation_string = CONST_STRING("\n"), U32 indentation_level = 0, bool should_indent = true)
+{
+    if (should_indent)
+    {
+        for (U32 i = 0; i < indentation_level; ++i)
+        {
+            PrintChar('\t');
+        }
+    }
+    
+    if (node->node_type == ASTNode_Expression)
+    {
+        PrintASTExpressionAsSourceCode(node);
+        PrintChar(';');
+    }
+    
+    else if (node->node_type == ASTNode_Scope)
+    {
+        if (!is_root)
+        {
+            Print("{\n");
+        }
+        
+        Parser_AST_Node* scan = node->scope;
+        
+        while (scan)
+        {
+            PrintASTNodeAndChildrenAsSourceCode(scan, false, separation_string, indentation_level + !is_root);
+            scan = scan->next;
+        }
+        
+        if (!is_root)
+        {
+            for (U32 i = 0; i < indentation_level; ++i)
+            {
+                PrintChar('\t');
+            }
+            
+            PrintChar('}');
+        }
+    }
+    
+    else if (node->node_type == ASTNode_If)
+    {
+        Print("if (");
+        PrintASTExpressionAsSourceCode(node->condition);
+        Print(")\n");
+        PrintASTNodeAndChildrenAsSourceCode(node->true_body, false, separation_string, indentation_level);
+        
+        if (node->false_body)
+        {
+            Print("else");
+            
+            if (node->false_body->node_type == ASTNode_Scope)
+            {
+                PrintChar('\n');
+                PrintASTNodeAndChildrenAsSourceCode(node->false_body, false, separation_string, indentation_level);
+            }
+            
+            else
+            {
+                PrintChar(' ');
+                PrintASTNodeAndChildrenAsSourceCode(node->false_body, false, separation_string, indentation_level, false);
+            }
+        }
+    }
+    
+    else if (node->node_type == ASTNode_While)
+    {
+        Print("while (");
+        PrintASTExpressionAsSourceCode(node->condition);
+        Print(")\n");
+        PrintASTNodeAndChildrenAsSourceCode(node->true_body, false, separation_string, indentation_level);
+    }
+    
+    else if (node->node_type == ASTNode_Defer)
+    {
+        Print("defer");
+        
+        if (node->statement->node_type == ASTNode_Scope)
+        {
+            PrintChar('\n');
+            PrintASTNodeAndChildrenAsSourceCode(node->statement, false, separation_string, indentation_level);
+        }
+        
+        else
+        {
+            PrintChar(' ');
+            PrintASTNodeAndChildrenAsSourceCode(node->statement, false, separation_string, indentation_level, false);
+        }
+    }
+    
+    else if (node->node_type == ASTNode_Return)
+    {
+        Print("return ");
+        PrintASTExpressionAsSourceCode(node->value);
+        PrintChar(';');
+    }
+    
+    else if (node->node_type == ASTNode_VarDecl)
+    {
+        Print("%S", node->name);
+        
+        if (node->type_string.size != 0)
+        {
+            Print(": %S", node->type_string);
+        }
+        
+        else
+        {
+            Print(" :");
+        }
+        
+        if (node->value)
+        {
+            Print("%s= ", (node->node_type ? " " : ""));
+            PrintASTExpressionAsSourceCode(node->value);
+        }
+        
+        PrintChar(';');
+    }
+    
+    else if (node->node_type == ASTNode_StructDecl)
+    {
+        Print("%S :: struct\n", node->name);
+        
+        for (U32 i = 0; i < indentation_level; ++i)
+        {
+            PrintChar('\t');
+        }
+        
+        PrintChar('{');
+        
+        Parser_AST_Node* scan = node->members;
+        
+        while (scan)
+        {
+            for (U32 i = 0; i < indentation_level + 1; ++i)
+            {
+                PrintChar('\t');
+            }
+            
+            Print("%S", node->name);
+            
+            if (node->type_string.size != 0)
+            {
+                Print(": %S", node->type_string);
+            }
+            
+            else
+            {
+                Print(" :");
+            }
+            
+            if (node->value)
+            {
+                Print("%s= ", (node->node_type ? " " : ""));
+                PrintASTExpressionAsSourceCode(node->value);
+            }
+            
+            Print(";\n");
+            
+            scan = scan->next;
+        }
+        
+        for (U32 i = 0; i < indentation_level; ++i)
+        {
+            PrintChar('\t');
+        }
+        
+        PrintChar('}');
+    }
+    
+    else if (node->node_type == ASTNode_EnumDecl)
+    {
+        Print("%S :: enum");
+        
+        if (node->type_string.size != 0)
+        {
+            Print(" %S ", node->type_string);
+        }
+        
+        Print("\n");
+        
+        for (U32 i = 0; i < indentation_level; ++i)
+        {
+            PrintChar('\t');
+        }
+        
+        PrintChar('{');
+        
+        Parser_AST_Node* scan = node->members;
+        
+        while (scan)
+        {
+            for (U32 i = 0; i < indentation_level + 1; ++i)
+            {
+                PrintChar('\t');
+            }
+            
+            Print("%S", scan->name);
+            
+            if (node->value)
+            {
+                Print(" = ");
+                PrintASTExpressionAsSourceCode(node->value);
+            }
+            
+            if (scan->next)
+            {
+                PrintChar(',');
+            }
+            
+            PrintChar('\n');
+            
+            scan = scan->next;
+        }
+        
+        for (U32 i = 0; i < indentation_level; ++i)
+        {
+            PrintChar('\t');
+        }
+        
+        PrintChar('}');
+    }
+    
+    else if (node->node_type == ASTNode_ConstDecl)
+    {
+        Print("%S :: ", node->name);
+        PrintASTExpressionAsSourceCode(node->value);
+        PrintChar(';');
+    }
+    
+    else if (node->node_type == ASTNode_FuncDecl)
+    {
+        Print("%S :: proc(", node->name);
+        
+        Parser_AST_Node* arg_scan = node->arguments;
+        
+        while (arg_scan)
+        {
+            Print("%S", arg_scan->name);
+            
+            if (arg_scan->type_string.size != 0)
+            {
+                Print(": %S", arg_scan->type_string);
+            }
+            
+            else
+            {
+                Print(" :");
+            }
+            
+            if (arg_scan->value)
+            {
+                Print("%s= ", (arg_scan->node_type ? " " : ""));
+                PrintASTExpressionAsSourceCode(arg_scan->value);
+            }
+            
+            if (arg_scan->next)
+            {
+                Print(", ");
+            }
+            
+            arg_scan = arg_scan->next;
+        }
+        
+        PrintChar(')');
+        
+        if (node->return_type_string.size != 0)
+        {
+            Print(" -> %S", node->return_type_string);
+        }
+        
+        PrintChar('\n');
+        
+        PrintASTNodeAndChildrenAsSourceCode(node->body, false, separation_string, indentation_level);
+    }
+    
+    Print("%S", separation_string);
 }
 
 /*

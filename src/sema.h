@@ -5,66 +5,67 @@
 #include "module.h"
 
 inline void
-SemaRegisterAllSymbolsAndReferencedTypeNamesInScope(Module* module, AST_Node* scope_node);
+SemaRegisterAllSymbolDeclarationsInScope(Module* module, Parser_AST_Node* scope_node);
 
 inline void
-SemaRegisterAllSymbolsAndReferencedTypeNamesInStatement(Module* module, AST_Node* statement)
+SemaRegisterAllSymbolDeclarationsInStatement(Module* module, Parser_AST_Node* statement)
 {
     if (statement->node_type == ASTNode_Scope)
     {
-        SemaRegisterAllSymbolsAndReferencedTypeNamesInScope(module, statement);
+        SemaRegisterAllSymbolDeclarationsInScope(module, statement);
     }
     
     else if (statement->node_type == ASTNode_If || statement->node_type == ASTNode_While)
     {
-        SemaRegisterAllSymbolsAndReferencedTypeNamesInScope(module, statement->true_body);
+        SemaRegisterAllSymbolDeclarationsInScope(module, statement->true_body);
         
         if (statement->false_body)
         {
-            SemaRegisterAllSymbolsAndReferencedTypeNamesInScope(module, statement->false_body);
+            SemaRegisterAllSymbolDeclarationsInScope(module, statement->false_body);
         }
     }
     
     else if (statement->node_type == ASTNode_Defer)
     {
-        SemaRegisterAllSymbolsAndReferencedTypeNamesInStatement(module, statement->statement);
+        NOT_IMPLEMENTED;
+        //SemaRegisterAllSymbolDeclarationsInStatement(module, statement->statement);
     }
     
     else if (statement->node_type == ASTNode_VarDecl || statement->node_type == ASTNode_ConstDecl || statement->node_type == ASTNode_FuncDecl)
     {
-        EnsureIdentifierExistsAndRetrieveIdentifierID(module, statement->name.string);
+        EnsureIdentifierExistsAndRetrieveIdentifierID(module, statement->name);
+        
+        // ...
     }
     
-    else if (statement->node_type == ASTNode_StructDecl || statement->node_type == ASTNode_EnumDecl)
+    else if (statement->node_type == ASTNode_StructDecl)
     {
-        EnsureIdentifierExistsAndRetrieveIdentifierID(module, statement->name.string);
-        
-        AST_Node* scan = statement->members;
-        while (scan)
-        {
-            SemaRegisterAllSymbolsAndReferencedTypeNamesInStatement(module, scan);
-            scan = scan->next;
-        }
+        NOT_IMPLEMENTED;
+    }
+    
+    else if (statement->node_type == ASTNode_EnumDecl)
+    {
+        NOT_IMPLEMENTED;
     }
 }
 
 inline void
-SemaRegisterAllSymbolsAndReferencedTypeNamesInScope(Module* module, AST_Node* scope_node)
+SemaRegisterAllSymbolDeclarationsInScope(Module* module, Parser_AST_Node* scope_node)
 {
-    AST_Node* scan = scope_node->scope;
+    Parser_AST_Node* scan = scope_node->scope;
     
     while (scan)
     {
-        SemaRegisterAllSymbolsAndReferencedTypeNamesInStatement(module, scan);
+        SemaRegisterAllSymbolDeclarationsInStatement(module, scan);
         scan = scan->next;
     }
 }
 
 inline void
-SemaRegisterAllSymbolsAndReferencedTypeNames(Module* module, File* file)
+SemaRegisterAllSymbolDeclarations(Module* module, File* file)
 {
     
-    AST* ast = &file->ast;
+    Parser_AST* ast = &file->parser_ast;
     
-    SemaRegisterAllSymbolsAndReferencedTypeNamesInScope(module, ast->root);
+    SemaRegisterAllSymbolDeclarationsInScope(module, ast->root);
 }

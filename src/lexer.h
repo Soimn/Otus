@@ -195,11 +195,7 @@ inline void
 Advance(Lexer* lexer, U32 amount)
 {
     lexer->input.data += amount;
-    
-    if (amount >= lexer->input.size)
-    {
-        lexer->input.size = 0;
-    }
+    lexer->input.size -= MIN(amount, lexer->input.size);
     
     Refill(lexer);
 }
@@ -459,7 +455,7 @@ GetToken(Lexer* lexer)
             {
                 token.type = Token_Identifier;
                 
-                while (IsAlpha(lexer->peek[0]) || IsNumeric(lexer->peek[0]) || c == '_')
+                while (IsAlpha(lexer->peek[0]) || IsNumeric(lexer->peek[0]) || lexer->peek[0] == '_')
                 {
                     Advance(lexer, 1);
                 }

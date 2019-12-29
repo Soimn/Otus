@@ -16,17 +16,33 @@ struct Identifier
     Identifier_ID id;
 };
 
+enum SYMBOL_TABLE_ENTRY_TYPE
+{
+    SymbolTableEntry_Constant,
+    SymbolTableEntry_Function,
+    SymbolTableEntry_Variable,
+    SymbolTableEntry_StructMember,
+    SymbolTableEntry_EnumMember,
+    SymbolTableEntry_Type,
+};
+
 struct Symbol_Table_Entry
 {
-    AST_Scope_ID scope_id;
-    
-    bool is_resolved;
-    
-    bool is_type_name;
-    bool is_enum_name;
-    bool is_function_name;
-    bool is_variable_name;
-    bool is_constant_name;
+    Enum32(SYMBOL_TABLE_ENTRY_TYPE) type;
+    U32 statement_index;
+    Type_ID type_id;
+    // TODO(soimn): Tie a function symbol to the function body
+};
+
+// TODO(soimn): It would be interesting to modify this value depending on he most common statement count per scope 
+//              gathered from a previous compilation. Might not be a huge speedup, but it could maybe be 
+//              benefitial
+#define SYMBOL_TABLE_LOCAL_SYMBOL_STORAGE_SIZE 10
+struct Symbol_Table
+{
+    Symbol_Table_Entry first_few_symbols[SYMBOL_TABLE_LOCAL_SYMBOL_STORAGE_SIZE];
+    Bucket_Array remaining_symbols;
+    U32 total_symbol_count;
 };
 
 enum TYPE_TABLE_ENTRY_TYPE
@@ -74,7 +90,7 @@ struct File
     
     Dynamic_Array loaded_files;
     
-    AST ast;
+    Parser_AST parser_ast;
 };
 
 struct Module
@@ -82,14 +98,14 @@ struct Module
     // TODO(soimn): Change the storage members from dynamic arrays to memory arenas
     
     // NOTE(soimn): AddOrRetrieveIdentifierID uses the fact that this is a DynamicArray
-    Dynamic_Array identifier_table   = DYNAMIC_ARRAY(Identifier, 256); 
-    Dynamic_Array identifier_storage = DYNAMIC_ARRAY(U8, 1024);
+    Dynamic_Array identifier_table    = DYNAMIC_ARRAY(Identifier, 256); 
+    Dynamic_Array identifier_storage  = DYNAMIC_ARRAY(U8, 1024);
     
-    Bucket_Array files               = BUCKET_ARRAY(File, 8);
-    Dynamic_Array file_path_storage  = DYNAMIC_ARRAY(char, 1024);
+    Bucket_Array files                = BUCKET_ARRAY(File, 8);
+    Dynamic_Array file_path_storage   = DYNAMIC_ARRAY(char, 1024);
     
-    Dynamic_Array symbol_table       = DYNAMIC_ARRAY(Symbol_Table_Entry, 256);
-    Dynamic_Array type_table         = DYNAMIC_ARRAY(Type_Table_Entry, 256);
+    Bucket_Array symbol_table_storage = BUCKET_ARRAY(Symbol_Table, 256);
+    Bucket_Array type_table           = BUCKET_ARRAY(Type_Table_Entry, 256);
 };
 
 inline Identifier_ID

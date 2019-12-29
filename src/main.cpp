@@ -13,14 +13,15 @@ main(int argc, const char** argv)
     File* file = (File*)PushElement(&module.files);
     ZeroStruct(file);
     
-    bool succeeded = ParseFile(&module, file, CONST_STRING("X :: ++Hello[*p & 1]++;hello: [6][6][..]int = 5;"));
+    bool succeeded = ParseFile(&module, file, CONST_STRING("X :: ++Hello[*p & 1]++;hello: [6][6][..]int = 5;HellloFunc :: proc(n:float, f:guard_float)->int{return 2 * 2 * (5 & 4 << 1);}"));
     
     if (succeeded)
     {
-        SemaRegisterAllSymbolsAndReferencedTypeNames(&module, file);
+        //SemaRegisterAllSymbolDeclarations(&module, file);
+        PrintASTNodeAndChildrenAsSourceCode(file->parser_ast.root, true);
     }
     
-    PrintASTNodeAndChildren(file->ast.root, 0);
+    //PrintASTNodeAndChildren(file->ast.root, 0);
     Print("\n%s\n", (succeeded ? "succeeded" : "failed"));
     
     return 0;
