@@ -8,6 +8,7 @@
 
 struct Parser_State
 {
+    Module* module;
     Parser_AST* ast;
     Lexer* lexer;
 };
@@ -909,7 +910,7 @@ ParseCastExpression(Parser_State state, Parser_AST_Node** result)
             {
                 if (MetRequiredToken(state.lexer, Token_CloseParen))
                 {
-                    if (ParseCastExpression(state, &(*result)->to_cast))
+                    if (ParseCastExpression(state, &(*result)->operand))
                     {
                         // Succeeded
                     }
@@ -1854,7 +1855,7 @@ ParseScope(Parser_State state, Parser_AST_Node** result)
     
     *result = PushNode(state.ast);
     (*result)->node_type = ASTNode_Scope;
-    (*result)->scope_id  = GetNewScopeID();
+    (*result)->scope_id  = GetNewScopeID(state.module);
     
     Parser_AST_Node** current_statement = &(*result)->scope;
     
@@ -1920,7 +1921,7 @@ ParseStatement(Parser_State state, Parser_AST_Node** result)
         
         *result = PushNode(state.ast);
         (*result)->node_type = ASTNode_Scope;
-        (*result)->scope_id = GetNewScopeID();
+        (*result)->scope_id = GetNewScopeID(state.module);
         
         Parser_AST_Node** current_statement = &(*result)->scope;
         
@@ -2147,17 +2148,23 @@ ParseStatement(Parser_State state, Parser_AST_Node** result)
 }
 
 inline bool
-ParseFile(Module* module, File* file, String file_contents)
+ParseFile(Module* module, File_ID file_id)
 {
-    Lexer lexer = LexString(file_contents);
+    File* file = (File*)ElementAt(&module->files, file_id);
+    
+    file->parser_ast = {};
+    file->parser_ast.container = BUCKET_ARRAY(&module->parser_arena, Parser_AST_Node, module->parser_ast_bucket_size);
+    
+    Lexer lexer = LexString(file->file_contents);
     
     Parser_State state = {};
-    state.ast   = &file->parser_ast;
-    state.lexer = &lexer;
+    state.module = module;
+    state.ast    = &file->parser_ast;
+    state.lexer  = &lexer;
     
     state.ast->root = PushNode(state.ast);
     state.ast->root->node_type = ASTNode_Scope;
-    state.ast->root->scope_id  = GetNewScopeID();
+    state.ast->root->scope_id  = GetNewScopeID(state.module);
     
     bool encountered_errors = false;
     

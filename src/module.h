@@ -3,11 +3,6 @@
 #include "common.h"
 #include "memory.h"
 
-typedef U32 Identifier_ID;
-typedef U64 Symbol_ID;
-typedef U32 Type_ID;
-typedef U32 File_ID;
-
 #define INVALID_IDENTIFIER_ID 0
 struct Identifier
 {
@@ -86,32 +81,22 @@ struct File
 {
     String file_path;
     String file_name;
-    char file_name_peek[4];
+    String file_contents;
     
     Dynamic_Array loaded_files;
     
     Parser_AST parser_ast;
-};
-
-struct Module
-{
-    // TODO(soimn): Change the storage members from dynamic arrays to memory arenas
+    // Sema_AST sema_ast
     
-    // NOTE(soimn): AddOrRetrieveIdentifierID uses the fact that this is a DynamicArray
-    Dynamic_Array identifier_table    = DYNAMIC_ARRAY(Identifier, 256); 
-    Dynamic_Array identifier_storage  = DYNAMIC_ARRAY(U8, 1024);
-    
-    Bucket_Array files                = BUCKET_ARRAY(File, 8);
-    Dynamic_Array file_path_storage   = DYNAMIC_ARRAY(char, 1024);
-    
-    Bucket_Array symbol_table_storage = BUCKET_ARRAY(Symbol_Table, 256);
-    Bucket_Array type_table           = BUCKET_ARRAY(Type_Table_Entry, 256);
+    bool has_undergone_parsing;
+    bool has_undergone_sema;
 };
 
 inline Identifier_ID
 EnsureIdentifierExistsAndRetrieveIdentifierID(Module* module, String string)
 {
     HARD_ASSERT(string.data != 0 && string.size != 0);
+    HARD_ASSERT(string.size < U32_MAX); // IMPORTANT TODO(soimn): Do something about this
     
     Identifier target = {};
     target.string = string;
@@ -165,7 +150,7 @@ EnsureIdentifierExistsAndRetrieveIdentifierID(Module* module, String string)
         return comparison_result;
     };
     
-    UMM identifier_count = ElementCount(&module->identifier_table);
+    U32 identifier_count = ElementCount(&module->identifier_table);
     
     Identifier_ID result = INVALID_IDENTIFIER_ID;
     if (identifier_count != 0)
@@ -246,9 +231,41 @@ EnsureIdentifierExistsAndRetrieveIdentifierID(Module* module, String string)
             }
         }
         
-        new_identifier->string.data = (U8*)PushElement(&module->identifier_storage, string.size);
+        new_identifier->string.data = (U8*)PushSize(&module->universal_arena, (U32)string.size, alignof(char));
         Copy(string.data, new_identifier->string.data, string.size);
     }
+    
+    return result;
+}
+
+inline Symbol_Table_ID
+AddSymbolTable(Module* module)
+{
+    Symbol_Table_ID result = (Symbol_Table_ID)ElementCount(&module->symbol_table_array);
+    PushElement(&module->symbol_table_array);
+    return result;
+}
+
+inline Symbol_ID
+AddSymbolToSymbolTable(Module* module, Symbol_Table_ID symbol_table_id, Symbol_Table_Entry symbol)
+{
+    Symbol_Table* table = (Symbol_Table*)ElementAt(&module->symbol_table_array, symbol_table_id);
+    
+    // TODO(soimn): If the symbol table was not found there is a compiler bug
+    HARD_ASSERT(table != 0);
+    
+    if (table->total_symbol_count >= ARRAY_COUNT(table->first_few_symbols))
+    {
+        *(Symbol_Table_Entry*)PushElement(&table->remaining_symbols) = symbol;
+    }
+    
+    else
+    {
+        table->first_few_symbols[table->total_symbol_count] = symbol;
+    }
+    
+    Symbol_ID result = table->total_symbol_count;
+    ++table->total_symbol_count;
     
     return result;
 }
@@ -258,6 +275,7 @@ LoadFileForCompilation(Module* module, String file_path, File_ID* out_file_id)
 {
     bool encountered_errors = false;
     
+    // TODO(soimn): Search module->files and check if this file is already loaded
     NOT_IMPLEMENTED;
     
     return !encountered_errors;

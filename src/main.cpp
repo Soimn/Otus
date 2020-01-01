@@ -10,19 +10,26 @@ int
 main(int argc, const char** argv)
 {
     Module module = {};
-    File* file = (File*)PushElement(&module.files);
-    ZeroStruct(file);
+    module.universal_arena    = MEMORY_ARENA(4000);
+    module.parser_arena       = MEMORY_ARENA(4000);
+    module.identifier_table   = DYNAMIC_ARRAY(Identifier, 1.5f);
+    module.files              = BUCKET_ARRAY(&module.universal_arena, File, 8);
+    module.symbol_table_array = DYNAMIC_ARRAY(Symbol_Table_Entry, 1.1f);
+    module.type_table         = BUCKET_ARRAY(&module.universal_arena, Type_Table_Entry, 256);
     
-    bool succeeded = ParseFile(&module, file, CONST_STRING("X :: ++Hello[*p & 1]++;hello: [6][6][..]int = 5;HellloFunc :: proc(n:float, f:guard_float)->int{return 2 * 2 * (5 & 4 << 1);}"));
+    module.parser_ast_bucket_size = 256;
+    
+    File_ID first_file_id;
+    bool succeeded = LoadFileForCompilation(&module, CONST_STRING("path"), &first_file_id);
     
     if (succeeded)
     {
-        //SemaRegisterAllSymbolDeclarations(&module, file);
-        PrintASTNodeAndChildrenAsSourceCode(file->parser_ast.root, true);
     }
     
-    //PrintASTNodeAndChildren(file->ast.root, 0);
-    Print("\n%s\n", (succeeded ? "succeeded" : "failed"));
+    else
+    {
+        //// ERROR: Failed to load file for compilation
+    }
     
     return 0;
 }

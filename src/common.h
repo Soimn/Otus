@@ -135,3 +135,28 @@ PrintCString(const char* cstring)
 
 #include "memory.h"
 #include "string.h"
+
+
+typedef U64 AST_Scope_ID;
+typedef U32 Identifier_ID;
+typedef U32 Symbol_Table_ID;
+typedef U64 Symbol_ID;
+typedef U32 Type_ID;
+typedef U32 File_ID;
+
+struct Module
+{
+    Memory_Arena universal_arena;
+    Memory_Arena parser_arena;
+    U32 parser_ast_bucket_size;
+    
+    AST_Scope_ID total_scope_count;
+    
+    Dynamic_Array identifier_table;
+    Bucket_Array files;
+    
+    Dynamic_Array symbol_table_array;
+    Bucket_Array type_table;
+    
+    Dynamic_Array file_loading_buffer;
+};

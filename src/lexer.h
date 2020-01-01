@@ -625,7 +625,8 @@ GetToken(Lexer* lexer)
                 
                 while (lexer->peek[0] != 0 && lexer->peek[0] != '"')
                 {
-                    Advance(lexer, 1);
+                    bool escaped_char = (lexer->peek[0] == '\\' && lexer->peek[1] == '"');
+                    Advance(lexer, (escaped_char ? 2 : 1));
                 }
                 
                 if (lexer->peek[0] != 0)

@@ -94,7 +94,9 @@ enum AST_EXPRESSION_TYPE
     AST_EXPRESSION_TYPE_COUNT
 };
 
-typedef U64 AST_Scope_ID;
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct Parser_AST_Node
 {
@@ -152,17 +154,8 @@ struct Parser_AST_Node
             Parser_AST_Node* false_body;
         };
         
-        /// Cast
-        struct
-        {
-            Parser_AST_Node* to_cast;
-        };
-        
         /// Defer
-        struct
-        {
-            Parser_AST_Node* statement;
-        };
+        Parser_AST_Node* statement;
         
         Parser_AST_Node* scope;
     };
@@ -191,7 +184,7 @@ struct Parser_AST_Node
 struct Parser_AST
 {
     Parser_AST_Node* root;
-    Bucket_Array container = BUCKET_ARRAY(Parser_AST_Node, 256);
+    Bucket_Array container;
 };
 
 inline Parser_AST_Node*
@@ -205,10 +198,9 @@ PushNode(Parser_AST* ast)
 }
 
 inline AST_Scope_ID
-GetNewScopeID()
+GetNewScopeID(Module* module)
 {
-    static AST_Scope_ID current_id = 0;
-    return current_id++;
+    return module->total_scope_count++;
 }
 
 inline void
@@ -346,14 +338,14 @@ PrintASTExpressionAsSourceCode(Parser_AST_Node* expression)
     
     switch (expression->expr_type)
     {
-        case ASTExpr_UnaryPlus: PrintChar('+'); break;
-        case ASTExpr_UnaryMinus: PrintChar('-'); break;
-        case ASTExpr_PreIncrement: Print("++"); break;
-        case ASTExpr_PreDecrement: Print("--"); break;
-        case ASTExpr_BitwiseNot: PrintChar('~'); break;
-        case ASTExpr_LogicalNot: PrintChar('!'); break;
-        case ASTExpr_Reference: PrintChar('&'); break;
-        case ASTExpr_Dereference: PrintChar('*'); break;
+        case ASTExpr_UnaryPlus:    PrintChar('+'); break;
+        case ASTExpr_UnaryMinus:   PrintChar('-'); break;
+        case ASTExpr_PreIncrement: Print("++");    break;
+        case ASTExpr_PreDecrement: Print("--");    break;
+        case ASTExpr_BitwiseNot:   PrintChar('~'); break;
+        case ASTExpr_LogicalNot:   PrintChar('!'); break;
+        case ASTExpr_Reference:    PrintChar('&'); break;
+        case ASTExpr_Dereference:  PrintChar('*'); break;
         
         case ASTExpr_PostIncrement:
         case ASTExpr_PostDecrement:
@@ -399,35 +391,35 @@ PrintASTExpressionAsSourceCode(Parser_AST_Node* expression)
             
             switch (expression->expr_type)
             {
-                case ASTExpr_Addition: PrintChar('+'); break;
-                case ASTExpr_Subtraction: PrintChar('-'); break;
-                case ASTExpr_Multiplication: PrintChar('*'); break;
-                case ASTExpr_Division: PrintChar('/'); break;
-                case ASTExpr_Modulus: PrintChar('%'); break;
-                case ASTExpr_BitwiseAnd: PrintChar('&'); break;
-                case ASTExpr_BitwiseOr: PrintChar('|'); break;
-                case ASTExpr_BitwiseXOR: PrintChar('^'); break;
-                case ASTExpr_BitwiseLeftShift: Print("<<"); break;
-                case ASTExpr_BitwiseRightShift: Print(">>"); break;
-                case ASTExpr_LogicalAnd: Print("&&"); break;
-                case ASTExpr_LogicalOr: Print("||"); break;
-                case ASTExpr_AddEquals: Print("+="); break;
-                case ASTExpr_SubEquals: Print("-="); break;
-                case ASTExpr_MultEquals: Print("*="); break;
-                case ASTExpr_DivEquals: Print("/="); break;
-                case ASTExpr_ModEquals: Print("%="); break;
-                case ASTExpr_BitwiseAndEquals: Print("&="); break;
-                case ASTExpr_BitwiseOrEquals: Print("|="); break;
-                case ASTExpr_BitwiseXOREquals: Print("^="); break;
-                case ASTExpr_BitwiseLeftShiftEquals: Print("<<="); break;
-                case ASTExpr_BitwiseRightShiftEquals: Print(">>="); break;
-                case ASTExpr_Equals: PrintChar('='); break;
-                case ASTExpr_IsEqual: Print("=="); break;
-                case ASTExpr_IsNotEqual: Print("!="); break;
-                case ASTExpr_IsGreaterThan: PrintChar('>'); break;
-                case ASTExpr_IsLessThan: PrintChar('<'); break;
-                case ASTExpr_IsGreaterThanOrEqual: Print(">="); break;
-                case ASTExpr_IsLessThanOrEqual: Print("<="); break;
+                case ASTExpr_Addition:                PrintChar('+'); break;
+                case ASTExpr_Subtraction:             PrintChar('-'); break;
+                case ASTExpr_Multiplication:          PrintChar('*'); break;
+                case ASTExpr_Division:                PrintChar('/'); break;
+                case ASTExpr_Modulus:                 PrintChar('%'); break;
+                case ASTExpr_BitwiseAnd:              PrintChar('&'); break;
+                case ASTExpr_BitwiseOr:               PrintChar('|'); break;
+                case ASTExpr_BitwiseXOR:              PrintChar('^'); break;
+                case ASTExpr_BitwiseLeftShift:        Print("<<");    break;
+                case ASTExpr_BitwiseRightShift:       Print(">>");    break;
+                case ASTExpr_LogicalAnd:              Print("&&");    break;
+                case ASTExpr_LogicalOr:               Print("||");    break;
+                case ASTExpr_AddEquals:               Print("+=");    break;
+                case ASTExpr_SubEquals:               Print("-=");    break;
+                case ASTExpr_MultEquals:              Print("*=");    break;
+                case ASTExpr_DivEquals:               Print("/=");    break;
+                case ASTExpr_ModEquals:               Print("%=");    break;
+                case ASTExpr_BitwiseAndEquals:        Print("&=");    break;
+                case ASTExpr_BitwiseOrEquals:         Print("|=");    break;
+                case ASTExpr_BitwiseXOREquals:        Print("^=");    break;
+                case ASTExpr_BitwiseLeftShiftEquals:  Print("<<=");   break;
+                case ASTExpr_BitwiseRightShiftEquals: Print(">>=");   break;
+                case ASTExpr_Equals:                  PrintChar('='); break;
+                case ASTExpr_IsEqual:                 Print("==");    break;
+                case ASTExpr_IsNotEqual:              Print("!=");    break;
+                case ASTExpr_IsGreaterThan:           PrintChar('>'); break;
+                case ASTExpr_IsLessThan:              PrintChar('<'); break;
+                case ASTExpr_IsGreaterThanOrEqual:    Print(">=");    break;
+                case ASTExpr_IsLessThanOrEqual:       Print("<=");    break;
             }
             
             PrintChar(' ');
@@ -557,7 +549,7 @@ PrintASTExpressionAsSourceCode(Parser_AST_Node* expression)
         case ASTExpr_TypeCast:
         {
             Print("cast(%S) ", expression->type_string);
-            PrintASTExpressionAsSourceCode(expression->to_cast);
+            PrintASTExpressionAsSourceCode(expression->operand);
         } break;
     }
     
@@ -859,6 +851,128 @@ PrintASTNodeAndChildrenAsSourceCode(Parser_AST_Node* node, bool is_root = false,
     
     Print("%S", separation_string);
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#define SEMA_AST_LOCAL_SYMBOL_TABLE_STORAGE_SIZE 4
+
+struct Sema_AST_Node
+{
+    Sema_AST_Node* next;
+    
+    Enum32(AST_NODE_TYPE) node_type;
+    Enum32(AST_EXPRESSION_TYPE) expr_type;
+    
+    union
+    {
+        Sema_AST_Node* children[3];
+        
+        /// Binary operators
+        struct
+        {
+            Sema_AST_Node* left;
+            Sema_AST_Node* right;
+        };
+        
+        /// Unary operators
+        Sema_AST_Node* operand;
+        
+        /// Ternary, if and while
+        struct
+        {
+            Sema_AST_Node* condition;
+            Sema_AST_Node* true_body;
+            Sema_AST_Node* false_body;
+        };
+        
+        /// Function call
+        struct
+        {
+            Sema_AST_Node* call_function;
+            Sema_AST_Node* call_arguments;
+        };
+        
+        /// Function and lambda declaration
+        struct
+        {
+            Sema_AST_Node* function_arguments;
+            Sema_AST_Node* function_body;
+        };
+        
+        /// Variable and constant declaration, return statement, enum member, struct member, function argument
+        Sema_AST_Node* value;
+        
+        /// Struct and enum declaration
+        Sema_AST_Node* members;
+        
+        /// Defer
+        Sema_AST_Node* statement;
+        
+        Sema_AST_Node* scope;
+    };
+    
+    union
+    {
+        /// Function call
+        Symbol_ID call_function_name;
+        
+        /// Function and lambda declaration
+        struct
+        {
+            Symbol_ID function_name;
+            Type_ID function_type;
+            Type_ID function_return_type;
+            U32 function_argument_count;
+        };
+        
+        /// Variable and constant declaration
+        struct
+        {
+            Symbol_ID var_name;
+            Type_ID var_type;
+        };
+        
+        /// Struct declaration
+        struct
+        {
+            Symbol_ID struct_name;
+            Type_ID struct_type;
+        };
+        
+        struct
+        {
+            Symbol_ID enum_name;
+            Type_ID enum_type;
+            Type_ID enum_member_type;
+        };
+        
+        /// Cast
+        Type_ID target_type;
+        
+        Symbol_ID identifier;
+        
+        String string_literal;
+        Number numeric_literal;
+        
+        /// Scope
+        struct
+        {
+            AST_Scope_ID scope_id;
+            Symbol_Table_ID first_few_symbol_tables[SEMA_AST_LOCAL_SYMBOL_TABLE_STORAGE_SIZE];
+            Bucket_Array remaining_symbol_tables;
+            U32 total_symbol_table_count;
+            U32 statement_count;
+        };
+    };
+};
+
+struct Sema_AST
+{
+    Sema_AST_Node* root;
+    Static_Array container;
+};
 
 /*
 
