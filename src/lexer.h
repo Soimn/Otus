@@ -1,212 +1,121 @@
-#pragma once
-
-#include "common.h"
-
-struct Lexer
+enum LEXER_TOKEN_TYPE
 {
-    String input;
+    Token_Unknown,
+    Token_Error,
     
-    File_Loc location;
-    
-    char peek[2];
-};
-
-enum TOKEN_TYPE
-{
-    Token_Error = 0,
-    Token_EndOfStream,
-    
-    Token_Identifier,
-    Token_String,
-    Token_Number,
-    
-    /// Arithmetic
     Token_Plus,
-    Token_PlusEquals,
-    Token_Increment,
     Token_Minus,
-    Token_MinusEquals,
-    Token_Decrement,
-    Token_Asterisk,
-    Token_MultiplyEquals,
-    Token_Divide,
-    Token_DivideEquals,
-    Token_Modulo,
-    Token_ModuloEquals,
-    
-    /// Bitwise operators
-    Token_Ampersand,
-    Token_AndEquals,
-    Token_Or,
-    Token_OrEquals,
-    Token_XOR,
-    Token_XOREquals,
-    Token_Not,
-    
+    Token_And,
     Token_Equals,
+    Token_Colon,
+    Token_Pipe,
     
-    /// Logical operations
-    Token_LogicalAnd,
-    Token_LogicalOr,
-    Token_LogicalNot,
+    Token_PlusPlus,
+    Token_MinusMinus,
+    Token_AndAnd,
+    Token_EQEQ,
+    Token_ColonColon,
+    Token_PipePipe,
     
-    /// Comparison
-    Token_IsEqual,
-    Token_IsNotEqual,
+    Token_PlusEQ,
+    Token_MinusEQ,
+    Token_AndEQ,
+    Token_ColonEQ,
+    Token_PipeEQ,
+    
+    Token_Hat,
+    Token_Asterisk,
+    Token_Slash,
+    Token_Percentage,
+    Token_Exclamation,
+    
+    Token_HatEQ,
+    Token_AsteriskEQ,
+    Token_SlashEQ,
+    Token_PercentageEQ,
+    Token_ExclamationEQ,
+    
     Token_GreaterThan,
-    Token_GreaterThanOrEqual,
     Token_LessThan,
-    Token_LessThanOrEqual,
+    Token_GTGT,
+    Token_LTLT,
+    Token_GTEQ,
+    Token_LTEQ,
+    Token_GTGTEQ,
+    Token_LTLTEQ,
     
-    Token_Questionmark,
-    
-    /// Bitwise shift
-    Token_RightShift,
-    Token_RightShiftEquals,
-    Token_LeftShift,
-    Token_LeftShiftEquals,
-    
+    Token_Tick,
+    Token_Tilde,
+    Token_Question,
+    Token_Hash,
+    Token_At,
+    Token_Backtick,
+    Token_Underscore,
+    Token_Period,
+    Token_Comma,
+    Token_Semicolon,
+    Token_Backslash,
+    Token_RightArrow,
     
     Token_OpenParen,
     Token_CloseParen,
-    Token_OpenBrace,
-    Token_CloseBrace,
     Token_OpenBracket,
     Token_CloseBracket,
+    Token_OpenBrace,
+    Token_CloseBrace,
     
-    /// Special
-    Token_Arrow,
-    Token_Dot,
-    Token_Elipsis,
-    Token_Comma,
-    Token_Colon,
-    Token_DoubleColon,
-    Token_Semicolon,
-    Token_TripleDash,
-    Token_Alpha,
-    Token_Hash,
-    Token_Keyword,
+    Token_Number,
+    Token_String,
+    Token_Identifier,
     
-    TOKEN_TYPE_COUNT,
+    Token_EndOfStream,
 };
 
-enum LEXER_KEYWORD_TYPE
+
+struct Number
 {
-    Keyword_If,
-    Keyword_Else,
-    Keyword_While,
-    Keyword_Defer,
-    Keyword_Return,
-    Keyword_Cast,
-    Keyword_Struct,
-    Keyword_Enum,
-    Keyword_Proc,
+    bool is_integer;
+    
+    union
+    {
+        U64 u64;
+        F64 f64;
+    };
 };
 
 struct Token
 {
-    Enum32(TOKEN_TYPE) type;
+    Enum32(LEXER_TOKEN_TYPE) type;
+    U32 line;
+    U32 column;
+    String preceeding_string;
+    String token_string;
     
-    File_Loc location;
-    
-    String string;
-    Number number;
-    Enum32(LEXER_KEYWORD_TYPE) keyword;
+    union
+    {
+        String string;
+        Number number;
+    };
 };
 
-inline String
-GetNameOfTokenType(Enum32(TOKEN_TYPE) type)
+struct Lexer
 {
-    String result = {};
-    
-    switch (type)
-    {
-        case Token_Error:              result = CONST_STRING("Token_Error");              break;
-        case Token_EndOfStream:        result = CONST_STRING("Token_EndOfStream");        break;
-        case Token_Identifier:         result = CONST_STRING("Token_Identifier");         break;
-        case Token_String:             result = CONST_STRING("Token_String");             break;
-        case Token_Number:             result = CONST_STRING("Token_Number");             break;
-        case Token_Plus:               result = CONST_STRING("Token_Plus");               break;
-        case Token_PlusEquals:         result = CONST_STRING("Token_PlusEquals");         break;
-        case Token_Increment:          result = CONST_STRING("Token_Increment");          break;
-        case Token_Minus:              result = CONST_STRING("Token_Minus");              break;
-        case Token_MinusEquals:        result = CONST_STRING("Token_MinusEquals");        break;
-        case Token_Decrement:          result = CONST_STRING("Token_Decrement");          break;
-        case Token_Asterisk:           result = CONST_STRING("Token_Asterisk");           break;
-        case Token_MultiplyEquals:     result = CONST_STRING("Token_MultiplyEquals");     break;
-        case Token_Divide:             result = CONST_STRING("Token_Divide");             break;
-        case Token_DivideEquals:       result = CONST_STRING("Token_DivideEquals");       break;
-        case Token_Modulo:             result = CONST_STRING("Token_Modulo");             break;
-        case Token_ModuloEquals:       result = CONST_STRING("Token_ModuloEquals");       break;
-        case Token_Ampersand:          result = CONST_STRING("Token_Ampersand");          break;
-        case Token_AndEquals:          result = CONST_STRING("Token_AndEquals");          break;
-        case Token_Or:                 result = CONST_STRING("Token_Or");                 break;
-        case Token_OrEquals:           result = CONST_STRING("Token_OrEquals");           break;
-        case Token_XOR:                result = CONST_STRING("Token_XOR");                break;
-        case Token_XOREquals:          result = CONST_STRING("Token_XOREquals");          break;
-        case Token_Not:                result = CONST_STRING("Token_Not");                break;
-        case Token_Equals:             result = CONST_STRING("Token_Equals");             break;
-        case Token_LogicalAnd:         result = CONST_STRING("Token_LogicalAnd");         break;
-        case Token_LogicalOr:          result = CONST_STRING("Token_LogicalOr");          break;
-        case Token_LogicalNot:         result = CONST_STRING("Token_LogicalNot");         break;
-        case Token_IsEqual:            result = CONST_STRING("Token_IsEqual");            break;
-        case Token_IsNotEqual:         result = CONST_STRING("Token_IsNotEqual");         break;
-        case Token_GreaterThan:        result = CONST_STRING("Token_GreaterThan");        break;
-        case Token_GreaterThanOrEqual: result = CONST_STRING("Token_GreaterThanOrEqual"); break;
-        case Token_LessThan:           result = CONST_STRING("Token_LessThan");           break;
-        case Token_LessThanOrEqual:    result = CONST_STRING("Token_LessThanOrEqual");    break;
-        case Token_RightShift:         result = CONST_STRING("Token_RightShift");         break;
-        case Token_RightShiftEquals:   result = CONST_STRING("Token_RightShiftEquals");   break;
-        case Token_LeftShift:          result = CONST_STRING("Token_LeftShift");          break;
-        case Token_LeftShiftEquals:    result = CONST_STRING("Token_LeftShiftEquals");    break;
-        case Token_OpenParen:          result = CONST_STRING("Token_OpenParen");          break;
-        case Token_CloseParen:         result = CONST_STRING("Token_CloseParen");         break;
-        case Token_OpenBrace:          result = CONST_STRING("Token_OpenBrace");          break;
-        case Token_CloseBrace:         result = CONST_STRING("Token_CloseBrace");         break;
-        case Token_OpenBracket:        result = CONST_STRING("Token_OpenBracket");        break;
-        case Token_CloseBracket:       result = CONST_STRING("Token_CloseBracket");       break;
-        case Token_Arrow:              result = CONST_STRING("Token_Arrow");              break;
-        case Token_Dot:                result = CONST_STRING("Token_Dot");                break;
-        case Token_Elipsis:            result = CONST_STRING("Token_Elipsis");            break;
-        case Token_Comma:              result = CONST_STRING("Token_Comma");              break;
-        case Token_Questionmark:       result = CONST_STRING("Token_Questionmark");       break;
-        case Token_Colon:              result = CONST_STRING("Token_Colon");              break;
-        case Token_DoubleColon:        result = CONST_STRING("Token_DoubleColon");        break;
-        case Token_Semicolon:          result = CONST_STRING("Token_Semicolon");          break;
-        case Token_TripleDash:         result = CONST_STRING("Token_TripleDash");         break;
-        case Token_Alpha:              result = CONST_STRING("Token_Alpha");              break;
-        case Token_Hash:               result = CONST_STRING("Token_Hash");               break;
-        case Token_Keyword:            result = CONST_STRING("Token_Keyword");            break;
-        INVALID_DEFAULT_CASE;
-        
-    }
-    
-    return result;
-}
-
-inline void
-Refill(Lexer* lexer)
-{
-    lexer->peek[0] = (lexer->input.size != 0 ? lexer->input.data[0] : 0);
-    lexer->peek[1] = (lexer->input.size >= 2 ? lexer->input.data[1] : 0);
-}
-
-inline void
-Advance(Lexer* lexer, U32 amount)
-{
-    lexer->input.data += amount;
-    lexer->input.size -= MIN(amount, lexer->input.size);
-    
-    Refill(lexer);
-}
+    String file_path;
+    U8* current;
+    U8* end;
+    U8* line_start;
+    U32 line;
+    U32 column;
+};
 
 inline Lexer
-LexString(String input)
+LexFile(File* file)
 {
     Lexer lexer = {};
-    
-    lexer.input = input;
-    Refill(&lexer);
+    lexer.file_path  = file->file_path;
+    lexer.current    = file->file_contents.data;
+    lexer.end        = file->file_contents.data + file->file_contents.size;
+    lexer.line_start = lexer.current;
     
     return lexer;
 }
@@ -215,478 +124,321 @@ inline Token
 GetToken(Lexer* lexer)
 {
     Token token = {};
-    token.type  = Token_Error;
+    token.type  = Token_Unknown;
+    
+    auto Advance = [](Lexer* lexer, U32 amount = 1)
+    {
+        for (U32 i = 0; i < amount && lexer->current < lexer->end; ++i)
+        {
+            ++lexer->column;
+            ++lexer->current;
+        }
+    };
+    
+    auto ReportLexerError = [](Lexer* lexer, const char* message)
+    {
+        Print("%S(%u:%u): %s\n", lexer->file_path, lexer->line, lexer->column, message);
+    };
     
     for (;;)
     {
-        while (IsSpacing(lexer->peek[0]))
+        if (*lexer->current == ' ' || *lexer->current == '\t' || *lexer->current == '\v' || *lexer->current == '\r')
         {
             Advance(lexer, 1);
         }
         
-        if (lexer->input.size > 1)
+        else if (*lexer->current == '\n')
         {
-            if (lexer->peek[0] == '/' && lexer->peek[1] == '/')
-            {
-                while (lexer->input.size && !IsEndOfLine(lexer->peek[0]))
-                {
-                    Advance(lexer, 1);
-                }
-                
-                if (lexer->input.size)
-                {
-                    Advance(lexer, 1);
-                }
-            }
-            
-            else if (lexer->peek[0] == '/' && lexer->peek[1] == '*')
-            {
-                Advance(lexer, 2);
-                
-                for (U32 nesting_level = 1; lexer->input.size && nesting_level != 0; )
-                {
-                    if (lexer->peek[0] == '*' && lexer->peek[1] == '/')
-                    {
-                        --nesting_level;
-                        Advance(lexer, 2);
-                        continue;
-                    }
-                    
-                    else if (lexer->peek[0] == '/' && lexer->peek[1] == '*')
-                    {
-                        ++nesting_level;
-                        Advance(lexer, 2);
-                        continue;
-                    }
-                    
-                    Advance(lexer, 1);
-                }
-            }
-            
-            else break;
+            Advance(lexer, 1);
+            lexer->line_start = lexer->current;
+            lexer->column     = 0;
+            ++lexer->line;
         }
         
         else break;
     }
     
-    token.string      = {};
-    token.string.data = lexer->input.data;
+    token.line   = lexer->line;
+    token.column = lexer->column;
+    token.preceeding_string.data = lexer->line_start;
+    token.preceeding_string.size = lexer->current - lexer->line_start;
+    token.token_string.data = lexer->current;
     
-    char c = lexer->peek[0];
+    char c = *lexer->current;
     Advance(lexer, 1);
     
     switch (c)
     {
         case 0: token.type = Token_EndOfStream; break;
         
-        case '?': token.type = Token_Questionmark; break;
-        case ',': token.type = Token_Comma;        break;
+        case '\'': token.type = Token_Tick;      break;
+        case '\\': token.type = Token_Backslash; break;
+        
+        case '~': token.type = Token_Tilde;      break;
+        case '?': token.type = Token_Question;   break;
+        case '#': token.type = Token_Hash;       break;
+        case '@': token.type = Token_At;         break;
+        case '`': token.type = Token_Backtick;   break;
+        case '.': token.type = Token_Period;     break;
+        case ',': token.type = Token_Comma;      break;
+        case ';': token.type = Token_Semicolon;  break;
         
         case '(': token.type = Token_OpenParen;    break;
         case ')': token.type = Token_CloseParen;   break;
-        case '{': token.type = Token_OpenBrace;    break;
-        case '}': token.type = Token_CloseBrace;   break;
         case '[': token.type = Token_OpenBracket;  break;
         case ']': token.type = Token_CloseBracket; break;
+        case '{': token.type = Token_OpenBrace;    break;
+        case '}': token.type = Token_CloseBrace;   break;
         
-        case '@': token.type = Token_Alpha;        break;
-        case '#': token.type = Token_Hash;         break;
         
-        case ';': token.type = Token_Semicolon;    break;
+#define SINGLE_OR_EQUALS(character, single_token, equals_token) \
+        case character:                                                 \
+        {                                                               \
+            if (*lexer->current == '=')                                 \
+            {                                                           \
+                token.type = equals_token;                              \
+                Advance(lexer, 1);                                      \
+            }                                                           \
+            else                                                        \
+            {                                                           \
+                token.type = single_token;                              \
+            }                                                           \
+        } break
         
-        case '~': token.type = Token_Not;          break;
+        SINGLE_OR_EQUALS('^', Token_Hat, Token_HatEQ);
+        SINGLE_OR_EQUALS('*', Token_Asterisk, Token_AsteriskEQ);
+        SINGLE_OR_EQUALS('/', Token_Slash, Token_SlashEQ);
+        SINGLE_OR_EQUALS('%', Token_Percentage, Token_PercentageEQ);
+        SINGLE_OR_EQUALS('!', Token_Exclamation, Token_ExclamationEQ);
         
-        case ':':
-        {
-            if (lexer->peek[0] == ':')
-            {
-                token.type = Token_DoubleColon;
-                Advance(lexer, 1);
-            }
-            
-            else
-            {
-                token.type = Token_Colon;
-            }
-        } break;
+#undef SINGLE_OR_EQUALS
         
-        case '.':
-        {
-            if (lexer->peek[0] == '.')
-            {
-                token.type = Token_Elipsis;
-                Advance(lexer, 1);
-            }
-            
-            else
-            {
-                token.type = Token_Dot;
-            }
-        } break;
+#define SINGLE_DOUBLE_OR_EQUALS(character, single_token, double_token, equals_token) \
+        case character:                                                                      \
+        {                                                                                    \
+            if (*lexer->current == character)                                                \
+            {                                                                                \
+                token.type = double_token;                                                   \
+                Advance(lexer, 1);                                                           \
+            }                                                                                \
+            else if (*lexer->current == '=')                                                 \
+            {                                                                                \
+                token.type = equals_token;                                                   \
+                Advance(lexer, 1);                                                           \
+            }                                                                                \
+            else                                                                             \
+            {                                                                                \
+                token.type = single_token;                                                   \
+            }                                                                                \
+        } break
         
-        case '>':
-        case '<':
-        {
-            if (lexer->peek[0] == c)
-            {
-                if (lexer->peek[1] == '=')
-                {
-                    if (lexer->peek[0] == '>') token.type = Token_RightShiftEquals;
-                    else                       token.type = Token_LeftShiftEquals;
-                    
-                    Advance(lexer, 2);
-                }
-                
-                else
-                {
-                    if (lexer->peek[0] == '>') token.type = Token_RightShift;
-                    else                       token.type = Token_LeftShift;
-                    
-                    Advance(lexer, 1);
-                }
-            }
-            
-            else
-            {
-                if (lexer->peek[0] == '=')
-                {
-                    if (lexer->peek[0] == '>') token.type = Token_GreaterThanOrEqual;
-                    else                       token.type = Token_LessThanOrEqual;
-                    
-                    Advance(lexer, 1);
-                }
-                
-                else
-                {
-                    if (lexer->peek[0] == '>') token.type = Token_GreaterThan;
-                    else                       token.type = Token_LessThan;
-                }
-            }
-        } break;
+        SINGLE_DOUBLE_OR_EQUALS('+', Token_Plus,   Token_PlusPlus,   Token_PlusEQ);
+        SINGLE_DOUBLE_OR_EQUALS('&', Token_And,    Token_AndAnd,     Token_AndEQ);
+        SINGLE_DOUBLE_OR_EQUALS('|', Token_Pipe,   Token_PipePipe,   Token_PipeEQ);
+        SINGLE_DOUBLE_OR_EQUALS(':', Token_Colon,  Token_ColonColon, Token_ColonEQ);
+        SINGLE_DOUBLE_OR_EQUALS('=', Token_Equals, Token_EQEQ,       Token_EQEQ);
+        
+#undef SINGLE_DOUBLE_OR_EQUALS
+        
+#define SINGLE_DOUBLE_EQUALS_OR_DOUBLE_AND_EQUALS(character, single_token, double_token, equals_token, double_and_equals_token) \
+        case character:                                                    \
+        {                                                                  \
+            if (*lexer->current == character)                              \
+            {                                                              \
+                Advance(lexer, 1);                                         \
+                if (*lexer->current == '=')                                \
+                {                                                          \
+                    token.type = double_and_equals_token;                  \
+                    Advance(lexer, 1);                                     \
+                }                                                          \
+                else                                                       \
+                {                                                          \
+                    token.type = double_token;                             \
+                }                                                          \
+            }                                                              \
+            else if (*lexer->current == '=')                               \
+            {                                                              \
+                token.type = equals_token;                                 \
+                Advance(lexer, 1);                                         \
+            }                                                              \
+            else                                                           \
+            {                                                              \
+                token.type = single_token;                                 \
+            }                                                              \
+        } break
+        
+        SINGLE_DOUBLE_EQUALS_OR_DOUBLE_AND_EQUALS('>', Token_GreaterThan, Token_GTGT, Token_GTEQ, Token_GTGTEQ);
+        SINGLE_DOUBLE_EQUALS_OR_DOUBLE_AND_EQUALS('<', Token_LessThan, Token_LTLT, Token_LTEQ, Token_LTLTEQ);
+        
+#undef SINGLE_DOUBLE_EQUALS_OR_DOUBLE_AND_EQUALS
         
         case '-':
         {
-            if (lexer->peek[0] == '>')
+            if (*lexer->current == '-')
             {
-                token.type = Token_Arrow;
-                Advance(lexer, 1);
-                break;
-            }
-            
-            else if (lexer->peek[0] == '-' && lexer->peek[1] == '-')
-            {
-                token.type = Token_TripleDash;
-                Advance(lexer, 2);
-                break;
-            }
-            
-            else
-            {
-                // Fallthrough
-            }
-        }
-        
-        case '+':
-        case '&':
-        case '|':
-        {
-            if (lexer->peek[0] == '=')
-            {
-                if (c == '+')      token.type = Token_PlusEquals;
-                else if (c == '-') token.type = Token_MinusEquals;
-                else if (c == '&') token.type = Token_AndEquals;
-                else               token.type = Token_OrEquals;
-                
+                token.type = Token_MinusMinus;
                 Advance(lexer, 1);
             }
             
-            else if (lexer->peek[0] == c)
+            else if (*lexer->current == '=')
             {
-                if (c == '+')      token.type = Token_Increment;
-                else if (c == '-') token.type = Token_Decrement;
-                else if (c == '&') token.type = Token_LogicalAnd;
-                else               token.type = Token_LogicalOr;
-                
+                token.type = Token_MinusEQ;
+                Advance(lexer, 1);
+            }
+            
+            else if (*lexer->current == '>')
+            {
+                token.type = Token_RightArrow;
                 Advance(lexer, 1);
             }
             
             else
             {
-                if (c == '+')      token.type = Token_Plus;
-                else if (c == '-') token.type = Token_Minus;
-                else if (c == '&') token.type = Token_Ampersand;
-                else               token.type = Token_Or;
-            }
-        } break;
-        
-        case '*':
-        case '/':
-        case '%':
-        case '^':
-        case '=':
-        case '!':
-        {
-            if (lexer->peek[0] == '=')
-            {
-                if (c == '*')      token.type = Token_MultiplyEquals;
-                else if (c == '/') token.type = Token_DivideEquals;
-                else if (c == '%') token.type = Token_ModuloEquals;
-                else if (c == '^') token.type = Token_XOREquals;
-                else if (c == '=') token.type = Token_IsEqual;
-                else               token.type = Token_IsNotEqual;
-                
-                Advance(lexer, 1);
-            }
-            
-            else
-            {
-                if (c == '*')      token.type = Token_Asterisk;
-                else if (c == '/') token.type = Token_Divide;
-                else if (c == '%') token.type = Token_Modulo;
-                else if (c == '^') token.type = Token_XOR;
-                else if (c == '=') token.type = Token_Equals;
-                else               token.type = Token_LogicalNot;
+                token.type = Token_Minus;
             }
         } break;
         
         default:
         {
-            if (IsAlpha(c) || c == '_')
+            if (c == '"')
             {
-                token.type = Token_Identifier;
+                token.type = Token_String;
                 
-                while (IsAlpha(lexer->peek[0]) || IsNumeric(lexer->peek[0]) || lexer->peek[0] == '_')
+                token.string.data = lexer->current;
+                
+                while (*lexer->current != 0 && *lexer->current != '"')
                 {
+                    if (*lexer->current == '\\' && *(lexer->current + 1) == '"')
+                    {
+                        Advance(lexer, 1);
+                    }
+                    
                     Advance(lexer, 1);
                 }
                 
-                token.string.size = lexer->input.data - token.string.data;
-                
-                if (StringCompare(token.string, CONST_STRING("if")))
+                if (*lexer->current == '"')
                 {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_If;
+                    token.string.size = lexer->current - token.string.data;
+                    Advance(lexer, 1);
                 }
                 
-                else if (StringCompare(token.string, CONST_STRING("else")))
+                else
                 {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_Else;
-                }
-                
-                else if (StringCompare(token.string, CONST_STRING("while")))
-                {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_While;
-                }
-                
-                else if (StringCompare(token.string, CONST_STRING("defer")))
-                {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_Defer;
-                }
-                
-                else if (StringCompare(token.string, CONST_STRING("return")))
-                {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_Return;
-                }
-                
-                else if (StringCompare(token.string, CONST_STRING("cast")))
-                {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_Cast;
-                }
-                
-                else if (StringCompare(token.string, CONST_STRING("struct")))
-                {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_Struct;
-                }
-                
-                else if (StringCompare(token.string, CONST_STRING("enum")))
-                {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_Enum;
-                }
-                
-                else if (StringCompare(token.string, CONST_STRING("proc")))
-                {
-                    token.type = Token_Keyword;
-                    token.keyword = Keyword_Proc;
+                    //// ERROR
+                    ReportLexerError(lexer,"Did not encounter a terminating '\"' character in string literal before end of file");
+                    token.type = Token_Error;
                 }
             }
             
-            else if (IsNumeric(c))
+            else if (IsDigit(c))
             {
-                // IMPORTANT TODO(soimn): This routine is not robust and does not handle overflow, invalid exponent or invalid number length
-                
-                token.type = Token_Number;
+                // IMPORTANT NOTE(soimn): The precision of F64 is not great enough to cover the entire range of an
+                //                        unsigned 64 bit integer without a loss of precision
+                // HACK(soimn): Replace this
                 
                 F64 acc = c - '0';
-                I32 exp = 0;
+                bool is_integer = true;
                 
-                bool has_decimal_point = false;
-                
-                while (IsNumeric(lexer->peek[0]))
+                while (IsDigit(*lexer->current))
                 {
                     acc *= 10;
-                    acc += lexer->peek[0] - '0';
+                    acc += *lexer->current - '0';
                     Advance(lexer, 1);
                 }
                 
-                if (lexer->peek[0] == '.')
+                if (*lexer->current == '.' && IsDigit(*(lexer->current + 1)))
                 {
-                    has_decimal_point = true;
-                    
+                    is_integer = false;
                     Advance(lexer, 1);
                     
-                    while (IsNumeric(lexer->peek[0]))
+                    F64 current_place = 0.1f;
+                    
+                    while (IsDigit(*lexer->current))
                     {
-                        acc *= 10;
-                        acc += lexer->peek[0] - '0';
-                        exp -= 1;
+                        acc += (*lexer->current - '0') * current_place;
+                        current_place /= 10;
                         Advance(lexer, 1);
                     }
                 }
                 
-                if (ToLower(lexer->peek[0]) == 'e')
-                {
-                    Advance(lexer, 1);
-                    
-                    I32 post_exp     = 0;
-                    I8 post_exp_sign = 1;
-                    
-                    if (lexer->peek[0] == '-' || lexer->peek[0] == '+')
-                    {
-                        post_exp_sign = (lexer->peek[0] == '-' ? -1 : 1);
-                        Advance(lexer, 1);
-                    }
-                    
-                    while (IsNumeric(lexer->peek[0]))
-                    {
-                        post_exp *= 10;
-                        post_exp += lexer->peek[0] - '0';
-                        Advance(lexer, 1);
-                    }
-                    
-                    exp += post_exp * post_exp_sign;
-                }
+                token.type = Token_Number;
+                token.number.is_integer = is_integer;
                 
-                if (exp < 0)
-                {
-                    exp = -exp;
-                    for (I32 i = 0; i < exp; ++i)
-                    {
-                        acc /= 10;
-                    }
-                }
-                
-                else
-                {
-                    for (I32 i = 0; i < exp; ++i)
-                    {
-                        acc *= 10;
-                    }
-                }
-                
-                if (lexer->peek[0] == 'f')
-                {
-                    Advance(lexer, 1);
-                    
-                    token.number.is_single_precision = true;
-                    token.number.f32 = (F32)acc;
-                }
-                
-                else if (has_decimal_point)
-                {
-                    token.number.f64 = acc;
-                }
-                
-                else
+                if (is_integer)
                 {
                     if (acc <= U64_MAX)
                     {
-                        token.number.is_integer = true;
                         token.number.u64 = (U64)acc;
                     }
                     
                     else
                     {
-                        //// ERROR: Integer constant too out of range
+                        //// ERROR
+                        ReportLexerError(lexer, "Integer constant is too large to be represented by any integer type.\n");
                         token.type = Token_Error;
                     }
-                }
-            }
-            
-            else if (c == '"')
-            {
-                token.type = Token_String;
-                
-                while (lexer->peek[0] != 0 && lexer->peek[0] != '"')
-                {
-                    bool escaped_char = (lexer->peek[0] == '\\' && lexer->peek[1] == '"');
-                    Advance(lexer, (escaped_char ? 2 : 1));
-                }
-                
-                if (lexer->peek[0] != 0)
-                {
-                    token.string.size = lexer->input.data - token.string.data;
-                    Advance(lexer, 1);
                 }
                 
                 else
                 {
-                    //// ERROR: End of stream reached before encountering a terminating '"'  character in string
-                    token.type = Token_Error;
+                    token.number.f64 = acc;
                 }
-                
             }
             
-            else
+            else if (IsAlpha(c) || c == '_' || !IsASCII(c))
             {
-                token.type = Token_Error;
+                if (c == '_' && !IsAlpha(*lexer->current) && IsASCII(*lexer->current))
+                {
+                    token.type = Token_Underscore;
+                }
+                
+                else
+                {
+                    token.type = Token_Identifier;
+                    
+                    token.string.data = lexer->current - 1;
+                    
+                    while (*lexer->current == '_' || IsAlpha(*lexer->current) || IsDigit(*lexer->current) || !IsASCII(*lexer->current))
+                    {
+                        Advance(lexer, 1);
+                    }
+                    
+                    token.string.size = lexer->current - token.string.data;
+                }
             }
         } break;
     }
     
-    if (token.string.size == 0)
-    {
-        token.string.size = lexer->input.data - token.string.data;
-    }
+    token.token_string.size = lexer->current - token.token_string.data;
     
     return token;
 }
 
 inline Token
-PeekToken(Lexer* lexer, U32 step = 1)
+PeekToken(Lexer* lexer, U32 amount = 1)
 {
-    Lexer temp_lexer = *lexer;
-    Token token = {};
+    Token result = {};
     
-    for (U32 i = 0; i < step; ++i)
-        token = GetToken(&temp_lexer);
-    
-    return token;
-}
-
-inline void
-SkipToken(Lexer* lexer)
-{
-    GetToken(lexer);
-}
-
-inline bool
-MetRequiredToken(Lexer* lexer, Enum32(TOKEN_TYPE) type)
-{
-    Token token = PeekToken(lexer);
-    
-    bool result = (token.type == type);
-    
-    if (result)
+    Lexer tmp_lexer = *lexer;
+    while (amount--)
     {
-        GetToken(lexer);
+        result = GetToken(&tmp_lexer);
     }
     
     return result;
+}
+
+inline void
+SkipToken(Lexer* lexer, U32 amount = 1)
+{
+    while (amount--)
+    {
+        GetToken(lexer);
+    }
+}
+
+inline bool
+RequiredToken(Lexer* lexer, Enum32(LEXER_TOKEN_TYPE) type)
+{
+    return (GetToken(lexer).type == type);
 }

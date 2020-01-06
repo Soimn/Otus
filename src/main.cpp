@@ -1,35 +1,83 @@
 #include "common.h"
-
+#include "string.h"
 #include "lexer.h"
 #include "ast.h"
-#include "module.h"
 #include "parser.h"
-#include "sema.h"
+
+#ifdef GREMLIN_PLATFORM_WINDOWS
+#include "win32_layer.h"
+#endif
+
+inline File_ID
+LoadAndParseFile(Module* module, String path)
+{
+    File_ID file_id = LoadFileForCompilation(module, path);
+    
+    if (file_id != INVALID_ID)
+    {
+        if (ParseFile(module, file_id))
+        {
+            // Succeeded
+        }
+        
+        else
+        {
+            //// ERROR
+            module->failed_to_parse_all_files = true;
+        }
+    }
+    
+    else
+    {
+        //// ERROR
+        Print("Failed to load %S\n", path);
+    }
+    
+    return file_id;
+}
 
 int
 main(int argc, const char** argv)
 {
     Module module = {};
-    module.universal_arena    = MEMORY_ARENA(4000);
-    module.parser_arena       = MEMORY_ARENA(4000);
-    module.identifier_table   = DYNAMIC_ARRAY(Identifier, 1.5f);
-    module.files              = BUCKET_ARRAY(&module.universal_arena, File, 8);
-    module.symbol_table_array = DYNAMIC_ARRAY(Symbol_Table_Entry, 1.1f);
-    module.type_table         = BUCKET_ARRAY(&module.universal_arena, Type_Table_Entry, 256);
+    module.files = BUCKET_ARRAY(&module.main_arena, File, 8);
     
-    module.parser_ast_bucket_size = 256;
+    bool encountered_errors = false;
     
-    File_ID first_file_id;
-    bool succeeded = LoadFileForCompilation(&module, CONST_STRING("path"), &first_file_id);
+    String target_file_path = {};
     
-    if (succeeded)
+    if (argc == 2)
     {
+        target_file_path.data = (U8*)argv[1];
+        target_file_path.size = StringLength(argv[1]);
     }
     
     else
     {
-        //// ERROR: Failed to load file for compilation
+        Print("Invalid number of arguments. Expected path to target source file.\n");
+        encountered_errors = true;
     }
+    
+    if (!encountered_errors)
+    {
+        LoadAndParseFile(&module, target_file_path);
+        
+        if (!module.failed_to_parse_all_files)
+        {
+            /// Build list of identifiers, declared symbols, type names and create symbol tables
+            /// Check code for correctness (declared before use, type compatibility, function calls, context 
+            ///                             specific statements)
+            /// Build final AST
+            /// Generate code
+        }
+        
+        else
+        {
+            encountered_errors = true;
+        }
+    }
+    
+    Print("\nCompilation %s.\n", (encountered_errors ? "failed" : "succeeded"));
     
     return 0;
 }

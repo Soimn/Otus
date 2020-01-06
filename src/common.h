@@ -1,24 +1,31 @@
 #pragma once
 
+/// Standard library dependencies
+#include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdint.h>
-#include <stdarg.h>
 
-typedef int8_t   I8;
-typedef int16_t  I16;
-typedef int32_t  I32;
-typedef int64_t  I64;
+// NOTE(soimn): This is defined to avoid stupid implicit casts when using varargs with overloaded functions
+struct Arg_List
+{
+    va_list list;
+};
 
-typedef uint8_t  U8;
-typedef uint16_t U16;
-typedef uint32_t U32;
-typedef uint64_t U64;
+/// Base type decalarations
+///////////////////////////////////////////////////////////////////////////////
 
-typedef float    F32;
-typedef double   F64;
+#ifdef GREMLIN_PLATFORM_WINDOWS
+typedef unsigned __int8  U8;
+typedef unsigned __int16 U16;
+typedef unsigned __int32 U32;
+typedef unsigned __int64 U64;
 
-#ifndef GREMLIN_32BIT
+typedef signed __int8  I8;
+typedef signed __int16 I16;
+typedef signed __int32 I32;
+typedef signed __int64 I64;
+
+#if _WIN64
 typedef U64 UMM;
 typedef I64 IMM;
 #else
@@ -31,6 +38,12 @@ typedef U16 B16;
 typedef U32 B32;
 typedef U64 B64;
 
+typedef float  F32;
+typedef double F64;
+#else
+#error "Support for platforms other than windows is not yet implemented"
+#endif
+
 struct Buffer
 {
     U8* data;
@@ -39,124 +52,114 @@ struct Buffer
 
 typedef Buffer String;
 
-struct Number
+///////////////////////////////////////////////////////////////////////////////
+
+/// Common macro declarations
+///////////////////////////////////////////////////////////////////////////////
+
+/// Utility macros
+
+#define U8_MIN  0
+#define U16_MIN 0
+#define U32_MIN 0
+#define U64_MIN 0
+
+#define U8_MAX  0xFF
+#define U16_MAX 0xFFFF
+#define U32_MAX 0xFFFFFFFF
+#define U64_MAX 0xFFFFFFFFFFFFFFFF
+
+#define I8_MIN  -(U8_MAX  + 1) / 2
+#define I16_MIN -(U16_MAX + 1) / 2
+#define I32_MIN -(U32_MAX + 1) / 2
+#define I64_MIN -(U64_MAX + 1) / 2
+
+#define I8_MAX  (U8_MAX >> 1)
+#define I16_MAX (U16_MAX >> 1)
+#define I32_MAX (U32_MAX >> 1)
+#define I64_MAX (U64_MAX >> 1)
+
+#define Enum8(NAME)  U8
+#define Enum16(NAME) U16
+#define Enum32(NAME) U32
+#define Enum64(NAME) U64
+
+#define Flag8(NAME)  U8
+#define Flag16(NAME) U16
+#define Flag32(NAME) U32
+#define Flag64(NAME) U64
+
+#define ARRAY_COUNT(ARR) (sizeof(ARR) / sizeof((ARR)[0]))
+
+#define CONST_STRING(string) {(U8*)string, sizeof(string) - 1}
+
+#define MIN(A, B) ((A) < (B) ? (A) : (B))
+#define MAX(A, B) ((A) > (B) ? (A) : (B))
+
+/// Debug mode macros
+
+#ifdef GREMLIN_DEBUG
+
+#ifndef GREMLIN_DISABLE_ASSERTIONS
+#define GREMLIN_ENABLE_ASSERTIONS
+#endif
+
+#endif
+
+#ifdef GREMLIN_ENABLE_ASSERTIONS
+// TODO(soimn): Replace this with a report and then a forced crash
+#define ASSERT(EX, ...) if (EX); else *(volatile int*)0 = 0
+#else
+#define ASSERT(EX, ...)
+#endif
+
+#define INVALID_DEFAULT_CASE default: ASSERT(!"INVALID DEFAULT CASE"); break
+#define NOT_IMPLEMENTED ASSERT(!"NOT IMPLEMENTED")
+
+///////////////////////////////////////////////////////////////////////////////
+
+#include "memory.h"
+
+#define INVALID_ID (ID)-1
+typedef U32 ID;
+
+typedef ID File_ID;
+typedef ID Scope_ID;
+typedef ID Identifier_ID;
+
+struct Parse_Tree
 {
-    bool is_integer;
-    bool is_single_precision;
+    Bucket_Array(Parse_Tree_Node) nodes;
+    struct Parse_Tree_Node* root;
+};
+
+struct AST
+{
+    Bucket_Array(AST_Node) nodes;
+    struct AST_Node* root;
+};
+
+struct File
+{
+    String file_path;
+    String file_contents;
     
     union
     {
-        U64 u64;
-        F32 f32;
-        F64 f64;
+        Parse_Tree parse_tree;
+        AST ast;
     };
 };
 
-typedef U32 File_ID;
-
-struct File_Loc
-{
-    File_ID file;
-    U32 line;
-    U32 column;
-};
-
-#define CONST_STRING(cstring) {(U8*)cstring, sizeof(cstring) - 1}
-
-#define U8_MAX  (U8)  0xFF
-#define U16_MAX (U16) 0xFFFF
-#define U32_MAX (U32) 0xFFFFFFFF
-#define U64_MAX (U64) 0xFFFFFFFFFFFFFFFF
-
-#define U8_MIN  (U8)  0
-#define U16_MIN (U16) 0
-#define U32_MIN (U32) 0
-#define U64_MIN (U64) 0
-
-#define I8_MAX  (I8)  (U8_MAX  >> 1)
-#define I16_MAX (I16) (U16_MAX >> 1)
-#define I32_MAX (I32) (U32_MAX >> 1)
-#define I64_MAX (I64) (U64_MAX >> 1)
-
-#define I8_MIN  (I8)  (~I8_MAX)
-#define I16_MIN (I16) (~I16_MAX)
-#define I32_MIN (I32) (~I32_MAX)
-#define I64_MIN (I64) (~I64_MAX)
-
-#define Flag8(type)  U8
-#define Flag16(type) U16
-#define Flag32(type) U32
-#define Flag64(type) U64
-
-#define Enum8(type)  U8
-#define Enum16(type) U16
-#define Enum32(type) U32
-#define Enum64(type) U64
-
-#define ARRAY_COUNT(X) (sizeof(X) / sizeof((X)[0]))
-
-#define MAX(X, Y) ((X) > (Y) ? (X) : (Y))
-#define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
-
-#ifdef GREMLIN_DEBUG
-#define HARD_ASSERT(EX) if (EX); else *(volatile int*)0 = 0
-#define NOT_IMPLEMENTED HARD_ASSERT(!"NOT IMPLEMENTED")
-#define INVALID_CODE_PATH HARD_ASSERT(!"INVALID CODE PATH")
-#define INVALID_DEFAULT_CASE default: HARD_ASSERT(!"INVALID DEFAULT CASE"); break
-#else
-#define HARD_ASSERT(EX)
-#define NOT_IMPLEMENTED
-#define INVALID_DEFAULT_CASE
-#endif
-
-inline void*
-SystemAllocateMemory(UMM size)
-{
-    return malloc(size);
-}
-
-inline void
-SystemFreeMemory(void* ptr)
-{
-    free(ptr);
-}
-
-inline void
-PrintChar(char c)
-{
-    putchar(c);
-}
-
-inline void
-PrintCString(const char* cstring)
-{
-    printf("%s", cstring);
-}
-
-#include "memory.h"
-#include "string.h"
-
-
-typedef U64 AST_Scope_ID;
-typedef U32 Identifier_ID;
-typedef U32 Symbol_Table_ID;
-typedef U64 Symbol_ID;
-typedef U32 Type_ID;
-typedef U32 File_ID;
-
 struct Module
 {
-    Memory_Arena universal_arena;
+    Memory_Arena main_arena;
     Memory_Arena parser_arena;
-    U32 parser_ast_bucket_size;
     
-    AST_Scope_ID total_scope_count;
+    Memory_Arena file_content_arena;
+    Bucket_Array(File) files;
     
-    Dynamic_Array identifier_table;
-    Bucket_Array files;
+    U32 total_scope_count;
     
-    Dynamic_Array symbol_table_array;
-    Bucket_Array type_table;
-    
-    Dynamic_Array file_loading_buffer;
+    bool failed_to_parse_all_files;
 };
