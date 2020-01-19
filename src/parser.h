@@ -1,488 +1,348 @@
-struct Parse_Tree_Node
+enum PARSE_NODE_TYPE
 {
-    Enum32(AST_NODE_TYPE) node_type;
-    Enum32(AST_EXPRESSION_TYPE) expr_type;
+    ParseNode_Invalid,
     
-    Parse_Tree_Node* next;
-    String name;
+    ParseNode_Expression,
+    
+    ParseNode_Scope,
+    
+    ParseNode_If,
+    ParseNode_Else,
+    ParseNode_While,
+    ParseNode_Break,
+    ParseNode_Continue,
+    ParseNode_Defer,
+    ParseNode_Return,
+    ParseNode_Using,
+    
+    ParseNode_VarDecl,
+    ParseNode_StructDecl,
+    ParseNode_EnumDecl,
+    ParseNode_ConstDecl,
+    ParseNode_FuncDecl,
+    
+    PARSE_NODE_TYPE_COUNT
+};
+
+enum PARSE_EXPRESSION_TYPE
+{
+    ParseExpr_Invalid,
+    
+    // Unary
+    ParseExpr_UnaryPlus,
+    ParseExpr_UnaryMinus,
+    ParseExpr_Increment,
+    ParseExpr_Decrement,
+    
+    ParseExpr_BitwiseNot,
+    
+    ParseExpr_LogicalNot,
+    
+    ParseExpr_Reference,
+    ParseExpr_Dereference,
+    
+    // Binary
+    ParseExpr_Addition,
+    ParseExpr_Subtraction,
+    ParseExpr_Multiplication,
+    ParseExpr_Division,
+    ParseExpr_Modulus,
+    
+    ParseExpr_BitwiseAnd,
+    ParseExpr_BitwiseOr,
+    ParseExpr_BitwiseXOR,
+    ParseExpr_BitwiseLeftShift,
+    ParseExpr_BitwiseRightShift,
+    
+    ParseExpr_LogicalAnd,
+    ParseExpr_LogicalOr,
+    
+    ParseExpr_AddEquals,
+    ParseExpr_SubEquals,
+    ParseExpr_MultEquals,
+    ParseExpr_DivEquals,
+    ParseExpr_ModEquals,
+    ParseExpr_BitwiseAndEquals,
+    ParseExpr_BitwiseOrEquals,
+    ParseExpr_BitwiseXOREquals,
+    ParseExpr_BitwiseLeftShiftEquals,
+    ParseExpr_BitwiseRightShiftEquals,
+    
+    ParseExpr_Equals,
+    
+    ParseExpr_IsEqual,
+    ParseExpr_IsNotEqual,
+    ParseExpr_IsGreaterThan,
+    ParseExpr_IsLessThan,
+    ParseExpr_IsGreaterThanOrEqual,
+    ParseExpr_IsLessThanOrEqual,
+    
+    ParseExpr_Subscript,
+    ParseExpr_Member,
+    
+    // Special
+    ParseExpr_Identifier,
+    ParseExpr_Number,
+    ParseExpr_String,
+    ParseExpr_LambdaDecl,
+    ParseExpr_FunctionCall,
+    ParseExpr_TypeCast,
+    ParseExpr_Compound,
+    
+    PARSE_EXPRESSION_TYPE_COUNT
+};
+
+struct Parse_Tree_Type
+{
+    // IMPORTANT TODO(soimn): Fill this
+};
+
+struct Parse_Node
+{
+    Enum32(PARSE_NODE_TYPE) node_type;
+    Enum32(PARSE_EXPRESSION_TYPE) expr_type;
+    
+    Parse_Node* next;
+    String_ID name;
     
     union
     {
-        Parse_Tree_Node* children[3];
+        Parse_Node* children[3];
         
         /// Binary expressions
         struct
         {
-            Parse_Tree_Node* left;
-            Parse_Tree_Node* right;
+            Parse_Node* left;
+            Parse_Node* right;
         };
         
-        /// Unary expressions
-        Parse_Tree_Node* operand;
+        /// Unary expressions and compound
+        Parse_Node* operand;
         
         /// Function call
         struct
         {
-            Parse_Tree_Node* call_function;
-            Parse_Tree_Node* call_arguments;
+            Parse_Node* call_function;
+            Parse_Node* call_arguments;
         };
         
         /// Function and lambda declaration
-        Parse_Tree_Node* function_body;
+        struct
+        {
+            Parse_Node* function_args;
+            Parse_Node* function_body;
+        };
         
         /// If and while
         struct
         {
-            Parse_Tree_Node* condition;
-            Parse_Tree_Node* true_body;
+            Parse_Node* condition;
+            Parse_Node* true_body;
         };
         
         /// Else
-        Parse_Tree_Node* false_body;
+        Parse_Node* false_body;
         
-        /// Variable and constant declarations, return statement, enum and struct member, function argument
-        Parse_Tree_Node* value;
+        /// Variable and constant declarations
+        Parse_Node* value;
         
         /// Struct and enum declarations
-        Parse_Tree_Node* members;
+        Parse_Node* members;
         
-        Parse_Tree_Node* defer_statement;
+        /// Defer and return
+        Parse_Node* statement;
         
-        Parse_Tree_Node* scope;
+        Parse_Node* scope;
     };
     
     union
     {
-        /// Function and lambda declaration
-        struct
-        {
-            String function_type;
-            String return_value;
-        };
+        /// Enum declaration, cast expression, function return type and variable declaration
+        Parse_Tree_Type type;
         
-        /// Enum declaration, cast expression and variable declaration
-        String type_string;
-        
-        String identifier;
-        String string_literal;
-        Number number_literal;
+        String_ID string;
+        Number number;
     };
 };
 
 struct Parser_State
 {
+    Module* module;
     File* file;
     Parse_Tree* tree;
-    Lexer* lexer;
+    Lexer lexer;
 };
 
-inline Parse_Tree_Node*
-PushNode(Parse_Tree* tree, Enum32(AST_NODE_TYPE) node_type, Enum32(AST_EXPRESSION_TYPE) expr_type)
+inline Parse_Node*
+PushNode(Parser_State state, Enum32(PARSE_NODE_TYPE) node_type, Enum32(PARSE_EXPRESSION_TYPE) expr_type = 0)
 {
-    ASSERT((node_type != ASTNode_Expression && expr_type == 0) || (node_type == ASTNode_Expression && expr_type != 0));
+    ASSERT((node_type != ParseNode_Expression && expr_type == 0) || (node_type == ParseNode_Expression && expr_type != 0));
     
-    Parse_Tree_Node* node = (Parse_Tree_Node*)PushElement(&tree->nodes);
+    Parse_Node* node = (Parse_Node*)PushElement(&state.tree->nodes);
     node->node_type = node_type;
     node->expr_type = expr_type;
     
     return node;
 }
 
-inline bool ParseDeclaration(Parser_State state, Parse_Tree_Node** result);
-inline bool ParseStatement(Parser_State state, Parse_Tree_Node** result);
-inline bool ParseScope(Parser_State state, Parse_Tree_Node** scope_node);
+inline String_ID
+RegisterString(Parser_State state, String string)
+{
+    String_ID string_id = INVALID_ID;
+    
+    for (Bucket_Array_Iterator it = Iterate(&state.module->string_storage);
+         it.current;
+         Advance(&it))
+    {
+        if (StringCompare(string, *(String*)it.current))
+        {
+            string_id = (String_ID)it.current_index;
+        }
+    }
+    
+    if (string_id == INVALID_ID)
+    {
+        string_id = (String_ID)ElementCount(&state.module->string_storage);
+        
+        String* entry = (String*)PushElement(&state.module->string_storage);
+        entry->size = string.size;
+        entry->data = (U8*)PushSize(&state.module->string_arena, (U32)string.size, alignof(U8));
+        
+        Copy(string.data, entry->data, entry->size);
+    }
+    
+    return string_id;
+}
 
-// TODO(soimn): Rewrite the binary expression parsing functions to use loops instead of recursion and insert 
-//              guards against illegal expressions
+File_ID LoadAndParseFile(Module* module, String path);
+
+inline bool ParseType(Parser_State state, Parse_Node** result);
+inline bool ParseFunction(Parser_State state, Parse_Node* function_node);
+inline bool ParseExpression(Parser_State state, Parse_Node** result);
+inline bool ParseScope(Parser_State state, Parse_Node** result);
+inline bool ParseStatement(Parser_State state, Parse_Node** result);
 
 inline bool
-ParseUnaryExpression(Parser_State state, Parse_Tree_Node** result)
+ParseType(Parser_State state, Parse_Tree_Type* type)
 {
     bool encountered_errors = false;
     
-    for (;;)
-    {
-        Token token = PeekToken(state.lexer);
-        
-        if (token.type == Token_Plus || token.type == Token_Minus || token.type == Token_Exclamation || token.type == Token_Tilde)
-        {
-            NOT_IMPLEMENTED;
-        }
-        
-        else if (token.type == Token_Identifier && StringCompare(token.string, CONST_STRING("cast")))
-        {
-            NOT_IMPLEMENTED;
-        }
-        
-        else
-        {
-            NOT_IMPLEMENTED;
-            break;
-        }
-    }
+    NOT_IMPLEMENTED;
     
     return !encountered_errors;
 }
 
 inline bool
-ParseBitwiseBinaryExpression(Parser_State state, Parse_Tree_Node** result)
+ParseFunction(Parser_State state, Parse_Node* function_node)
 {
     bool encountered_errors = false;
     
-    if (ParseUnaryExpression(state, result))
+    Token token = GetToken(state.lexer);
+    
+    ASSERT(token.type == Token_Identifier && StringCompare(token.string, CONST_STRING("proc")));
+    SkipPastToken(&state.lexer, token);
+    
+    if (RequireAndSkipToken(&state.lexer, Token_OpenParen))
     {
-        Token token = PeekToken(state.lexer);
-        
-        Enum32(AST_EXPRESSION_TYPE) type = ASTExpr_Invalid;
-        
-        switch(token.type)
+        Parse_Node** current_arg = &function_node->function_args;
+        while (!encountered_errors)
         {
-            case Token_And:  type = ASTExpr_BitwiseAnd;              break;
-            case Token_Pipe: type = ASTExpr_BitwiseOr;               break;
-            case Token_Hat:  type = ASTExpr_BitwiseXOR;              break;
-            case Token_GTGT: type = ASTExpr_BitwiseLeftShiftEquals;  break;
-            case Token_LTLT: type = ASTExpr_BitwiseRightShiftEquals; break;
-        }
-        
-        if (type != ASTExpr_Invalid)
-        {
-            SkipToken(state.lexer);
+            token = GetToken(state.lexer);
             
-            Parse_Tree_Node* left = *result;
-            
-            *result = PushNode(state.tree, ASTNode_Expression, type);
-            (*result)->left = left;
-            
-            if (ParseBitwiseBinaryExpression(state, &(*result)->right))
+            if (token.type == Token_CloseParen)
             {
-                // Succeeded
+                SkipPastToken(&state.lexer, token);
+                break;
             }
             
             else
             {
-                //// ERROR
-                encountered_errors = true;
+                if (ParseStatement(state, current_arg))
+                {
+                    current_arg = &(*current_arg)->next;
+                    
+                    token = GetToken(state.lexer);
+                    if (token.type != Token_CloseParen &&
+                        !RequireAndSkipToken(&state.lexer, Token_Comma))
+                    {
+                        //// ERROR: Missing terminating parenthesis after function argument list
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
             }
         }
     }
     
     else
     {
-        //// ERROR
+        //// ERROR: Missing argument list in function declaration
         encountered_errors = true;
     }
     
-    return !encountered_errors;
-}
-
-inline bool
-ParseMultiplicativeExpression(Parser_State state, Parse_Tree_Node** result)
-{
-    bool encountered_errors = false;
-    
-    if (ParseBitwiseBinaryExpression(state, result))
+    if (!encountered_errors)
     {
-        Token token = PeekToken(state.lexer);
-        
-        if (token.type == Token_Asterisk || token.type == Token_Slash || token.type == Token_Percentage)
+        token = GetToken(state.lexer);
+        if (token.type == Token_OpenBrace)
         {
-            Enum32(AST_EXPRESSION_TYPE) type;
-            
-            if (token.type == Token_Asterisk)   type = ASTExpr_Multiplication;
-            else if (token.type == Token_Slash) type = ASTExpr_Division;
-            else                                type = ASTExpr_Modulus;
-            
-            SkipToken(state.lexer);
-            
-            Parse_Tree_Node* left = *result;
-            
-            *result = PushNode(state.tree, ASTNode_Expression, type);
-            (*result)->left = left;
-            
-            if (ParseMultiplicativeExpression(state, &(*result)->right))
+            if (ParseStatement(state, &function_node->function_body))
             {
-                // Succeeded
+                // succeeded
             }
             
             else
             {
                 //// ERROR
-                encountered_errors = true;
-            }
-        }
-    }
-    
-    else
-    {
-        //// ERROR
-        encountered_errors = true;
-    }
-    
-    return !encountered_errors;
-}
-
-inline bool
-ParseAdditiveExpression(Parser_State state, Parse_Tree_Node** result)
-{
-    bool encountered_errors = false;
-    
-    if (ParseMultiplicativeExpression(state, result))
-    {
-        Token token = PeekToken(state.lexer);
-        
-        if (token.type == Token_Plus || token.type == Token_Minus)
-        {
-            Enum32(AST_EXPRESSION_TYPE) type = (token.type == Token_Plus ? ASTExpr_Addition : ASTExpr_Subtraction);
-            SkipToken(state.lexer);
-            
-            Parse_Tree_Node* left = *result;
-            
-            *result = PushNode(state.tree, ASTNode_Expression, type);
-            (*result)->left = left;
-            
-            if (ParseAdditiveExpression(state, &(*result)->right))
-            {
-                // Succeeded
-            }
-            
-            else
-            {
-                //// ERROR
-                encountered_errors = true;
-            }
-        }
-    }
-    
-    else
-    {
-        //// ERROR
-        encountered_errors = true;
-    }
-    
-    return !encountered_errors;
-}
-
-inline bool
-ParseRelationalExpression(Parser_State state, Parse_Tree_Node** result)
-{
-    bool encountered_errors = false;
-    
-    if (ParseAdditiveExpression(state, result))
-    {
-        Token token = PeekToken(state.lexer);
-        
-        Enum32(AST_EXPRESSION_TYPE) type = ASTExpr_Invalid;
-        
-        switch(token.type)
-        {
-            case Token_EQEQ:          type = ASTExpr_IsEqual;              break;
-            case Token_ExclamationEQ: type = ASTExpr_IsNotEqual;           break;
-            case Token_GreaterThan:   type = ASTExpr_IsGreaterThan;        break;
-            case Token_LessThan:      type = ASTExpr_IsLessThan;           break;
-            case Token_GTEQ:          type = ASTExpr_IsGreaterThanOrEqual; break;
-            case Token_LTEQ:          type = ASTExpr_IsLessThanOrEqual;    break;
-        }
-        
-        if (type != ASTExpr_Invalid)
-        {
-            SkipToken(state.lexer);
-            
-            Parse_Tree_Node* left = *result;
-            
-            *result = PushNode(state.tree, ASTNode_Expression, type);
-            (*result)->left = left;
-            
-            if (ParseRelationalExpression(state, &(*result)->right))
-            {
-                // Succeeded
-            }
-            
-            else
-            {
-                //// ERROR
-                encountered_errors = true;
-            }
-        }
-    }
-    
-    else
-    {
-        //// ERROR
-        encountered_errors = true;
-    }
-    
-    return !encountered_errors;
-}
-
-inline bool
-ParseLogicalAndExpression(Parser_State state, Parse_Tree_Node** result)
-{
-    bool encountered_errors = false;
-    
-    if (ParseRelationalExpression(state, result))
-    {
-        Token token = PeekToken(state.lexer);
-        
-        if (token.type == Token_AndAnd)
-        {
-            SkipToken(state.lexer);
-            
-            Parse_Tree_Node* left = *result;
-            
-            *result = PushNode(state.tree, ASTNode_Expression, ASTExpr_LogicalAnd);
-            (*result)->left = left;
-            
-            if (ParseLogicalAndExpression(state, &(*result)->right))
-            {
-                // Succeeded
-            }
-            
-            else
-            {
-                //// ERROR
-                encountered_errors = true;
-            }
-        }
-    }
-    
-    else
-    {
-        //// ERROR
-        encountered_errors = true;
-    }
-    
-    return !encountered_errors;
-}
-
-inline bool
-ParseLogicalOrExpression(Parser_State state, Parse_Tree_Node** result)
-{
-    bool encountered_errors = false;
-    
-    if (ParseLogicalAndExpression(state, result))
-    {
-        Token token = PeekToken(state.lexer);
-        
-        if (token.type == Token_PipePipe)
-        {
-            SkipToken(state.lexer);
-            
-            Parse_Tree_Node* left = *result;
-            
-            *result = PushNode(state.tree, ASTNode_Expression, ASTExpr_LogicalOr);
-            (*result)->left = left;
-            
-            if (ParseLogicalOrExpression(state, &(*result)->right))
-            {
-                // Succeeded
-            }
-            
-            else
-            {
-                //// ERROR
-                encountered_errors = true;
-            }
-        }
-    }
-    
-    else
-    {
-        //// ERROR
-        encountered_errors = true;
-    }
-    
-    return !encountered_errors;
-}
-
-inline bool
-ParseExpression(Parser_State state, Parse_Tree_Node** result)
-{
-    bool encountered_errors = false;
-    
-    if (ParseLogicalOrExpression(state, result))
-    {
-        Token token = PeekToken(state.lexer);
-        
-        Enum32(AST_EXPRESSION_TYPE) type = ASTExpr_Invalid;
-        
-        switch(token.type)
-        {
-            case Token_Equals:       type = ASTExpr_Equals;                  break;
-            case Token_PlusEQ:       type = ASTExpr_AddEquals;               break;
-            case Token_MinusEQ:      type = ASTExpr_SubEquals;               break;
-            case Token_AsteriskEQ:   type = ASTExpr_MultEquals;              break;
-            case Token_SlashEQ:      type = ASTExpr_DivEquals;               break;
-            case Token_PercentageEQ: type = ASTExpr_ModEquals;               break;
-            case Token_AndEQ:        type = ASTExpr_BitwiseAndEquals;        break;
-            case Token_PipeEQ:       type = ASTExpr_BitwiseOrEquals;         break;
-            case Token_HatEQ:        type = ASTExpr_BitwiseXOREquals;        break;
-            case Token_LTLTEQ:       type = ASTExpr_BitwiseLeftShiftEquals;  break;
-            case Token_GTGTEQ:       type = ASTExpr_BitwiseRightShiftEquals; break;
-        }
-        
-        if (type != ASTExpr_Invalid)
-        {
-            SkipToken(state.lexer);
-            
-            Parse_Tree_Node* left = *result;
-            
-            *result = PushNode(state.tree, ASTNode_Expression, type);
-            (*result)->left = left;
-            
-            if (ParseExpression(state, &(*result)->right))
-            {
-                // Succeeded
-            }
-            
-            else
-            {
-                //// ERROR
-                encountered_errors = true;
-            }
-        }
-    }
-    
-    else
-    {
-        //// ERROR
-        encountered_errors = true;
-    }
-    
-    return !encountered_errors;
-}
-
-inline bool
-ParseScope(Parser_State state, Parse_Tree_Node** scope_node)
-{
-    bool encountered_errors = false;
-    
-    *scope_node = PushNode(state.tree, ASTNode_Scope, 0);
-    Parse_Tree_Node** current_statement = &(*scope_node)->scope;
-    
-    bool is_brace_delimited = false;
-    
-    if (RequiredToken(state.lexer, Token_OpenBrace))
-    {
-        is_brace_delimited = true;
-    }
-    
-    do
-    {
-        if (RequiredToken(state.lexer, Token_CloseBrace))
-        {
-            if (is_brace_delimited) break;
-            else
-            {
-                //// ERROR: Encountered a closing brace before semicolon
                 encountered_errors = true;
             }
         }
         
         else
         {
-            if (ParseStatement(state, current_statement))
+            //// ERROR: Missing function body
+            encountered_errors = true;
+        }
+    }
+    
+    return !encountered_errors;
+}
+
+// NOTE(soimn): Precendence levels
+// 0. postfix unary operators and primary expressions
+// 1. prefix unary operators
+// 2. multiplication, division, modulus
+// *. bitwise binary operators
+// 3. addition, subtraction
+// 4. comparison
+// 5. logical
+// 6. assignment
+
+// TODO(soimn): See if there is a way to clean up this ugly mess
+inline bool
+ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
+{
+    bool encountered_errors = false;
+    
+    Token token = GetToken(state.lexer);
+    
+    /// Number
+    if (token.type == Token_Number)
+    {
+        if (*result == 0)
+        {
+            *result = PushNode(state, ParseNode_Expression, ParseExpr_Number);
+            (*result)->number = token.number;
+            
+            SkipPastToken(&state.lexer, token);
+            
+            if (ParsePrimaryOrPostfixUnaryExpression(state, result))
             {
-                current_statement = &(*current_statement)->next;
+                // succeeded
             }
             
             else
@@ -491,46 +351,285 @@ ParseScope(Parser_State state, Parse_Tree_Node** scope_node)
                 encountered_errors = true;
             }
         }
-    } while (!encountered_errors && is_brace_delimited);
-    
-    return encountered_errors;
-}
-
-inline bool
-ParseStatement(Parser_State state, Parse_Tree_Node** result)
-{
-    bool encountered_errors = false;
-    
-    Token token = PeekToken(state.lexer);
-    
-    if (token.type == Token_Semicolon)
-    {
-        SkipToken(state.lexer);
+        
+        else
+        {
+            //// ERROR: Missing terminating semicolon in expression before numeric literal
+            encountered_errors = true;
+        }
     }
     
+    /// String
+    else if (token.type == Token_String)
+    {
+        if (*result == 0)
+        {
+            *result = PushNode(state, ParseNode_Expression, ParseExpr_String);
+            (*result)->string = RegisterString(state, token.string);
+            
+            SkipPastToken(&state.lexer, token);
+            
+            if (ParsePrimaryOrPostfixUnaryExpression(state, result))
+            {
+                // succeeded
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Missing terminating semicolon in expression before string literal
+            encountered_errors = true;
+        }
+    }
+    
+    /// Identifier
     else if (token.type == Token_Identifier)
     {
-        if (StringCompare(token.string, CONST_STRING("if")) || 
-            StringCompare(token.string, CONST_STRING("while")))
+        if (*result == 0 || (*result)->expr_type == ParseExpr_Member)
         {
-            Enum32(AST_NODE_TYPE) type;
+            Parse_Node* new_node = PushNode(state, ParseNode_Expression, ParseExpr_Identifier);
+            new_node->string = RegisterString(state, token.string);
             
-            if (StringCompare(token.string, CONST_STRING("if"))) type = ASTNode_If;
-            else                                                 type = ASTNode_While;
+            SkipPastToken(&state.lexer, token);
             
-            SkipToken(state.lexer);
-            
-            *result = PushNode(state.tree, type, 0);
-            
-            if (RequiredToken(state.lexer, Token_OpenParen))
+            if (*result != 0 && (*result)->expr_type == ParseExpr_Member)
             {
-                if (ParseExpression(state, &(*result)->condition))
+                (*result)->right = new_node;
+            }
+            
+            else
+            {
+                *result = new_node;
+            }
+            
+            if (ParsePrimaryOrPostfixUnaryExpression(state, result))
+            {
+                // succeeded
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Missing terminating semicolon after expression before identifier
+            encountered_errors = true;
+        }
+    }
+    
+    /// Increment / decrement
+    else if (token.type == Token_PlusPlus || token.type == Token_MinusMinus)
+    {
+        if (*result == 0)
+        {
+            //// ERROR: Missing primary expression before increment / decrement operator
+            encountered_errors = true;
+        }
+        
+        else
+        {
+            if ((*result)->expr_type != ParseExpr_Member)
+            {
+                SkipPastToken(&state.lexer, token);
+                
+                Parse_Node* operand = *result;
+                
+                Enum32(PARSE_EXPRESSION_TYPE) type = (token.type == Token_PlusPlus
+                                                      ? ParseExpr_Increment
+                                                      : ParseExpr_Decrement);
+                *result = PushNode(state, ParseNode_Expression, type);
+                (*result)->operand = operand;
+                
+                if (ParsePrimaryOrPostfixUnaryExpression(state, result))
                 {
-                    if (RequiredToken(state.lexer, Token_CloseParen))
+                    // succeeded
+                }
+                
+                else
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Invalid use of increment / decrement operator with member operator as operand
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    /// Lambda declaration
+    else if (token.type == Token_Identifier && StringCompare(token.string, CONST_STRING("proc")))
+    {
+        if (*result == 0)
+        {
+            *result = PushNode(state, ParseNode_Expression, ParseExpr_LambdaDecl);
+            
+            if (ParseFunction(state, *result))
+            {
+                if (ParsePrimaryOrPostfixUnaryExpression(state, result))
+                {
+                    // succeeded
+                }
+                
+                else
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Missing terminating semicolon after expression before lambda declaration
+            encountered_errors = true;
+        }
+    }
+    
+    /// Compound expression or function call
+    else if (token.type == Token_OpenParen)
+    {
+        SkipPastToken(&state.lexer, token);
+        
+        /// Compound expression
+        if (*result == 0)
+        {
+            *result = PushNode(state, ParseNode_Expression, ParseExpr_Compound);
+            
+            if (ParseExpression(state, &(*result)->operand))
+            {
+                if (RequireAndSkipToken(&state.lexer, Token_CloseParen))
+                {
+                    // succeeded
+                }
+                
+                else
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+        
+        /// Function call
+        else
+        {
+            if ((*result)->expr_type != ParseExpr_Member)
+            {
+                Parse_Node* call_function = *result;
+                
+                *result = PushNode(state, ParseNode_Expression, ParseExpr_FunctionCall);
+                (*result)->call_function = call_function;
+                
+                Parse_Node** current_arg = &(*result)->call_arguments;
+                while (!encountered_errors)
+                {
+                    token = GetToken(state.lexer);
+                    
+                    if (token.type == Token_CloseParen)
                     {
-                        if (ParseScope(state, &(*result)->true_body))
+                        SkipPastToken(&state.lexer, token);
+                        break;
+                    }
+                    
+                    else
+                    {
+                        if (ParseExpression(state, current_arg))
                         {
-                            // Succeeded
+                            current_arg = &(*current_arg)->next;
+                            
+                            token = GetToken(state.lexer);
+                            if (token.type != Token_CloseParen &&
+                                !RequireAndSkipToken(&state.lexer, Token_Comma))
+                            {
+                                //// ERROR
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR
+                            encountered_errors = true;
+                        }
+                    }
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Invalid use of function call operator with member operator as left operand
+                encountered_errors = true;
+            }
+        }
+        
+        if (!encountered_errors)
+        {
+            if (ParsePrimaryOrPostfixUnaryExpression(state, result))
+            {
+                // succeeded
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    /// Subscript
+    else if (token.type == Token_OpenBracket)
+    {
+        SkipPastToken(&state.lexer, token);
+        
+        if (*result == 0)
+        {
+            //// ERROR: Missing primary expression before subscript
+            encountered_errors = true;
+        }
+        
+        else
+        {
+            if ((*result)->expr_type != ParseExpr_Member)
+            {
+                Parse_Node* left = *result;
+                
+                *result = PushNode(state, ParseNode_Expression, ParseExpr_Subscript);
+                (*result)->left = left;
+                
+                if (ParseExpression(state, &(*result)->right))
+                {
+                    if (RequireAndSkipToken(&state.lexer, Token_CloseBracket))
+                    {
+                        if (ParsePrimaryOrPostfixUnaryExpression(state, result))
+                        {
+                            // succeeded
                         }
                         
                         else
@@ -542,34 +641,768 @@ ParseStatement(Parser_State state, Parse_Tree_Node** result)
                     
                     else
                     {
-                        //// ERROR: Missing close paren after condition in if/while statement
+                        //// ERROR: Missing closing bracket in subscript expression
                         encountered_errors = true;
                     }
                 }
                 
                 else
                 {
-                    //// ERROR: Failed to parse condition
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                //// ERROR: Missing open paren after if/while keyword in if/while statement
-                encountered_errors =  true;
+                //// ERROR: Invalid use of subscript operator with left operand as member operator
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    /// Member
+    else if (token.type == Token_Period)
+    {
+        SkipPastToken(&state.lexer, token);
+        
+        if (*result == 0)
+        {
+            //// ERROR: Missing primary expression before member operator
+            encountered_errors = true;
+        }
+        
+        else
+        {
+            if ((*result)->expr_type == ParseExpr_Identifier ||
+                (*result)->expr_type == ParseExpr_Subscript  ||
+                (*result)->expr_type == ParseExpr_FunctionCall)
+            {
+                Parse_Node* left = *result;
+                
+                *result = PushNode(state, ParseNode_Expression, ParseExpr_Member);
+                (*result)->left = left;
+                
+                if (ParsePrimaryOrPostfixUnaryExpression(state, result))
+                {
+                    // succeeded
+                }
+                
+                else
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Invalid use of member operator with ___ as left operand
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    /// Empty
+    else
+    {
+        if (*result == 0)
+        {
+            //// ERROR: Missing primary expression in expression
+            encountered_errors = true;
+        }
+        
+        else if ((*result)->expr_type == ParseExpr_Member && (*result)->right == 0)
+        {
+            //// ERROR: Missing right operand of member operator
+            encountered_errors = true;
+        }
+        
+        else
+        {
+            // succeeded
+        }
+    }
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParsePrefixUnaryExpression(Parser_State state, Parse_Node** result)
+{
+    bool encountered_errors = false;
+    
+    Token token = GetToken(state.lexer);
+    
+    Enum32(PARSE_EXPRESSION_TYPE) type = ParseExpr_Invalid;
+    
+    switch (token.type)
+    {
+        case Token_Plus:        type = ParseExpr_UnaryPlus;   break;
+        case Token_Minus:       type = ParseExpr_UnaryMinus;  break;
+        case Token_Tilde:       type = ParseExpr_BitwiseNot;  break;
+        case Token_Exclamation: type = ParseExpr_LogicalNot;  break;
+        case Token_Asterisk:    type = ParseExpr_Dereference; break;
+        case Token_And:         type = ParseExpr_Reference;   break;
+    }
+    
+    if (type != ParseExpr_Invalid)
+    {
+        SkipPastToken(&state.lexer, token);
+        
+        *result = PushNode(state, ParseNode_Expression, type);
+        
+        if (ParsePrefixUnaryExpression(state, &(*result)->operand))
+        {
+            // succeeded
+        }
+        
+        else
+        {
+            //// ERROR
+            encountered_errors = true;
+        }
+    }
+    
+    else
+    {
+        if (ParsePrimaryOrPostfixUnaryExpression(state, result))
+        {
+            // succeeded
+        }
+        
+        else
+        {
+            //// ERROR
+            encountered_errors = true;
+        }
+    }
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParseMultLevelArithmeticExpression(Parser_State state, Parse_Node** result)
+{
+    bool encountered_errors = false;
+    
+    if (ParsePrefixUnaryExpression(state, result))
+    {
+        Enum32(PARSE_EXPRESSION_TYPE) type = ParseExpr_Invalid;
+        
+        Token token = GetToken(state.lexer);
+        switch (token.type)
+        {
+            case Token_Asterisk:   type = ParseExpr_Multiplication; break;
+            case Token_Slash:      type = ParseExpr_Division; break;
+            case Token_Percentage: type = ParseExpr_Modulus; break;
+            case Token_And:        type = ParseExpr_BitwiseAnd; break;
+            case Token_Pipe:       type = ParseExpr_BitwiseOr; break;
+        }
+        
+        if (type != ParseExpr_Invalid)
+        {
+            SkipPastToken(&state.lexer, token);
+            
+            Parse_Node* left = *result;
+            
+            *result = PushNode(state, ParseNode_Expression, type);
+            (*result)->left = left;
+            
+            if (ParseMultLevelArithmeticExpression(state, &(*result)->right))
+            {
+                // succeeded
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    else
+    {
+        //// ERROR
+        encountered_errors = true;
+    }
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParseAddLevelArithmeticExpression(Parser_State state, Parse_Node** result)
+{
+    bool encountered_errors = false;
+    
+    if (ParseMultLevelArithmeticExpression(state, result))
+    {
+        Enum32(PARSE_EXPRESSION_TYPE) type = ParseExpr_Invalid;
+        
+        Token token = GetToken(state.lexer);
+        switch (token.type)
+        {
+            case Token_Plus:  type = ParseExpr_Addition;    break;
+            case Token_Minus: type = ParseExpr_Subtraction; break;
+        }
+        
+        if (type != ParseExpr_Invalid)
+        {
+            SkipPastToken(&state.lexer, token);
+            
+            Parse_Node* left = *result;
+            
+            *result = PushNode(state, ParseNode_Expression, type);
+            (*result)->left = left;
+            
+            if (ParseAddLevelArithmeticExpression(state, &(*result)->right))
+            {
+                // succeeded
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    else
+    {
+        //// ERROR
+        encountered_errors = true;
+    }
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParseComparativeExpression(Parser_State state, Parse_Node** result)
+{
+    bool encountered_errors = false;
+    
+    if (ParseAddLevelArithmeticExpression(state, result))
+    {
+        Enum32(PARSE_EXPRESSION_TYPE) type = ParseExpr_Invalid;
+        
+        Token token = GetToken(state.lexer);
+        switch (token.type)
+        {
+            case Token_EQEQ:          type = ParseExpr_IsEqual;              break;
+            case Token_ExclamationEQ: type = ParseExpr_IsNotEqual;           break;
+            case Token_GreaterThan:   type = ParseExpr_IsGreaterThan;        break;
+            case Token_LessThan:      type = ParseExpr_IsLessThan;           break;
+            case Token_GTEQ:          type = ParseExpr_IsGreaterThanOrEqual; break;
+            case Token_LTEQ:          type = ParseExpr_IsLessThanOrEqual;    break;
+        }
+        
+        if (type != ParseExpr_Invalid)
+        {
+            SkipPastToken(&state.lexer, token);
+            
+            Parse_Node* left = *result;
+            
+            *result = PushNode(state, ParseNode_Expression, type);
+            (*result)->left = left;
+            
+            if (ParseComparativeExpression(state, &(*result)->right))
+            {
+                // succeeded
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    else
+    {
+        //// ERROR
+        encountered_errors = true;
+    }
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParseLogicalExpression(Parser_State state, Parse_Node** result)
+{
+    bool encountered_errors = false;
+    
+    if (ParseComparativeExpression(state, result))
+    {
+        Enum32(PARSE_EXPRESSION_TYPE) type = ParseExpr_Invalid;
+        
+        Token token = GetToken(state.lexer);
+        switch (token.type)
+        {
+            case Token_AndAnd:   type = ParseExpr_LogicalAnd; break;
+            case Token_PipePipe: type = ParseExpr_LogicalOr;  break;
+        }
+        
+        if (type != ParseExpr_Invalid)
+        {
+            SkipPastToken(&state.lexer, token);
+            
+            Parse_Node* left = *result;
+            
+            *result = PushNode(state, ParseNode_Expression, type);
+            (*result)->left = left;
+            
+            if (ParseLogicalExpression(state, &(*result)->right))
+            {
+                // succeeded
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    else
+    {
+        //// ERROR
+        encountered_errors = true;
+    }
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParseExpression(Parser_State state, Parse_Node** result)
+{
+    bool encountered_errors = false;
+    
+    if (ParseLogicalExpression(state, result))
+    {
+        Enum32(PARSE_EXPRESSION_TYPE) type = ParseExpr_Invalid;
+        
+        Token token = GetToken(state.lexer);
+        switch (token.type)
+        {
+            case Token_Equals:       type = ParseExpr_Equals;                  break;
+            case Token_PlusEQ:       type = ParseExpr_AddEquals;               break;
+            case Token_MinusEQ:      type = ParseExpr_SubEquals;               break;
+            case Token_AsteriskEQ:   type = ParseExpr_MultEquals;              break;
+            case Token_SlashEQ:      type = ParseExpr_DivEquals;               break;
+            case Token_PercentageEQ: type = ParseExpr_ModEquals;               break;
+            case Token_AndEQ:        type = ParseExpr_BitwiseAndEquals;        break;
+            case Token_PipeEQ:       type = ParseExpr_BitwiseOrEquals;         break;
+            case Token_GTGTEQ:       type = ParseExpr_BitwiseLeftShiftEquals;  break;
+            case Token_LTLTEQ:       type = ParseExpr_BitwiseRightShiftEquals; break;
+        }
+        
+        if (type != ParseExpr_Invalid)
+        {
+            SkipPastToken(&state.lexer, token);
+            
+            Parse_Node* left = *result;
+            
+            *result = PushNode(state, ParseNode_Expression, type);
+            (*result)->left = left;
+            
+            if (ParseExpression(state, &(*result)->right))
+            {
+                // succeeded
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    else
+    {
+        //// ERROR
+        encountered_errors = true;
+    }
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParseScope(Parser_State state, Parse_Node** result)
+{
+    bool encountered_errors = false;
+    
+    *result = PushNode(state, ParseNode_Scope);
+    
+    Token token = GetToken(state.lexer);
+    
+    bool is_brace_delimited = false;
+    if (token.type == Token_OpenBrace)
+    {
+        is_brace_delimited = true;
+        SkipPastToken(&state.lexer, token);
+        token = GetToken(state.lexer);
+    }
+    
+    Parse_Node** current = result;
+    do
+    {
+        if (token.type == Token_CloseBrace)
+        {
+            if (is_brace_delimited)
+            {
+                SkipPastToken(&state.lexer, token);
+                break;
+            }
+            
+            else
+            {
+                //// ERROR: Encountered a closing brace before end of statement
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            if (ParseStatement(state, current))
+            {
+                // NOTE(soimn): This is to prevent an access viloation on empty statements
+                if (current)
+                {
+                    current = &(*current)->next;
+                }
+            }
+            
+            else
+            {
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+        
+        token = GetToken(state.lexer);
+    } while (!encountered_errors && is_brace_delimited);
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParseStatement(Parser_State state, Parse_Node** result)
+{
+    bool encountered_errors = false;
+    
+    Token token = GetToken(state.lexer);
+    
+    if (token.type == Token_EndOfStream || token.type == Token_Error)
+    {
+        //// ERROR
+        encountered_errors = true;
+    }
+    
+    else if (token.type == Token_Semicolon)
+    {
+        SkipPastToken(&state.lexer, token);
+    }
+    
+    // Compiler directive
+    // TODO(soimn): Implement a proper system for handling compiler directives
+    else if (token.type == Token_Hash)
+    {
+        SkipPastToken(&state.lexer, token);
+        token = GetAndSkipToken(&state.lexer);
+        
+        if (token.type == Token_Identifier)
+        {
+            if (StringCompare(token.string, CONST_STRING("import")))
+            {
+                token = GetAndSkipToken(&state.lexer);
+                
+                if (token.type == Token_String)
+                {
+                    File_ID file_id = LoadAndParseFile(state.module, token.string);
+                    
+                    if (file_id != INVALID_ID)
+                    {
+                        File_ID* entry = (File_ID*)PushElement(&state.file->imported_files);
+                        *entry = file_id;
+                    }
+                    
+                    else
+                    {
+                        //// ERROR
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Missing path string after "import" compiler directive
+                    encountered_errors = true;
+                }
+                
+                if (!encountered_errors &&
+                    !RequireAndSkipToken(&state.lexer, Token_Semicolon))
+                {
+                    //// ERROR: Missing semicolon after compiler directive
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Unknown compiler directive
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Missing name of compiler directive
+            encountered_errors = true;
+        }
+    }
+    
+    // Declaration or expression
+    else if (token.type == Token_Identifier)
+    {
+        Token peek = PeekNextToken(state.lexer, token);
+        
+        // Variable declaration
+        if (peek.type == Token_Colon)
+        {
+            *result = PushNode(state, ParseNode_VarDecl);
+            (*result)->name = RegisterString(state, token.string);
+            
+            SkipPastToken(&state.lexer, peek);
+            
+            token = GetToken(state.lexer);
+            
+            if (token.type != Token_Equals)
+            {
+                if (ParseType(state, &(*result)->type))
+                {
+                    token = GetToken(state.lexer);
+                }
+                
+                else
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+            
+            if (token.type == Token_Equals)
+            {
+                SkipPastToken(&state.lexer, token);
+                
+                if (ParseExpression(state, &(*result)->value))
+                {
+                    // Succeeded
+                }
+                
+                else
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+            
+            if (!RequireAndSkipToken(&state.lexer, Token_Semicolon))
+            {
+                //// ERROR: Missing semicolon after variable declaration
+                encountered_errors = true;
+            }
+        }
+        
+        // Constant name declaration
+        else if (peek.type == Token_ColonColon)
+        {
+            String name = token.string;
+            SkipPastToken(&state.lexer, peek);
+            
+            token = GetToken(state.lexer);
+            
+            if (token.type == Token_Identifier)
+            {
+                if (StringCompare(token.string, CONST_STRING("proc")))
+                {
+                    *result = PushNode(state, ParseNode_FuncDecl);
+                    (*result)->name = RegisterString(state, name);
+                    
+                    if (ParseFunction(state, *result))
+                    {
+                        // succeeded
+                    }
+                    
+                    else
+                    {
+                        //// ERROR
+                        encountered_errors = true;
+                    }
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("struct")))
+                {
+                    *result = PushNode(state, ParseNode_StructDecl);
+                    (*result)->name = RegisterString(state, name);
+                    
+                    SkipPastToken(&state.lexer, token);
+                    token = GetToken(state.lexer);
+                    
+                    if (token.type == Token_OpenBrace)
+                    {
+                        if (ParseScope(state, &(*result)->members))
+                        {
+                            // succeeded
+                        }
+                        
+                        else
+                        {
+                            //// ERROR
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing body of struct declaration
+                        encountered_errors = true;
+                    }
+                }
+                
+                else if (StringCompare(token.string, CONST_STRING("enum")))
+                {
+                    *result = PushNode(state, ParseNode_EnumDecl);
+                    (*result)->name = RegisterString(state, name);
+                    
+                    SkipPastToken(&state.lexer, token);
+                    token = GetToken(state.lexer);
+                    
+                    if (token.type == Token_OpenBrace)
+                    {
+                        if (ParseScope(state, &(*result)->members))
+                        {
+                            // succeeded
+                        }
+                        
+                        else
+                        {
+                            //// ERROR
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing body of enum declaration
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    *result = PushNode(state, ParseNode_ConstDecl);
+                    (*result)->name = RegisterString(state, name);
+                    
+                    if (ParseExpression(state, &(*result)->value))
+                    {
+                        if (!RequireAndSkipToken(&state.lexer, Token_Semicolon))
+                        {
+                            //// ERROR
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR
+                        encountered_errors = true;
+                    }
+                }
+            }
+            
+            else
+            {
+                *result = PushNode(state, ParseNode_ConstDecl);
+                (*result)->name = RegisterString(state, name);
+                
+                if (ParseExpression(state, &(*result)->value))
+                {
+                    if (!RequireAndSkipToken(&state.lexer, Token_Semicolon))
+                    {
+                        //// ERROR
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        else if (StringCompare(token.string, CONST_STRING("if")) ||
+                 StringCompare(token.string, CONST_STRING("while")))
+        {
+            Enum32(PARSE_NODE_TYPE) type = (StringCompare(token.string, CONST_STRING("if")) 
+                                            ? ParseNode_If 
+                                            : ParseNode_While);
+            *result = PushNode(state, type);
+            
+            SkipPastToken(&state.lexer, token);
+            
+            if (RequireAndSkipToken(&state.lexer, Token_OpenParen))
+            {
+                if (ParseExpression(state, &(*result)->condition))
+                {
+                    if (RequireAndSkipToken(&state.lexer, Token_CloseParen))
+                    {
+                        if (ParseScope(state, &(*result)->true_body))
+                        {
+                            // succeeded
+                        }
+                        
+                        else
+                        {
+                            //// ERROR
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing closing paren after if statement condition
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Missing opening paren after if keyword
+                encountered_errors = true;
             }
         }
         
         else if (StringCompare(token.string, CONST_STRING("else")))
         {
-            SkipToken(state.lexer);
-            
-            *result = PushNode(state.tree, ASTNode_Else, 0);
+            *result = PushNode(state, ParseNode_Else);
             
             if (ParseScope(state, &(*result)->false_body))
             {
-                // Succeeded
+                // succeeded
             }
             
             else
@@ -579,15 +1412,17 @@ ParseStatement(Parser_State state, Parse_Tree_Node** result)
             }
         }
         
-        else if (StringCompare(token.string, CONST_STRING("defer")))
+        else if (StringCompare(token.string, CONST_STRING("continue")) ||
+                 StringCompare(token.string, CONST_STRING("break")))
         {
-            *result = PushNode(state.tree, ASTNode_Defer, 0);
+            Enum32(PARSE_NODE_TYPE) type = (StringCompare(token.string, CONST_STRING("continue"))
+                                            ? ParseNode_Continue
+                                            : ParseNode_Break);
+            *result = PushNode(state, type);
             
-            SkipToken(state.lexer);
-            
-            if (ParseScope(state, &(*result)->defer_statement))
+            if (RequireAndSkipToken(&state.lexer, Token_Semicolon))
             {
-                // Succeeded
+                // succeeded
             }
             
             else
@@ -597,23 +1432,21 @@ ParseStatement(Parser_State state, Parse_Tree_Node** result)
             }
         }
         
-        else if (StringCompare(token.string, CONST_STRING("return")))
+        else if (StringCompare(token.string, CONST_STRING("defer"))  ||
+                 StringCompare(token.string, CONST_STRING("return")) ||
+                 StringCompare(token.string, CONST_STRING("using")))
         {
-            *result = PushNode(state.tree, ASTNode_Return, 0);
+            Enum32(PARSE_NODE_TYPE) type = ParseExpr_Invalid;
             
-            SkipToken(state.lexer);
+            if (StringCompare(token.string, CONST_STRING("defer")))       type = ParseNode_Defer;
+            else if (StringCompare(token.string, CONST_STRING("return"))) type = ParseNode_Return;
+            else                                                          type = ParseNode_Using;
             
-            if (ParseExpression(state, &(*result)->value))
+            *result = PushNode(state, type);
+            
+            if (ParseStatement(state, &(*result)->statement))
             {
-                if (RequiredToken(state.lexer, Token_Semicolon))
-                {
-                    // Succeeded
-                }
-                
-                else
-                {
-                    //// ERROR: Missing semicolon after statement
-                }
+                // succeeded
             }
             
             else
@@ -623,41 +1456,12 @@ ParseStatement(Parser_State state, Parse_Tree_Node** result)
             }
         }
         
-        else if (StringCompare(token.string, CONST_STRING("break")) ||
-                 StringCompare(token.string, CONST_STRING("continue")))
-        {
-            Enum32(AST_NODE_TYPE) type;
-            
-            if (StringCompare(token.string, CONST_STRING("break"))) type = ASTNode_Break;
-            else                                                    type = ASTNode_Continue;
-            
-            SkipToken(state.lexer);
-            
-            *result = PushNode(state.tree, type, 0);
-            
-            if (RequiredToken(state.lexer, Token_Semicolon))
-            {
-                // Succeeded
-            }
-            
-            else
-            {
-                //// ERROR: Missing semicolon after statement
-            }
-        }
-        
+        // Expression
         else
         {
-            token = PeekToken(state.lexer, 2);
-            
-            if (token.type == Token_Colon || token.type == Token_ColonColon)
+            if (ParseExpression(state, result))
             {
-                if (ParseDeclaration(state, result))
-                {
-                    // Succeeded
-                }
-                
-                else
+                if (!RequireAndSkipToken(&state.lexer, Token_Semicolon))
                 {
                     //// ERROR
                     encountered_errors = true;
@@ -666,40 +1470,21 @@ ParseStatement(Parser_State state, Parse_Tree_Node** result)
             
             else
             {
-                if (ParseExpression(state, result))
-                {
-                    if (RequiredToken(state.lexer, Token_Semicolon))
-                    {
-                        // Succeeded
-                    }
-                    
-                    else
-                    {
-                        //// ERROR: Missing semicolon after statement
-                    }
-                }
-                
-                else
-                {
-                    //// ERROR
-                    encountered_errors = true;
-                }
+                //// ERROR
+                encountered_errors = true;
             }
         }
     }
     
+    // Expression
     else
     {
         if (ParseExpression(state, result))
         {
-            if (RequiredToken(state.lexer, Token_Semicolon))
+            if (!RequireAndSkipToken(&state.lexer, Token_Semicolon))
             {
-                // Succeeded
-            }
-            
-            else
-            {
-                //// ERROR: Missing semicolon after statement
+                //// ERROR
+                encountered_errors = true;
             }
         }
         
@@ -714,175 +1499,39 @@ ParseStatement(Parser_State state, Parse_Tree_Node** result)
 }
 
 inline bool
-ParseDeclaration(Parser_State state, Parse_Tree_Node** result)
+ParseFile(Module* module, File* file)
 {
     bool encountered_errors = false;
-    
-    Token name_token      = GetToken(state.lexer);
-    Token separator_token = GetToken(state.lexer);
-    
-    ASSERT(name_token.type == Token_Identifier &&
-           (separator_token.type == Token_Colon || separator_token.type == Token_ColonColon));
-    
-    if (separator_token.type == Token_Colon)
-    {
-        *result = PushNode(state.tree, ASTNode_VarDecl, 0);
-        
-        Token token = PeekToken(state.lexer);
-        if (token.type != Token_Equals)
-        {
-            /// Parse type
-            NOT_IMPLEMENTED;
-        }
-        
-        if (token.type == Token_Equals)
-        {
-            SkipToken(state.lexer);
-            
-            if (ParseExpression(state, &(*result)->value))
-            {
-                if (RequiredToken(state.lexer, Token_Semicolon))
-                {
-                    // Succeeded
-                }
-                
-                else
-                {
-                    //// ERROR: Missing semicolon after variable declaration
-                    encountered_errors = true;
-                }
-            }
-            
-            else
-            {
-                //// ERROR: Failed to parse right hand side of assignment expression
-                encountered_errors = true;
-            }
-        }
-    }
-    
-    else
-    {
-        Token token = PeekToken(state.lexer);
-        
-        bool is_handled = false;
-        if (token.type == Token_Identifier)
-        {
-            if (StringCompare(token.string, CONST_STRING("proc")))
-            {
-                *result = PushNode(state.tree, ASTNode_FuncDecl, 0);
-                
-                /// Parse function declaration
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (StringCompare(token.string, CONST_STRING("struct")))
-            {
-                *result = PushNode(state.tree, ASTNode_StructDecl, 0);
-                
-                /// Parse struct declaration
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (StringCompare(token.string, CONST_STRING("enum")))
-            {
-                *result = PushNode(state.tree, ASTNode_EnumDecl, 0);
-                
-                /// Parse enum declaration
-                NOT_IMPLEMENTED;
-            }
-        }
-        
-        if (!encountered_errors && !is_handled)
-        {
-            *result = PushNode(state.tree, ASTNode_ConstDecl, 0);
-            
-            if (ParseExpression(state, &(*result)->value))
-            {
-                if (RequiredToken(state.lexer, Token_Semicolon))
-                {
-                    // Succeeded
-                }
-                
-                else
-                {
-                    //// ERROR: Missing semicolon after constant declaration
-                    encountered_errors = true;
-                }
-            }
-            
-            else
-            {
-                //// ERROR: Failed to parse value of constant declaration
-                encountered_errors = true;
-            }
-        }
-    }
-    
-    return !encountered_errors;
-}
-
-inline bool
-ParseFile(Module* module, File_ID file_id)
-{
-    bool encountered_errors = false;
-    
-    File* file       = (File*)ElementAt(&module->files, file_id);
-    Parse_Tree* tree = &file->parse_tree;
-    
-    tree->nodes = BUCKET_ARRAY(&module->parser_arena, Parse_Tree_Node, 128);
-    
-    tree->root = (Parse_Tree_Node*)PushElement(&tree->nodes);
-    tree->root->node_type = ASTNode_Scope;
-    
-    Lexer lexer = LexFile(file);
-    
-    
     
     Parser_State state = {};
+    state.module = module;
     state.file   = file;
-    state.tree   = tree;
-    state.lexer  = &lexer;
+    state.tree   = &file->parse_tree;
+    state.lexer  = LexFile(file);
     
-    Parse_Tree_Node** current_node = &tree->root->scope;
+    state.file->imported_files = BUCKET_ARRAY(&module->main_arena, File_ID, 8);
     
-    Token token = PeekToken(state.lexer);
+    state.tree->nodes = BUCKET_ARRAY(&module->parser_arena, Parse_Node, 128);
+    state.tree->root  = PushNode(state, ParseNode_Scope);
+    
+    
+    Parse_Node** current_node = &state.tree->root->scope;
+    
+    Token token = GetToken(state.lexer);
     while (token.type != Token_EndOfStream)
     {
-        Token peek = PeekToken(state.lexer, 2);
-        
-        if (token.type == Token_Unknown || token.type == Token_Error)
+        if (ParseStatement(state, current_node))
         {
-            //// ERROR
-            encountered_errors = true;
-        }
-        
-        else if (token.type == Token_Hash)
-        {
-            NOT_IMPLEMENTED;
-        }
-        
-        else if (token.type == Token_Identifier && (peek.type == Token_Colon || peek.type == Token_ColonColon))
-        {
-            if (ParseDeclaration(state, current_node))
-            {
-                current_node = &(*current_node)->next;
-            }
-            
-            else
-            {
-                //// ERROR: Failed to parse declaration
-                encountered_errors = true;
-            }
+            current_node = &(*current_node)->next;
         }
         
         else
         {
-            //// ERROR: Illegal use of token in global scope
+            //// ERROR: Failed to parse statement
             encountered_errors = true;
         }
         
-        token = PeekToken(state.lexer);
+        token = GetToken(state.lexer);
     }
     
     return !encountered_errors;

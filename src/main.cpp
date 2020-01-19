@@ -3,6 +3,8 @@
 #include "lexer.h"
 #include "ast.h"
 #include "parser.h"
+#include "symbols.h"
+#include "sema.h"
 
 #ifdef GREMLIN_PLATFORM_WINDOWS
 #include "win32_layer.h"
@@ -15,7 +17,8 @@ LoadAndParseFile(Module* module, String path)
     
     if (file_id != INVALID_ID)
     {
-        if (ParseFile(module, file_id))
+        File* file = (File*)ElementAt(&module->files, file_id);
+        if (ParseFile(module, file))
         {
             // Succeeded
         }
@@ -40,7 +43,9 @@ int
 main(int argc, const char** argv)
 {
     Module module = {};
-    module.files = BUCKET_ARRAY(&module.main_arena, File, 8);
+    module.files          = BUCKET_ARRAY(&module.main_arena, File, 8);
+    module.string_storage = BUCKET_ARRAY(&module.main_arena, String, 256);
+    module.symbol_tables  = BUCKET_ARRAY(&module.main_arena, Symbol_Table, 64);
     
     bool encountered_errors = false;
     
@@ -64,10 +69,11 @@ main(int argc, const char** argv)
         
         if (!module.failed_to_parse_all_files)
         {
-            /// Build list of identifiers, declared symbols, type names and create symbol tables
-            /// Check code for correctness (declared before use, type compatibility, function calls, context 
-            ///                             specific statements)
-            /// Build final AST
+            /// Check usage of context specific statements and expressions
+            /// Check if all referenced symbols are defined and used in a valid context, and build type table
+            /// Compute size of types
+            /// Infer types and check for type compatibility, also check function call argument validity
+            /// Check compile time assertions
             /// Generate code
         }
         

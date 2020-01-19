@@ -1,2 +1,5 @@
-* The parser accepts assignment expressions on all levels. Err on all assignments that are 
-not on the statement level
+* Implement a proper assertion and error handling system
+* Implement a proper way of handling compiler directives
+* Clean up the ParseFunction and ParsePrimaryOrPostfixUnaryExpression functions
+* Implement a proper Win32 layer
+* Clean up the garbage in main()

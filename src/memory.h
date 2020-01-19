@@ -45,6 +45,15 @@ ZeroSize(void* ptr, UMM size)
     }
 }
 
+inline void
+Copy(void* src, void* dst, UMM size)
+{
+    for (UMM i = 0; i < size; ++i)
+    {
+        ((U8*)dst)[i] = ((U8*)src)[i];
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////////
 
 struct Memory_Arena_Block

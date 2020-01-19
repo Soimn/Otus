@@ -89,9 +89,3 @@ enum AST_EXPRESSION_TYPE
     
     AST_EXPRESSION_TYPE_COUNT
 };
-
-inline Scope_ID
-GetNewScopeID(Module* module)
-{
-    return (Scope_ID)module->total_scope_count++;
-}

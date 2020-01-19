@@ -125,12 +125,26 @@ typedef U32 ID;
 
 typedef ID File_ID;
 typedef ID Scope_ID;
-typedef ID Identifier_ID;
+typedef ID String_ID;
+typedef ID Symbol_Table_ID;
+
+struct Symbol_ID
+{
+    Symbol_Table_ID symbol_table;
+    ID symbol;
+};
+
+struct File_And_Line
+{
+    File_ID file_id;
+    U32 line;
+    U32 column;
+};
 
 struct Parse_Tree
 {
-    Bucket_Array(Parse_Tree_Node) nodes;
-    struct Parse_Tree_Node* root;
+    Bucket_Array(Parse_Node) nodes;
+    struct Parse_Node* root;
 };
 
 struct AST
@@ -144,22 +158,37 @@ struct File
     String file_path;
     String file_contents;
     
-    union
-    {
-        Parse_Tree parse_tree;
-        AST ast;
-    };
+    Bucket_Array(File_ID) imported_files;
+    
+    Parse_Tree parse_tree;
+    AST ast;
 };
 
 struct Module
 {
     Memory_Arena main_arena;
     Memory_Arena parser_arena;
+    Memory_Arena string_arena;
     
     Memory_Arena file_content_arena;
     Bucket_Array(File) files;
     
+    Bucket_Array(String) string_storage;
+    Bucket_Array(Symbol_Table) symbol_tables;
+    
     U32 total_scope_count;
     
     bool failed_to_parse_all_files;
+};
+
+// TODO(soimn): Implement BigNum for parsing
+struct Number
+{
+    bool is_integer;
+    
+    union
+    {
+        U64 u64;
+        F64 f64;
+    };
 };

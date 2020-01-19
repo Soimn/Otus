@@ -70,16 +70,24 @@ StringLength(const char* cstring)
 inline bool
 StringCompare(String s0, String s1)
 {
-    while (s0.size && s1.size && *s0.data == *s1.data)
+    bool pointers_equal = (s0.data == s1.data && s0.size == s1.size);
+    bool content_equal  = false;
+    
+    if (!pointers_equal)
     {
-        ++s0.data;
-        --s0.size;
+        while (s0.size && s1.size && *s0.data == *s1.data)
+        {
+            ++s0.data;
+            --s0.size;
+            
+            ++s1.data;
+            --s1.size;
+        }
         
-        ++s1.data;
-        --s1.size;
+        content_equal = (s0.size == s1.size);
     }
     
-    return (s0.size == s1.size);
+    return  (pointers_equal || content_equal);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
