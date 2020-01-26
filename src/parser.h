@@ -155,13 +155,11 @@ struct Parse_Node
         /// Struct and enum declarations
         Parse_Node* members;
         
-        /// Defer and return
+        /// Scope, defer and return
         Parse_Node* statement;
         
         /// Compound
         Parse_Node* expression;
-        
-        Parse_Node* scope;
     };
     
     union
@@ -1165,7 +1163,7 @@ ParseScope(Parser_State state, Parse_Node** result, bool require_braces)
     
     else
     {
-        Parse_Node** current = result;
+        Parse_Node** current = &(*result)->statement;
         do
         {
             if (token.type == Token_CloseBrace)
@@ -1598,6 +1596,150 @@ ParseStatement(Parser_State state, Parse_Node** result)
     return !encountered_errors;
 }
 
+inline void
+DEBUGPrintParseNode(Module* module, Parse_Node* node, U32 indentation_level = 0)
+{
+    for (U32 i = 0; i < indentation_level; ++i) PrintChar('\t');
+    
+    switch (node->node_type)
+    {
+        case ParseNode_Invalid: Print("ParseNode_Invalid"); break;
+        case ParseNode_Scope: Print("ParseNode_Scope"); break;
+        case ParseNode_If: Print("ParseNode_If"); break;
+        case ParseNode_Else: Print("ParseNode_Else"); break;
+        case ParseNode_While: Print("ParseNode_While"); break;
+        case ParseNode_Break: Print("ParseNode_Break"); break;
+        case ParseNode_Continue: Print("ParseNode_Continue"); break;
+        case ParseNode_Defer: Print("ParseNode_Defer"); break;
+        case ParseNode_Return: Print("ParseNode_Return"); break;
+        case ParseNode_Using: Print("ParseNode_Using"); break;
+        case ParseNode_VarDecl: Print("ParseNode_VarDecl"); break;
+        case ParseNode_StructDecl: Print("ParseNode_StructDecl"); break;
+        case ParseNode_EnumDecl: Print("ParseNode_EnumDecl"); break;
+        case ParseNode_ConstDecl: Print("ParseNode_ConstDecl"); break;
+        case ParseNode_FuncDecl: Print("ParseNode_FuncDecl"); break;
+        case ParseNode_Expression:
+        {
+            switch (node->expr_type)
+            {
+                case ParseExpr_Invalid: Print("ParseExpr_Invalid"); break;
+                case ParseExpr_UnaryPlus: Print("ParseExpr_UnaryPlus"); break;
+                case ParseExpr_UnaryMinus: Print("ParseExpr_UnaryMinus"); break;
+                case ParseExpr_Increment: Print("ParseExpr_Increment"); break;
+                case ParseExpr_Decrement: Print("ParseExpr_Decrement"); break;
+                case ParseExpr_BitwiseNot: Print("ParseExpr_BitwiseNot"); break;
+                case ParseExpr_LogicalNot: Print("ParseExpr_LogicalNot"); break;
+                case ParseExpr_Reference: Print("ParseExpr_Reference"); break;
+                case ParseExpr_Dereference: Print("ParseExpr_Dereference"); break;
+                case ParseExpr_Addition: Print("ParseExpr_Addition"); break;
+                case ParseExpr_Subtraction: Print("ParseExpr_Subtraction"); break;
+                case ParseExpr_Multiplication: Print("ParseExpr_Multiplication"); break;
+                case ParseExpr_Division: Print("ParseExpr_Division"); break;
+                case ParseExpr_Modulus: Print("ParseExpr_Modulus"); break;
+                case ParseExpr_BitwiseAnd: Print("ParseExpr_BitwiseAnd"); break;
+                case ParseExpr_BitwiseOr: Print("ParseExpr_BitwiseOr"); break;
+                case ParseExpr_BitwiseXOR: Print("ParseExpr_BitwiseXOR"); break;
+                case ParseExpr_BitwiseLeftShift: Print("ParseExpr_BitwiseLeftShift"); break;
+                case ParseExpr_BitwiseRightShift: Print("ParseExpr_BitwiseRightShift"); break;
+                case ParseExpr_LogicalAnd: Print("ParseExpr_LogicalAnd"); break;
+                case ParseExpr_LogicalOr: Print("ParseExpr_LogicalOr"); break;
+                case ParseExpr_AddEquals: Print("ParseExpr_AddEquals"); break;
+                case ParseExpr_SubEquals: Print("ParseExpr_SubEquals"); break;
+                case ParseExpr_MultEquals: Print("ParseExpr_MultEquals"); break;
+                case ParseExpr_DivEquals: Print("ParseExpr_DivEquals"); break;
+                case ParseExpr_ModEquals: Print("ParseExpr_ModEquals"); break;
+                case ParseExpr_BitwiseAndEquals: Print("ParseExpr_BitwiseAndEquals"); break;
+                case ParseExpr_BitwiseOrEquals: Print("ParseExpr_BitwiseOrEquals"); break;
+                case ParseExpr_BitwiseXOREquals: Print("ParseExpr_BitwiseXOREquals"); break;
+                case ParseExpr_BitwiseLeftShiftEquals: Print("ParseExpr_BitwiseLeftShiftEquals"); break;
+                case ParseExpr_BitwiseRightShiftEquals: Print("ParseExpr_BitwiseRightShiftEquals"); break;
+                case ParseExpr_Equals: Print("ParseExpr_Equals"); break;
+                case ParseExpr_IsEqual: Print("ParseExpr_IsEqual"); break;
+                case ParseExpr_IsNotEqual: Print("ParseExpr_IsNotEqual"); break;
+                case ParseExpr_IsGreaterThan: Print("ParseExpr_IsGreaterThan"); break;
+                case ParseExpr_IsLessThan: Print("ParseExpr_IsLessThan"); break;
+                case ParseExpr_IsGreaterThanOrEqual: Print("ParseExpr_IsGreaterThanOrEqual"); break;
+                case ParseExpr_IsLessThanOrEqual: Print("ParseExpr_IsLessThanOrEqual"); break;
+                case ParseExpr_Subscript: Print("ParseExpr_Subscript"); break;
+                case ParseExpr_Member: Print("ParseExpr_Member"); break;
+                case ParseExpr_Identifier: Print("ParseExpr_Identifier"); break;
+                case ParseExpr_Number: Print("ParseExpr_Number"); break;
+                case ParseExpr_String: Print("ParseExpr_String"); break;
+                case ParseExpr_LambdaDecl: Print("ParseExpr_LambdaDecl"); break;
+                case ParseExpr_FunctionCall: Print("ParseExpr_FunctionCall"); break;
+                case ParseExpr_TypeCast: Print("ParseExpr_TypeCast"); break;
+                case ParseExpr_Compound: Print("ParseExpr_Compound"); break;
+                case ParseExpr_StaticArray: Print("ParseExpr_StaticArray"); break;
+                case ParseExpr_DynamicArray: Print("ParseExpr_DynamicArray"); break;
+                case ParseExpr_Slice: Print("ParseExpr_Slice"); break;
+                case ParseExpr_TypeReference: Print("ParseExpr_TypeReference"); break;
+                case ParseExpr_FunctionType: Print("ParseExpr_FunctionType"); break;
+                case ParseExpr_FunctionArgument: Print("ParseExpr_FunctionArgument"); break;
+            }
+        } break;
+    }
+    
+    if (node->node_type == ParseNode_Expression)
+    {
+        if (node->expr_type == ParseExpr_Number)
+        {
+            if (node->number.is_integer) Print(" : %U", node->number.u64);
+            else                         Print(" : FLOAT");
+        }
+        
+        else if (node->expr_type == ParseExpr_Identifier)
+        {
+            Print(" : %S", *(String*)ElementAt(&module->string_storage, node->string));
+        }
+        
+        else if (node->expr_type == ParseExpr_StaticArray)
+        {
+            PrintChar('\n');
+            for (U32 i = 0; i < indentation_level + 1; ++i) PrintChar('\t');
+            Print("- Size: %U", node->array_size.u64);
+        }
+    }
+    
+    if (node->node_type == ParseNode_FuncDecl ||
+        node->node_type == ParseNode_Expression && node->expr_type == ParseExpr_LambdaDecl)
+    {
+        PrintChar('\n');
+        for (U32 i = 0; i < indentation_level + 1; ++i) PrintChar('\t');
+        Print("- Arguments:\n");
+        
+        Parse_Node* scan = node->type->function_args;
+        while (scan)
+        {
+            PrintParseNode(module, scan, indentation_level + 2);
+            
+            scan = scan->next;
+        }
+    }
+    
+    PrintChar('\n');
+    
+    if (node->node_type == ParseNode_Scope)
+    {
+        PrintParseNode(module, node->statement, indentation_level + 1);
+    }
+    
+    else
+    {
+        for (U32 i = 0; i < ARRAY_COUNT(node->children); ++i)
+        {
+            if (node->children[i])
+            {
+                PrintParseNode(module, node->children[i], indentation_level + 1);
+            }
+        }
+        
+        if (node->next)
+        {
+            PrintParseNode(module, node->next, indentation_level);
+        }
+    }
+}
+
 inline bool
 ParseFile(Module* module, File* file)
 {
@@ -1617,7 +1759,7 @@ ParseFile(Module* module, File* file)
     state.tree->root  = PushNode(state, ParseNode_Scope);
     
     
-    Parse_Node** current_node = &state.tree->root->scope;
+    Parse_Node** current_node = &state.tree->root->statement;
     
     Token token = GetToken(state.lexer);
     while (!encountered_errors && token.type != Token_EndOfStream)
@@ -1635,6 +1777,8 @@ ParseFile(Module* module, File* file)
         
         token = GetToken(state.lexer);
     }
+    
+    DEBUGPrintParseNode(module, state.tree->root);
     
     return !encountered_errors;
 }
