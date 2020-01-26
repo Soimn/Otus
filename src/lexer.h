@@ -43,6 +43,9 @@ enum LEXER_TOKEN_TYPE
     Token_GTGTEQ,
     Token_LTLTEQ,
     
+    Token_Period,
+    Token_PeriodPeriod,
+    
     Token_Tick,
     Token_Tilde,
     Token_Question,
@@ -50,7 +53,6 @@ enum LEXER_TOKEN_TYPE
     Token_At,
     Token_Backtick,
     Token_Underscore,
-    Token_Period,
     Token_Comma,
     Token_Semicolon,
     Token_Backslash,
@@ -119,26 +121,32 @@ LexFile(File* file)
 // TODO(soimn): Find out whether the lexer should handle error reporting itself or "outsource" it by returning an 
 //              error token
 inline Token
-GetToken(Lexer lexer)
+GetToken(Lexer* lexer)
 {
     Token token = {};
     token.type  = Token_Error;
     
-    U8* current_char       = lexer.current;
-    U32 current_line       = lexer.line;
-    U8* current_line_start = lexer.line_start;
+    U8* current_char       = lexer->current;
+    U32 current_line       = lexer->line;
+    U8* current_line_start = lexer->line_start;
+    
+    // NOTE(soimn): Helper function to improve readability
+    auto Advance = [](U8** current_char)
+    {
+        *current_char += 1;
+    };
     
     for (;;)
     {
         char c = *current_char;
         if (c == ' ' || c == '\t' || c == '\v' || c == '\r')
         {
-            ++current_char;
+            Advance(&current_char);
         }
         
         else if (c == '\n')
         {
-            ++current_char;
+            Advance(&current_char);
             ++current_line;
             current_line_start = current_char;
         }
@@ -154,7 +162,7 @@ GetToken(Lexer lexer)
     char c = *current_char;
     
     // NOTE(soimn): this is to protect the lexer from jumping over an EOF and reading garbage
-    if (c != 0) ++current_char;
+    if (c != 0) Advance(&current_char);
     
     switch (c)
     {
@@ -168,7 +176,6 @@ GetToken(Lexer lexer)
         case '#':  token.type = Token_Hash;         break;
         case '@':  token.type = Token_At;           break;
         case '`':  token.type = Token_Backtick;     break;
-        case '.':  token.type = Token_Period;       break;
         case ',':  token.type = Token_Comma;        break;
         case ';':  token.type = Token_Semicolon;    break;
         
@@ -186,7 +193,7 @@ GetToken(Lexer lexer)
             if (*current_char == '=')                                   \
             {                                                           \
                 token.type = equals_token;                              \
-                ++current_char;                                         \
+                Advance(&current_char);                                 \
             }                                                           \
             else                                                        \
             {                                                           \
@@ -208,12 +215,12 @@ GetToken(Lexer lexer)
             if (*current_char == character)                                                  \
             {                                                                                \
                 token.type = double_token;                                                   \
-                ++current_char;                                                              \
+                Advance(&current_char);                                                      \
             }                                                                                \
             else if (*current_char == '=')                                                   \
             {                                                                                \
                 token.type = equals_token;                                                   \
-                ++current_char;                                                              \
+                Advance(&current_char);                                                      \
             }                                                                                \
             else                                                                             \
             {                                                                                \
@@ -234,11 +241,11 @@ GetToken(Lexer lexer)
         {                                                                  \
             if (*current_char == character)                                \
             {                                                              \
-                ++current_char;                                            \
+                Advance(&current_char);                                    \
                 if (*current_char == '=')                                  \
                 {                                                          \
                     token.type = double_and_equals_token;                  \
-                    ++current_char;                                        \
+                    Advance(&current_char);                                \
                 }                                                          \
                 else                                                       \
                 {                                                          \
@@ -248,7 +255,7 @@ GetToken(Lexer lexer)
             else if (*current_char == '=')                                 \
             {                                                              \
                 token.type = equals_token;                                 \
-                ++current_char;                                            \
+                Advance(&current_char);                                    \
             }                                                              \
             else                                                           \
             {                                                              \
@@ -263,27 +270,41 @@ GetToken(Lexer lexer)
         
         case '-':
         {
-            if (*lexer.current == '-')
+            if (*current_char == '-')
             {
                 token.type = Token_MinusMinus;
-                ++current_char;
+                Advance(&current_char);
             }
             
-            else if (*lexer.current == '=')
+            else if (*current_char == '=')
             {
                 token.type = Token_MinusEQ;
-                ++current_char;
+                Advance(&current_char);
             }
             
-            else if (*lexer.current == '>')
+            else if (*current_char == '>')
             {
                 token.type = Token_RightArrow;
-                ++current_char;
+                Advance(&current_char);
             }
             
             else
             {
                 token.type = Token_Minus;
+            }
+        } break;
+        
+        case '.':
+        {
+            if (*current_char == '.')
+            {
+                token.type = Token_PeriodPeriod;
+                Advance(&current_char);
+            }
+            
+            else
+            {
+                token.type = Token_Period;
             }
         } break;
         
@@ -298,16 +319,16 @@ GetToken(Lexer lexer)
                 {
                     if (*current_char == '\\' && *(current_char + 1) == '"')
                     {
-                        ++current_char;
+                        Advance(&current_char);
                     }
                     
-                    ++current_char;
+                    Advance(&current_char);
                 }
                 
                 if (*current_char == '"')
                 {
                     token.string.size = current_char - token.string.data;
-                    ++current_char;
+                    Advance(&current_char);
                 }
                 
                 else
@@ -330,7 +351,7 @@ GetToken(Lexer lexer)
                 {
                     is_hex = true;
                     start += 2;
-                    ++current_char;
+                    Advance(&current_char);
                 }
                 
                 bool has_passed_point = false;
@@ -338,7 +359,7 @@ GetToken(Lexer lexer)
                 {
                     if (IsDigit(*current_char))
                     {
-                        ++current_char;
+                        Advance(&current_char);
                     }
                     
                     else if (*current_char == '.' && IsDigit(*(current_char + 1)))
@@ -346,7 +367,7 @@ GetToken(Lexer lexer)
                         if (!has_passed_point && !is_hex)
                         {
                             has_passed_point = true;
-                            ++current_char;
+                            Advance(&current_char);
                         }
                         
                         else break;
@@ -354,7 +375,7 @@ GetToken(Lexer lexer)
                     
                     else if (is_hex && ToLower(*current_char) >= 'a' && ToLower(*current_char) <= 'f')
                     {
-                        ++current_char;
+                        Advance(&current_char);
                     }
                     
                     else break;
@@ -395,7 +416,7 @@ GetToken(Lexer lexer)
                             new_number *= base;
                             new_number += digit;
                             
-                            if (new_number > token.number.u64)
+                            if (new_number > token.number.u64 || new_number == 0 && token.number.u64 == 0)
                             {
                                 token.number.u64 = new_number;
                             }
@@ -460,7 +481,7 @@ GetToken(Lexer lexer)
                     
                     while (*current_char == '_' || IsAlpha(*current_char) || IsDigit(*current_char) || !IsASCII(*current_char))
                     {
-                        ++current_char;
+                        Advance(&current_char);
                     }
                     
                     token.string.size = current_char - token.string.data;
@@ -488,19 +509,19 @@ SkipPastToken(Lexer* lexer, Token token)
 inline Token
 GetAndSkipToken(Lexer* lexer)
 {
-    Token token = GetToken(*lexer);
+    Token token = GetToken(lexer);
     SkipPastToken(lexer, token);
     
     return token;
 }
 
 inline Token
-PeekNextToken(Lexer lexer, Token prev_token)
+PeekNextToken(Lexer* lexer, Token prev_token)
 {
-    Lexer tmp_lexer = lexer;
+    Lexer tmp_lexer = *lexer;
     SkipPastToken(&tmp_lexer, prev_token);
     
-    return GetToken(tmp_lexer);
+    return GetToken(&tmp_lexer);
 }
 
 inline bool

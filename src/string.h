@@ -84,7 +84,7 @@ StringCompare(String s0, String s1)
             --s1.size;
         }
         
-        content_equal = (s0.size == s1.size);
+        content_equal = (s0.size == 0 && s0.size == s1.size);
     }
     
     return  (pointers_equal || content_equal);

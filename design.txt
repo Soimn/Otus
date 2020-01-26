@@ -1,23 +1,24 @@
-Goal: a minimal bullshit low level c-like language that is concise and easily understood
+Original goal: a minimal bullshit low level c-like language that is concise and easily understood
+New goal: a low level systems programming language that strives to be as simple and concise as possible without 
+          sacrificing expressive power or efficiency
 
 TODO:
  * Should a variant of const and volatile be added?
- * Is multiple return values necessary, or could it be substituted for optional/variant return values?
- * Should enums be a concept in this language, or should there be a more general structure for allowing enum like 
-   groups of any types of constants
  * Unions or compiler directive?
 
 Differences between Gremlin and C
  * No header files or forward declarations
- * Functions are overloadable
+ * Functions are overloadable, support named arguments, support multiple var args and multiple return values
  * Vararg functions are type safe and allow random access and introspection of the passed variables
  * Runtime and compile time type information is supplied
- * All code can be run at compile time
- * The build process is controlled by the program itself
- * The program being compiled can catch compile events and modify the compilation process
+// * All code can be run at compile time
+// * The build process is controlled by the program itself
+// * The program being compiled can catch compile events and modify the compilation process
  * A defer "function" is supplied, which makes it possible to execute code on scope exit
  * Name before type
 // * Pointers are declared with ampersand instead of asterisk (i.e. name: & type, instead of name: * type)
 
-IMPORTANT NOTE: Due to feedback, clunky function pointer syntax and some weird differences between function and
-                variable declarations
+
+NOTE:
+ // anonymous structs are temporarily, or maybe indefinitely, illegal
+ * procedures, struct and unions are required to have a name

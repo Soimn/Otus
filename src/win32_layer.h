@@ -45,7 +45,7 @@ LoadFileForCompilation(Module* module, String path)
                 
                 File* file = (File*)PushElement(&module->files);
                 file->file_contents.data = file_contents;
-                file->file_contents.size = bytes_read;
+                file->file_contents.size = bytes_read + 1;
             }
             
             else

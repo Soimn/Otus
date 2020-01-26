@@ -130,6 +130,7 @@ ClearArena(Memory_Arena* arena)
 
 ///////////////////////////////////////////////////////////////////////////////////
 
+#define BUCKET_ARRAY_HEADER_SIZE (U32)RoundSize(sizeof(void*), alignof(U64))
 struct Bucket_Array
 {
     Memory_Arena* arena;
@@ -146,7 +147,7 @@ inline Bucket_Array
 BucketArray(Memory_Arena* arena, U64 element_size, U64 bucket_capacity)
 {
     ASSERT(element_size <= U32_MAX);
-    ASSERT(element_size * bucket_capacity <= U32_MAX - RoundSize(sizeof(void*), alignof(U64)));
+    ASSERT(bucket_capacity / element_size <= U32_MAX);
     
     Bucket_Array bucket_array = {};
     bucket_array.arena           = arena;
@@ -163,12 +164,10 @@ PushElement(Bucket_Array* array)
 {
     if (!array->current_bucket || array->current_offset == array->bucket_capacity)
     {
-        U32 header_size = (U32)RoundSize(sizeof(void*), alignof(U64));
-        U32 bucket_size = array->element_size * array->bucket_capacity;
+        U32 bucket_size = BUCKET_ARRAY_HEADER_SIZE + array->element_size * array->bucket_capacity;
         
-        void* new_bucket = PushSize(array->arena, header_size + bucket_size, alignof(void*));
-        
-        ZeroSize(new_bucket, header_size);
+        void* new_bucket = PushSize(array->arena, bucket_size, alignof(void*));
+        ZeroSize(new_bucket, bucket_size);
         
         if (array->first_bucket)
         {
@@ -181,13 +180,12 @@ PushElement(Bucket_Array* array)
         }
         
         array->current_bucket = new_bucket;
-        array->current_offset = header_size;
+        array->current_offset = 0;
     }
     
-    void* result = (U8*)array->current_bucket + array->current_offset;
-    array->current_offset += array->element_size;
-    
-    ZeroSize(result, array->element_size);
+    U8* block_start = (U8*)array->current_bucket + BUCKET_ARRAY_HEADER_SIZE;
+    void* result    = block_start + array->current_offset * array->element_size;
+    ++array->current_offset;
     
     return result;
 }
@@ -217,15 +215,15 @@ ElementAt(Bucket_Array* array, UMM index)
     
     void* bucket = array->first_bucket;
     
-    for (UMM i = 0; i < bucket_offset; ++i)
+    for (UMM i = 0; i < bucket_index; ++i)
     {
         bucket = *(void**)bucket;
     }
     
-    U32 header_size = (U32)RoundSize(sizeof(void*), alignof(U64));
-    void* result = (U8*)bucket + header_size + bucket_index * array->element_size;
+    U8* block_start = (U8*)bucket + BUCKET_ARRAY_HEADER_SIZE;
+    void* result    = block_start + bucket_offset * array->element_size;
     
-    if (*(void**)bucket == 0 && bucket_index >= array->current_offset)
+    if (*(void**)bucket == 0 && bucket_offset >= array->current_offset)
     {
         result = 0;
     }
@@ -238,7 +236,7 @@ struct Bucket_Array_Iterator
     void* current_bucket;
     U32 element_size;
     U32 bucket_capacity;
-    U32 last_bucket_size;
+    U32 last_bucket_offset;
     
     UMM current_index;
     void* current;
@@ -247,18 +245,18 @@ struct Bucket_Array_Iterator
 inline Bucket_Array_Iterator
 Iterate(Bucket_Array* array)
 {
-    Bucket_Array_Iterator iterator;
-    iterator.current_bucket   = array->first_bucket;
-    iterator.element_size     = array->element_size;
-    iterator.bucket_capacity  = array->bucket_capacity;
-    iterator.last_bucket_size = array->current_offset;
+    Bucket_Array_Iterator iterator = {};
+    iterator.current_bucket     = array->first_bucket;
+    iterator.element_size       = array->element_size;
+    iterator.bucket_capacity    = array->bucket_capacity;
+    iterator.last_bucket_offset = array->current_offset;
+    iterator.current_index      = 0;
     
     iterator.current = 0;
     
     if (iterator.current_bucket)
     {
-        U32 header_size  = (U32)RoundSize(sizeof(void*), alignof(U64));
-        iterator.current = (U8*)iterator.current_bucket + header_size;
+        iterator.current = (U8*)iterator.current_bucket + BUCKET_ARRAY_HEADER_SIZE;
     }
     
     return iterator;
@@ -275,16 +273,16 @@ Advance(Bucket_Array_Iterator* iterator)
         iterator->current_bucket = *(void**)iterator->current_bucket;
     }
     
-    else if (*(void**)iterator->current_bucket == 0 && iterator->current_index >= iterator->last_bucket_size)
+    else if (*(void**)iterator->current_bucket == 0 && iterator->current_index >= iterator->last_bucket_offset)
     {
         iterator->current_bucket = 0;
     }
     
     if (iterator->current_bucket)
     {
-        U32 header_size   = (U32)RoundSize(sizeof(void*), alignof(U64));
-        U32 bucket_index  = iterator->current_index % iterator->bucket_capacity;
+        U32 bucket_offset  = iterator->current_index % iterator->bucket_capacity;
+        U8* block_start    = (U8*)iterator->current_bucket + BUCKET_ARRAY_HEADER_SIZE;
         
-        iterator->current = (U8*)iterator->current_bucket + header_size + bucket_index * iterator->element_size;
+        iterator->current = block_start + bucket_offset * iterator->element_size;
     }
 }
