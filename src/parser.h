@@ -245,7 +245,7 @@ ParseFunctionType(Parser_State state, Parse_Node** result, bool allow_omitting_n
     
     SkipPastToken(state.lexer, token);
     
-    if (RequireAndSkipToken(state.lexer, Token_OpenParen))
+    if (MetRequiredTokenAndSkip(state.lexer, Token_OpenParen))
     {
         Parse_Node** current_arg = &(*result)->function_args;
         while (!encountered_errors)
@@ -274,7 +274,7 @@ ParseFunctionType(Parser_State state, Parse_Node** result, bool allow_omitting_n
                 
                 else if (!allow_omitting_names)
                 {
-                    ASSERT(false); //// ERROR: Omitting argument name is not allowed in this context
+                    //// ERROR: Omitting argument name is not allowed in this context
                     encountered_errors = true;
                 }
                 
@@ -287,7 +287,7 @@ ParseFunctionType(Parser_State state, Parse_Node** result, bool allow_omitting_n
                     
                     else
                     {
-                        ASSERT(false); //// ERROR
+                        //// ERROR
                         encountered_errors = true;
                     }
                 }
@@ -305,28 +305,28 @@ ParseFunctionType(Parser_State state, Parse_Node** result, bool allow_omitting_n
                         
                         else
                         {
-                            ASSERT(false); //// ERROR
+                            //// ERROR
                             encountered_errors = true;
                         }
                     }
                     
                     else
                     {
-                        ASSERT(false); //// ERROR: Assignment is not allowed on arguments with omitted names
+                        //// ERROR: Assignment is not allowed on arguments with omitted names
                         encountered_errors = true;
                     }
                 }
                 
                 if (!encountered_errors && token.type != Token_CloseParen)
                 {
-                    if (RequireAndSkipToken(state.lexer, Token_Comma))
+                    if (MetRequiredTokenAndSkip(state.lexer, Token_Comma))
                     {
                         // Succeeded
                     }
                     
                     else
                     {
-                        ASSERT(false); //// ERROR: Missing separating comma in function argument list
+                        //// ERROR: Missing separating comma in function argument list
                         encountered_errors = true;
                     }
                 }
@@ -345,7 +345,7 @@ ParseFunctionType(Parser_State state, Parse_Node** result, bool allow_omitting_n
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -353,7 +353,7 @@ ParseFunctionType(Parser_State state, Parse_Node** result, bool allow_omitting_n
     
     else
     {
-        ASSERT(false); //// ERROR: Missing argument list of function type
+        //// ERROR: Missing argument list of function type
         encountered_errors = true;
     }
     
@@ -381,7 +381,7 @@ ParseType(Parser_State state, Parse_Node** result)
                 
                 else
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
@@ -414,21 +414,21 @@ ParseType(Parser_State state, Parse_Node** result)
                 
                 if (token.type != ParseExpr_Slice) SkipPastToken(state.lexer, token);
                 
-                if (RequireAndSkipToken(state.lexer, Token_CloseBracket))
+                if (MetRequiredTokenAndSkip(state.lexer, Token_CloseBracket))
                 {
                     // Succeeded
                 }
                 
                 else
                 {
-                    ASSERT(false); //// ERROR: Missing closing bracket after array type tag in type
+                    //// ERROR: Missing closing bracket after array type tag in type
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
             
@@ -442,7 +442,7 @@ ParseType(Parser_State state, Parse_Node** result)
         
         else
         {
-            ASSERT(false); //// ERROR: Encountered an invalid token in type
+            //// ERROR: Encountered an invalid token in type
             encountered_errors = true;
         }
         
@@ -484,7 +484,7 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
         
         else
         {
-            ASSERT(false); //// ERROR: Missing terminating semicolon after expression before numeric literal
+            //// ERROR: Missing terminating semicolon after expression before numeric literal
             encountered_errors = true;
         }
     }
@@ -502,7 +502,7 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
         
         else
         {
-            ASSERT(false); //// ERROR: Missing terminating semicolon after expression before string literal
+            //// ERROR: Missing terminating semicolon after expression before string literal
             encountered_errors = true;
         }
     }
@@ -517,11 +517,11 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
             
             SkipPastToken(state.lexer, token);
             
-            if (RequireAndSkipToken(state.lexer, Token_OpenParen))
+            if (MetRequiredTokenAndSkip(state.lexer, Token_OpenParen))
             {
                 if (ParseType(state, &(*result)->type))
                 {
-                    if (RequireAndSkipToken(state.lexer, Token_CloseParen))
+                    if (MetRequiredTokenAndSkip(state.lexer, Token_CloseParen))
                     {
                         if (ParseExpression(state, &(*result)->operand))
                         {
@@ -530,28 +530,28 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
                         
                         else
                         {
-                            ASSERT(false); //// ERROR
+                            //// ERROR
                             encountered_errors = true;
                         }
                     }
                     
                     else
                     {
-                        ASSERT(false); //// ERROR: Missing closing parenthesis after target type in cast expression
+                        //// ERROR: Missing closing parenthesis after target type in cast expression
                         encountered_errors = true;
                     }
                 }
                 
                 else
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                ASSERT(false); //// ERROR: Missing target type in cast expression
+                //// ERROR: Missing target type in cast expression
                 encountered_errors = true;
             }
         }
@@ -568,7 +568,7 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -594,7 +594,7 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
         
         else
         {
-            ASSERT(false); //// ERROR: Missing terminating semicolon after expression before identifier
+            //// ERROR: Missing terminating semicolon after expression before identifier
             encountered_errors = true;
         }
     }
@@ -611,21 +611,21 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
             
             if (ParseExpression(state, &(*result)->expression))
             {
-                if (RequireAndSkipToken(state.lexer, Token_CloseParen))
+                if (MetRequiredTokenAndSkip(state.lexer, Token_CloseParen))
                 {
                     // Succeeded
                 }
                 
                 else
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -659,16 +659,16 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
                             
                             token = GetToken(state.lexer);
                             if (token.type != Token_CloseParen &&
-                                !RequireAndSkipToken(state.lexer, Token_Comma))
+                                !MetRequiredTokenAndSkip(state.lexer, Token_Comma))
                             {
-                                ASSERT(false); //// ERROR
+                                //// ERROR
                                 encountered_errors = true;
                             }
                         }
                         
                         else
                         {
-                            ASSERT(false); //// ERROR
+                            //// ERROR
                             encountered_errors = true;
                         }
                     }
@@ -677,7 +677,7 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR: Invalid use of function call operator with member operator as left operand
+                //// ERROR: Invalid use of function call operator with member operator as left operand
                 encountered_errors = true;
             }
         }
@@ -690,7 +690,7 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
         
         if (*result == 0)
         {
-            ASSERT(false); //// ERROR: Missing primary expression before subscript
+            //// ERROR: Missing primary expression before subscript
             encountered_errors = true;
         }
         
@@ -705,28 +705,28 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
                 
                 if (ParseExpression(state, &(*result)->right))
                 {
-                    if (RequireAndSkipToken(state.lexer, Token_CloseBracket))
+                    if (MetRequiredTokenAndSkip(state.lexer, Token_CloseBracket))
                     {
                         // succeeded
                     }
                     
                     else
                     {
-                        ASSERT(false); //// ERROR: Missing closing bracket in subscript expression
+                        //// ERROR: Missing closing bracket in subscript expression
                         encountered_errors = true;
                     }
                 }
                 
                 else
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                ASSERT(false); //// ERROR: Invalid use of subscript operator with left operand as member operator
+                //// ERROR: Invalid use of subscript operator with left operand as member operator
                 encountered_errors = true;
             }
         }
@@ -739,7 +739,7 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
         
         if (*result == 0)
         {
-            ASSERT(false); //// ERROR: Missing primary expression before member operator
+            //// ERROR: Missing primary expression before member operator
             encountered_errors = true;
         }
         
@@ -757,7 +757,7 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR: Invalid use of member operator with ___ as left operand
+                //// ERROR: Invalid use of member operator with ___ as left operand
                 encountered_errors = true;
             }
         }
@@ -767,13 +767,13 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
     {
         if (*result == 0)
         {
-            ASSERT(false); //// ERROR: Missing primary expression in expression
+            //// ERROR: Missing primary expression in expression
             encountered_errors = true;
         }
         
         else if ((*result)->expr_type == ParseExpr_Member && (*result)->right == 0)
         {
-            ASSERT(false); //// ERROR: Missing right operand of member operator
+            //// ERROR: Missing right operand of member operator
             encountered_errors = true;
         }
         
@@ -793,7 +793,7 @@ ParsePrimaryOrPostfixUnaryExpression(Parser_State state, Parse_Node** result)
         
         else
         {
-            ASSERT(false); //// ERROR
+            //// ERROR
             encountered_errors = true;
         }
     }
@@ -833,7 +833,7 @@ ParsePrefixUnaryExpression(Parser_State state, Parse_Node** result)
         
         else
         {
-            ASSERT(false); //// ERROR
+            //// ERROR
             encountered_errors = true;
         }
     }
@@ -847,7 +847,7 @@ ParsePrefixUnaryExpression(Parser_State state, Parse_Node** result)
         
         else
         {
-            ASSERT(false); //// ERROR
+            //// ERROR
             encountered_errors = true;
         }
     }
@@ -891,7 +891,7 @@ ParseMultLevelExpression(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -899,7 +899,7 @@ ParseMultLevelExpression(Parser_State state, Parse_Node** result)
     
     else
     {
-        ASSERT(false); //// ERROR
+        //// ERROR
         encountered_errors = true;
     }
     
@@ -939,7 +939,7 @@ ParseAddLevelExpression(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -947,7 +947,7 @@ ParseAddLevelExpression(Parser_State state, Parse_Node** result)
     
     else
     {
-        ASSERT(false); //// ERROR
+        //// ERROR
         encountered_errors = true;
     }
     
@@ -990,7 +990,7 @@ ParseComparativeExpression(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -998,7 +998,7 @@ ParseComparativeExpression(Parser_State state, Parse_Node** result)
     
     else
     {
-        ASSERT(false); //// ERROR
+        //// ERROR
         encountered_errors = true;
     }
     
@@ -1029,7 +1029,7 @@ ParseLogicalAndExpression(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -1037,7 +1037,7 @@ ParseLogicalAndExpression(Parser_State state, Parse_Node** result)
     
     else
     {
-        ASSERT(false); //// ERROR
+        //// ERROR
         encountered_errors = true;
     }
     
@@ -1068,7 +1068,7 @@ ParseLogicalOrExpression(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -1076,7 +1076,7 @@ ParseLogicalOrExpression(Parser_State state, Parse_Node** result)
     
     else
     {
-        ASSERT(false); //// ERROR
+        //// ERROR
         encountered_errors = true;
     }
     
@@ -1123,7 +1123,7 @@ ParseExpression(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -1131,7 +1131,7 @@ ParseExpression(Parser_State state, Parse_Node** result)
     
     else
     {
-        ASSERT(false); //// ERROR
+        //// ERROR
         encountered_errors = true;
     }
     
@@ -1157,7 +1157,7 @@ ParseScope(Parser_State state, Parse_Node** result, bool require_braces)
     
     if (require_braces && !is_brace_delimited)
     {
-        ASSERT(false); //// ERROR: Scope requires braces, but none where encountered
+        //// ERROR: Scope requires braces, but none where encountered
         encountered_errors = true;
     }
     
@@ -1176,7 +1176,7 @@ ParseScope(Parser_State state, Parse_Node** result, bool require_braces)
                 
                 else
                 {
-                    ASSERT(false); //// ERROR: Encountered a closing brace before end of statement
+                    //// ERROR: Encountered a closing brace before end of statement
                     encountered_errors = true;
                 }
             }
@@ -1194,7 +1194,7 @@ ParseScope(Parser_State state, Parse_Node** result, bool require_braces)
                 
                 else
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
@@ -1215,7 +1215,7 @@ ParseStatement(Parser_State state, Parse_Node** result)
     
     if (token.type == Token_EndOfStream || token.type == Token_Error)
     {
-        ASSERT(false); //// ERROR
+        //// ERROR
         encountered_errors = true;
     }
     
@@ -1229,16 +1229,20 @@ ParseStatement(Parser_State state, Parse_Node** result)
     else if (token.type == Token_Hash)
     {
         SkipPastToken(state.lexer, token);
-        token = GetAndSkipToken(state.lexer);
+        token = GetToken(state.lexer);
         
         if (token.type == Token_Identifier)
         {
+            SkipPastToken(state.lexer, token);
+            
             if (StringCompare(token.string, CONST_STRING("import")))
             {
-                token = GetAndSkipToken(state.lexer);
+                token = GetToken(state.lexer);
                 
                 if (token.type == Token_String)
                 {
+                    SkipPastToken(state.lexer, token);
+                    
                     File_ID file_id = LoadAndParseFile(state.module, token.string);
                     
                     if (file_id != INVALID_ID)
@@ -1249,35 +1253,34 @@ ParseStatement(Parser_State state, Parse_Node** result)
                     
                     else
                     {
-                        ASSERT(false); //// ERROR
+                        //// ERROR
                         encountered_errors = true;
                     }
                 }
                 
                 else
                 {
-                    ASSERT(false); //// ERROR: Missing path string after "import" compiler directive
+                    //// ERROR: Missing path string after "import" compiler directive
                     encountered_errors = true;
                 }
                 
-                if (!encountered_errors &&
-                    !RequireAndSkipToken(state.lexer, Token_Semicolon))
+                if (MetRequiredTokenAndSkip(state.lexer, Token_Semicolon) == false)
                 {
-                    ASSERT(false); //// ERROR: Missing semicolon after compiler directive
+                    //// ERROR: Missing semicolon after compiler directive
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                ASSERT(false); //// ERROR: Unknown compiler directive
+                //// ERROR: Unknown compiler directive
                 encountered_errors = true;
             }
         }
         
         else
         {
-            ASSERT(false); //// ERROR: Missing name of compiler directive
+            //// ERROR: Missing name of compiler directive
             encountered_errors = true;
         }
     }
@@ -1305,7 +1308,7 @@ ParseStatement(Parser_State state, Parse_Node** result)
                 
                 else
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
@@ -1321,14 +1324,14 @@ ParseStatement(Parser_State state, Parse_Node** result)
                 
                 else
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
             
-            if (!RequireAndSkipToken(state.lexer, Token_Semicolon))
+            if (!MetRequiredTokenAndSkip(state.lexer, Token_Semicolon))
             {
-                ASSERT(false); //// ERROR: Missing semicolon after variable declaration
+                //// ERROR: Missing semicolon after variable declaration
                 encountered_errors = true;
             }
         }
@@ -1356,7 +1359,7 @@ ParseStatement(Parser_State state, Parse_Node** result)
                     
                     else
                     {
-                        ASSERT(false); //// ERROR
+                        //// ERROR
                         encountered_errors = true;
                     }
                 }
@@ -1374,7 +1377,7 @@ ParseStatement(Parser_State state, Parse_Node** result)
                     
                     else
                     {
-                        ASSERT(false); //// ERROR
+                        //// ERROR
                         encountered_errors = true;
                     }
                 }
@@ -1394,7 +1397,7 @@ ParseStatement(Parser_State state, Parse_Node** result)
                     
                     else
                     {
-                        ASSERT(false); //// ERROR
+                        //// ERROR
                         encountered_errors = true;
                     }
                 }
@@ -1406,16 +1409,16 @@ ParseStatement(Parser_State state, Parse_Node** result)
                     
                     if (ParseExpression(state, &(*result)->value))
                     {
-                        if (!RequireAndSkipToken(state.lexer, Token_Semicolon))
+                        if (!MetRequiredTokenAndSkip(state.lexer, Token_Semicolon))
                         {
-                            ASSERT(false); //// ERROR
+                            //// ERROR
                             encountered_errors = true;
                         }
                     }
                     
                     else
                     {
-                        ASSERT(false); //// ERROR
+                        //// ERROR
                         encountered_errors = true;
                     }
                 }
@@ -1428,16 +1431,16 @@ ParseStatement(Parser_State state, Parse_Node** result)
                 
                 if (ParseExpression(state, &(*result)->value))
                 {
-                    if (!RequireAndSkipToken(state.lexer, Token_Semicolon))
+                    if (!MetRequiredTokenAndSkip(state.lexer, Token_Semicolon))
                     {
-                        ASSERT(false); //// ERROR
+                        //// ERROR
                         encountered_errors = true;
                     }
                 }
                 
                 else
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
@@ -1453,11 +1456,11 @@ ParseStatement(Parser_State state, Parse_Node** result)
             
             SkipPastToken(state.lexer, token);
             
-            if (RequireAndSkipToken(state.lexer, Token_OpenParen))
+            if (MetRequiredTokenAndSkip(state.lexer, Token_OpenParen))
             {
                 if (ParseExpression(state, &(*result)->condition))
                 {
-                    if (RequireAndSkipToken(state.lexer, Token_CloseParen))
+                    if (MetRequiredTokenAndSkip(state.lexer, Token_CloseParen))
                     {
                         if (ParseScope(state, &(*result)->true_body, false))
                         {
@@ -1466,28 +1469,28 @@ ParseStatement(Parser_State state, Parse_Node** result)
                         
                         else
                         {
-                            ASSERT(false); //// ERROR
+                            //// ERROR
                             encountered_errors = true;
                         }
                     }
                     
                     else
                     {
-                        ASSERT(false); //// ERROR: Missing closing paren after if statement condition
+                        //// ERROR: Missing closing paren after if statement condition
                         encountered_errors = true;
                     }
                 }
                 
                 else
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                ASSERT(false); //// ERROR: Missing opening paren after if keyword
+                //// ERROR: Missing opening paren after if keyword
                 encountered_errors = true;
             }
         }
@@ -1503,7 +1506,7 @@ ParseStatement(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -1516,14 +1519,14 @@ ParseStatement(Parser_State state, Parse_Node** result)
                                             : ParseNode_Break);
             *result = PushNode(state, type);
             
-            if (RequireAndSkipToken(state.lexer, Token_Semicolon))
+            if (MetRequiredTokenAndSkip(state.lexer, Token_Semicolon))
             {
                 // succeeded
             }
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -1549,7 +1552,7 @@ ParseStatement(Parser_State state, Parse_Node** result)
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -1559,16 +1562,16 @@ ParseStatement(Parser_State state, Parse_Node** result)
         {
             if (ParseExpression(state, result))
             {
-                if (!RequireAndSkipToken(state.lexer, Token_Semicolon))
+                if (!MetRequiredTokenAndSkip(state.lexer, Token_Semicolon))
                 {
-                    ASSERT(false); //// ERROR
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
@@ -1579,16 +1582,16 @@ ParseStatement(Parser_State state, Parse_Node** result)
     {
         if (ParseExpression(state, result))
         {
-            if (!RequireAndSkipToken(state.lexer, Token_Semicolon))
+            if (!MetRequiredTokenAndSkip(state.lexer, Token_Semicolon))
             {
-                ASSERT(false); //// ERROR
+                //// ERROR
                 encountered_errors = true;
             }
         }
         
         else
         {
-            ASSERT(false); //// ERROR
+            //// ERROR
             encountered_errors = true;
         }
     }
@@ -1710,7 +1713,7 @@ DEBUGPrintParseNode(Module* module, Parse_Node* node, U32 indentation_level = 0)
         Parse_Node* scan = node->type->function_args;
         while (scan)
         {
-            PrintParseNode(module, scan, indentation_level + 2);
+            DEBUGPrintParseNode(module, scan, indentation_level + 2);
             
             scan = scan->next;
         }
@@ -1720,7 +1723,7 @@ DEBUGPrintParseNode(Module* module, Parse_Node* node, U32 indentation_level = 0)
     
     if (node->node_type == ParseNode_Scope)
     {
-        PrintParseNode(module, node->statement, indentation_level + 1);
+        DEBUGPrintParseNode(module, node->statement, indentation_level + 1);
     }
     
     else
@@ -1729,13 +1732,13 @@ DEBUGPrintParseNode(Module* module, Parse_Node* node, U32 indentation_level = 0)
         {
             if (node->children[i])
             {
-                PrintParseNode(module, node->children[i], indentation_level + 1);
+                DEBUGPrintParseNode(module, node->children[i], indentation_level + 1);
             }
         }
         
         if (node->next)
         {
-            PrintParseNode(module, node->next, indentation_level);
+            DEBUGPrintParseNode(module, node->next, indentation_level);
         }
     }
 }
@@ -1771,14 +1774,14 @@ ParseFile(Module* module, File* file)
         
         else
         {
-            ASSERT(false); //// ERROR: Failed to parse statement
+            //// ERROR: Failed to parse statement
             encountered_errors = true;
         }
         
         token = GetToken(state.lexer);
     }
     
-    DEBUGPrintParseNode(module, state.tree->root);
+    //DEBUGPrintParseNode(module, state.tree->root);
     
     return !encountered_errors;
 }

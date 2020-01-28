@@ -69,6 +69,7 @@ main(int argc, const char** argv)
         
         if (!module.failed_to_parse_all_files)
         {
+            /// Register all symbols
             /// Check usage of context specific statements and expressions
             /// Check if all referenced symbols are defined and used in a valid context, and build type table
             /// Compute size of types

@@ -49,7 +49,6 @@ enum AST_EXPRESSION_TYPE
     
     ASTExpr_BitwiseAnd,
     ASTExpr_BitwiseOr,
-    ASTExpr_BitwiseXOR,
     ASTExpr_BitwiseLeftShift,
     ASTExpr_BitwiseRightShift,
     
@@ -63,7 +62,6 @@ enum AST_EXPRESSION_TYPE
     ASTExpr_ModEquals,
     ASTExpr_BitwiseAndEquals,
     ASTExpr_BitwiseOrEquals,
-    ASTExpr_BitwiseXOREquals,
     ASTExpr_BitwiseLeftShiftEquals,
     ASTExpr_BitwiseRightShiftEquals,
     
@@ -88,4 +86,9 @@ enum AST_EXPRESSION_TYPE
     ASTExpr_TypeCast,
     
     AST_EXPRESSION_TYPE_COUNT
+};
+
+struct AST_Node
+{
+    
 };

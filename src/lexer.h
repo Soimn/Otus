@@ -507,15 +507,6 @@ SkipPastToken(Lexer* lexer, Token token)
 }
 
 inline Token
-GetAndSkipToken(Lexer* lexer)
-{
-    Token token = GetToken(lexer);
-    SkipPastToken(lexer, token);
-    
-    return token;
-}
-
-inline Token
 PeekNextToken(Lexer* lexer, Token prev_token)
 {
     Lexer tmp_lexer = *lexer;
@@ -525,7 +516,10 @@ PeekNextToken(Lexer* lexer, Token prev_token)
 }
 
 inline bool
-RequireAndSkipToken(Lexer* lexer, Enum32(LEXER_TOKEN_TYPE) type)
+MetRequiredTokenAndSkip(Lexer* lexer, Enum32(LEXER_TOKEN_TYPE) type)
 {
-    return (GetAndSkipToken(lexer).type == type);
+    Token token = GetToken(lexer);
+    SkipPastToken(lexer, token);
+    
+    return (token.type == type);
 }
