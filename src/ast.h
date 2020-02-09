@@ -2,8 +2,7 @@ enum AST_NODE_TYPE
 {
     ASTNode_Invalid,
     
-    ASTNode_Expression,
-    
+    ASTNode_Root,
     ASTNode_Scope,
     
     ASTNode_If,
@@ -11,84 +10,99 @@ enum AST_NODE_TYPE
     ASTNode_While,
     ASTNode_Break,
     ASTNode_Continue,
+    
+    ASTNode_Using,
     ASTNode_Defer,
     ASTNode_Return,
     
-    ASTNode_VarDecl,
+    ASTNode_FuncDecl,
     ASTNode_StructDecl,
     ASTNode_EnumDecl,
     ASTNode_ConstDecl,
-    ASTNode_FuncDecl,
+    ASTNode_VarDecl,
     
-    AST_NODE_TYPE_COUNT
+    ASTNode_Expression,
 };
 
-enum AST_EXPRESSION_TYPE
+enum AST_EXPR_TYPE
 {
     ASTExpr_Invalid,
     
-    // Unary
-    ASTExpr_UnaryPlus,
-    ASTExpr_UnaryMinus,
-    ASTExpr_Increment,
-    ASTExpr_Decrement,
+    ASTExpr_Add,
+    ASTExpr_Sub,
+    ASTExpr_Mul,
+    ASTExpr_Div,
+    ASTExpr_Mod,
     
-    ASTExpr_BitwiseNot,
-    
-    ASTExpr_LogicalNot,
-    
-    ASTExpr_Reference,
-    ASTExpr_Dereference,
-    
-    // Binary
-    ASTExpr_Addition,
-    ASTExpr_Subtraction,
-    ASTExpr_Multiplication,
-    ASTExpr_Division,
-    ASTExpr_Modulus,
-    
-    ASTExpr_BitwiseAnd,
-    ASTExpr_BitwiseOr,
-    ASTExpr_BitwiseLeftShift,
-    ASTExpr_BitwiseRightShift,
+    ASTExpr_BitAnd,
+    ASTExpr_BitOr,
+    ASTExpr_BitNot,
+    ASTExpr_BitShiftLeft,
+    ASTExpr_BitShiftRight,
     
     ASTExpr_LogicalAnd,
     ASTExpr_LogicalOr,
+    ASTExpr_LogicalNot,
     
-    ASTExpr_AddEquals,
-    ASTExpr_SubEquals,
-    ASTExpr_MultEquals,
-    ASTExpr_DivEquals,
-    ASTExpr_ModEquals,
-    ASTExpr_BitwiseAndEquals,
-    ASTExpr_BitwiseOrEquals,
-    ASTExpr_BitwiseLeftShiftEquals,
-    ASTExpr_BitwiseRightShiftEquals,
+    ASTExpr_CmpEqual,
+    ASTExpr_CmpNotEqual,
+    ASTExpr_CmpLess,
+    ASTExpr_CmpLessOrEqual,
+    ASTExpr_CmpGreater,
+    ASTExpr_CmpGreaterOrEqual,
     
-    ASTExpr_Equals,
-    
-    ASTExpr_IsEqual,
-    ASTExpr_IsNotEqual,
-    ASTExpr_IsGreaterThan,
-    ASTExpr_IsLessThan,
-    ASTExpr_IsGreaterThanOrEqual,
-    ASTExpr_IsLessThanOrEqual,
-    
+    ASTExpr_TypeCast,
     ASTExpr_Subscript,
+    ASTExpr_Slice,
     ASTExpr_Member,
+    ASTExpr_Call,
+    ASTExpr_Reference,
+    ASTExpr_Dereference,
     
-    // Special
+    ASTExpr_Assignment, // TODO(soimn): Should this be split up into the different types of assignment?
+    ASTExpr_Increment,
+    ASTExpr_Decrement,
+    
     ASTExpr_Identifier,
     ASTExpr_Number,
     ASTExpr_String,
-    ASTExpr_LambdaDecl,
-    ASTExpr_FunctionCall,
-    ASTExpr_TypeCast,
-    
-    AST_EXPRESSION_TYPE_COUNT
+};
+
+struct Scope_Info
+{
+    Symbol_Table_ID table;
+    U32 num_decls;
 };
 
 struct AST_Node
 {
+    Enum32(AST_NODE_TYPE) node_type;
+    Enum32(AST_EXPR_TYPE) expr_type;
     
+    AST_Node* next;
+    
+    union
+    {
+        AST_Node* first_in_scope;
+        
+        struct
+        {
+            AST_Node* left;
+            AST_Node* right;
+            AST_Node* extra;
+        };
+    };
+    
+    union
+    {
+        Scope_Info scope;
+        
+        Symbol_ID symbol;
+    };
+};
+
+struct AST
+{
+    AST_Node* root;
+    Bucket_Array(AST_Node) nodes;
 };

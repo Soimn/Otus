@@ -1,62 +1,46 @@
 enum LEXER_TOKEN_TYPE
 {
     Token_Error,
+    Token_EndOfStream,
     
     Token_Plus,
     Token_Minus,
+    Token_Asterisk,
+    Token_ForwardSlash,
+    Token_BackwardSlash,
+    Token_Percentage,
     Token_And,
-    Token_Equals,
-    Token_Colon,
     Token_Pipe,
+    Token_Greater,
+    Token_Less,
+    Token_Exclamation,
+    Token_Period,
+    Token_Comma,
+    Token_Colon,
+    Token_Semicolon,
+    Token_Equals,
+    
+    Token_PlusEQ,
+    Token_MinusEQ,
+    Token_AsteriskEQ,
+    Token_ForwardSlashEQ,
+    Token_PercentageEQ,
+    Token_AndEQ,
+    Token_PipeEQ,
+    Token_GreaterEQ,
+    Token_LessEQ,
+    Token_ExclamationEQ,
+    Token_ColonEQ,
     
     Token_PlusPlus,
     Token_MinusMinus,
     Token_AndAnd,
-    Token_EQEQ,
-    Token_ColonColon,
     Token_PipePipe,
-    
-    Token_PlusEQ,
-    Token_MinusEQ,
-    Token_AndEQ,
-    Token_ColonEQ,
-    Token_PipeEQ,
-    
-    Token_Hat,
-    Token_Asterisk,
-    Token_Slash,
-    Token_Percentage,
-    Token_Exclamation,
-    
-    Token_HatEQ,
-    Token_AsteriskEQ,
-    Token_SlashEQ,
-    Token_PercentageEQ,
-    Token_ExclamationEQ,
-    
-    Token_GreaterThan,
-    Token_LessThan,
-    Token_GTGT,
-    Token_LTLT,
-    Token_GTEQ,
-    Token_LTEQ,
-    Token_GTGTEQ,
-    Token_LTLTEQ,
-    
-    Token_Period,
+    Token_GreaterGreater,
+    Token_LessLess,
     Token_PeriodPeriod,
-    
-    Token_Tick,
-    Token_Tilde,
-    Token_Question,
-    Token_Hash,
-    Token_At,
-    Token_Backtick,
-    Token_Underscore,
-    Token_Comma,
-    Token_Semicolon,
-    Token_Backslash,
-    Token_RightArrow,
+    Token_ColonColon,
+    Token_EqualsEquals,
     
     Token_OpenParen,
     Token_CloseParen,
@@ -65,461 +49,524 @@ enum LEXER_TOKEN_TYPE
     Token_OpenBrace,
     Token_CloseBrace,
     
-    Token_Number,
-    Token_String,
-    Token_Identifier,
+    Token_Arrow,
+    Token_Hash,
+    Token_At,
     
-    Token_EndOfStream,
-};
-
-enum LEXER_ERROR_CODE
-{
-    LexerError_InvalidToken,
-    LexerError_MissingTerminatingQuote,
-    LexerError_IntegerLiteralTooLarge,
-    LexerError_FloatLiteralTooLarge,
-    LexerError_FloatLiteralTooSmall,
-    LexerError_InvalidHexadecimalLiteral,
+    Token_Identifier,
+    Token_String,
+    Token_Number,
 };
 
 struct Token
 {
     Enum32(LEXER_TOKEN_TYPE) type;
-    U32 line;
-    U32 column;
-    U8* line_start;
-    String token_string;
     
-    union
-    {
-        String string;
-        Number number;
-        Enum32(LEXER_ERROR_CODE) error_code;
-    };
+    String string;
+    Number number;
+    
+    U8* line_start;
+    UMM column;
+    UMM line;
+    UMM token_size;
 };
 
-struct Lexer
-{
-    U8* current;
-    U8* end;
-    U8* line_start;
-    U32 line;
-};
-
-inline Lexer
-LexFile(File* file)
-{
-    Lexer lexer = {};
-    lexer.current    = file->file_contents.data;
-    lexer.end        = file->file_contents.data + file->file_contents.size;
-    lexer.line_start = lexer.current;
-    
-    return lexer;
-}
-
-// IMPORTANT NOTE(soimn): GetToken expects a null terminated string
-// TODO(soimn): Find out whether the lexer should handle error reporting itself or "outsource" it by returning an 
-//              error token
 inline Token
-GetToken(Lexer* lexer)
+GetToken(Parser_State* state)
 {
     Token token = {};
-    token.type  = Token_Error;
     
-    U8* current_char       = lexer->current;
-    U32 current_line       = lexer->line;
-    U8* current_line_start = lexer->line_start;
+    Lexer_State lexer = state->lexer_state;
     
-    // NOTE(soimn): Helper function to improve readability
-    auto Advance = [](U8** current_char)
+    auto Advance = [](Lexer_State* lexer, U32 amount)
     {
-        *current_char += 1;
+        if (*lexer->current != 0)
+        {
+            lexer->current += amount;
+            lexer->column  += amount;
+        }
     };
     
-    for (;;)
+    auto IsAlpha = [](char c) -> bool
     {
-        char c = *current_char;
+        return ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
+    };
+    
+    auto IsDigit = [](char c) -> bool
+    {
+        return (c >= '0' && c <= '9');
+    };
+    
+    while (*lexer.current != 0)
+    {
+        char c = *lexer.current;
+        
         if (c == ' ' || c == '\t' || c == '\v' || c == '\r')
         {
-            Advance(&current_char);
+            Advance(&lexer, 1);
         }
         
         else if (c == '\n')
         {
-            Advance(&current_char);
-            ++current_line;
-            current_line_start = current_char;
+            Advance(&lexer, 1);
+            lexer.line_start = lexer.current;
+            lexer.column     = 0;
+            ++lexer.line;
+        }
+        
+        else if (c == '/' && lexer.current[1] == '/')
+        {
+            Advance(&lexer, 2);
+            
+            while (*lexer.current != 0 && *lexer.current != '\n') Advance(&lexer, 1);
+            Advance(&lexer, 1);
+        }
+        
+        else if (c == '/' && lexer.current[1] == '*')
+        {
+            Advance(&lexer, 2);
+            
+            U32 nesting_level = 0;
+            while (*lexer.current != 0)
+            {
+                if (lexer.current[0] == '/' && lexer.current[1] == '*')
+                {
+                    Advance(&lexer, 2);
+                    ++nesting_level;
+                }
+                
+                else if (lexer.current[0] == '*' && lexer.current[1] == '/')
+                {
+                    Advance(&lexer, 2);
+                    
+                    if (nesting_level == 0) break;
+                    else --nesting_level;
+                }
+                
+                else
+                {
+                    if (*lexer.current == '\n')
+                    {
+                        Advance(&lexer, 1);
+                        lexer.line_start = lexer.current;
+                        lexer.column     = 0;
+                        ++lexer.line;
+                    }
+                    
+                    else Advance(&lexer, 1);
+                }
+            }
         }
         
         else break;
     }
     
-    token.line              = current_line;
-    token.column            = (U32)(current_char - current_line_start);
-    token.line_start        = current_line_start;
-    token.token_string.data = current_char;
+    token.line_start = lexer.line_start;
+    token.column     = lexer.column;
+    token.line       = lexer.line;
     
-    char c = *current_char;
+    char c = *lexer.current;
+    Advance(&lexer, 1);
     
-    // NOTE(soimn): this is to protect the lexer from jumping over an EOF and reading garbage
-    if (c != 0) Advance(&current_char);
-    
-    switch (c)
+    switch(c)
     {
-        case 0:    token.type = Token_EndOfStream;  break;
+        case 0: token.type = Token_EndOfStream; break;
         
-        case '\'': token.type = Token_Tick;         break;
-        case '\\': token.type = Token_Backslash;    break;
+        case '\\': token.type = Token_BackwardSlash; break;
+        case ',': token.type  =  Token_Comma;        break;
+        case ';': token.type  =  Token_Semicolon;    break;
+        case '#': token.type  =  Token_Hash;         break;
+        case '@': token.type  =  Token_At;           break;
+        case '(': token.type  =  Token_OpenParen;    break;
+        case ')': token.type  =  Token_CloseParen;   break;
+        case '[': token.type  =  Token_OpenBracket;  break;
+        case ']': token.type  =  Token_CloseBracket; break;
+        case '{': token.type  =  Token_OpenBrace;    break;
+        case '}': token.type  =  Token_CloseBrace;   break;
         
-        case '~':  token.type = Token_Tilde;        break;
-        case '?':  token.type = Token_Question;     break;
-        case '#':  token.type = Token_Hash;         break;
-        case '@':  token.type = Token_At;           break;
-        case '`':  token.type = Token_Backtick;     break;
-        case ',':  token.type = Token_Comma;        break;
-        case ';':  token.type = Token_Semicolon;    break;
+#define SINGLE_DOUBLE_OR_EQ(character, single_token, double_token, eq_token) \
+        case character:                                                              \
+        {                                                                            \
+            if (*lexer.current == character)                                        \
+            {                                                                        \
+                token.type = double_token;                                           \
+                Advance(&lexer, 1);                                                  \
+            }                                                                        \
+            else if (*lexer.current == '=')                                         \
+            {                                                                        \
+                token.type = eq_token;                                               \
+                Advance(&lexer, 1);                                                  \
+            }                                                                        \
+            else token.type = single_token;                                          \
+        } break;
         
-        case '(':  token.type = Token_OpenParen;    break;
-        case ')':  token.type = Token_CloseParen;   break;
-        case '[':  token.type = Token_OpenBracket;  break;
-        case ']':  token.type = Token_CloseBracket; break;
-        case '{':  token.type = Token_OpenBrace;    break;
-        case '}':  token.type = Token_CloseBrace;   break;
+        SINGLE_DOUBLE_OR_EQ('+', Token_Plus,    Token_PlusEQ,    Token_PlusPlus);
+        SINGLE_DOUBLE_OR_EQ('&', Token_And,     Token_AndEQ,     Token_AndAnd);
+        SINGLE_DOUBLE_OR_EQ('|', Token_Pipe,    Token_PipeEQ,    Token_PipePipe);
+        SINGLE_DOUBLE_OR_EQ('>', Token_Greater, Token_GreaterEQ, Token_GreaterGreater);
+        SINGLE_DOUBLE_OR_EQ('<', Token_Less,    Token_LessEQ,    Token_LessLess);
+        SINGLE_DOUBLE_OR_EQ(':', Token_Colon,   Token_ColonEQ,   Token_ColonColon);
         
+#undef SINGLE_DOUBLE_OR_EQ
         
-#define SINGLE_OR_EQUALS(character, single_token, equals_token) \
+#define SINGLE_OR_EQ(character, single_token, eq_token) \
+        case character:                                         \
+        {                                                       \
+            if (*lexer.current == '=')                         \
+            {                                                   \
+                token.type = eq_token;                          \
+                Advance(&lexer, 1);                             \
+            }                                                   \
+            else token.type = single_token;                     \
+        } break;
+        
+        SINGLE_OR_EQ('!', Token_Exclamation, Token_ExclamationEQ);
+        SINGLE_OR_EQ('*', Token_Asterisk, Token_AsteriskEQ);
+        SINGLE_OR_EQ('/', Token_ForwardSlash, Token_ForwardSlashEQ);
+        SINGLE_OR_EQ('%', Token_Percentage, Token_PercentageEQ);
+        
+#undef SINGLE_OR_EQ
+        
+#define SINGLE_OR_DOUBLE(character, single_token, double_token) \
         case character:                                                 \
         {                                                               \
-            if (*current_char == '=')                                   \
+            if (*lexer.current == character)                           \
             {                                                           \
-                token.type = equals_token;                              \
-                Advance(&current_char);                                 \
+                token.type = double_token;                              \
+                Advance(&lexer, 1);                                     \
             }                                                           \
-            else                                                        \
-            {                                                           \
-                token.type = single_token;                              \
-            }                                                           \
-        } break
+            else token.type = single_token;                             \
+        } break;
         
-        SINGLE_OR_EQUALS('^', Token_Hat, Token_HatEQ);
-        SINGLE_OR_EQUALS('*', Token_Asterisk, Token_AsteriskEQ);
-        SINGLE_OR_EQUALS('/', Token_Slash, Token_SlashEQ);
-        SINGLE_OR_EQUALS('%', Token_Percentage, Token_PercentageEQ);
-        SINGLE_OR_EQUALS('!', Token_Exclamation, Token_ExclamationEQ);
+        SINGLE_OR_DOUBLE('.', Token_Period, Token_PeriodPeriod);
+        SINGLE_OR_DOUBLE('=', Token_Equals, Token_EqualsEquals);
         
-#undef SINGLE_OR_EQUALS
-        
-#define SINGLE_DOUBLE_OR_EQUALS(character, single_token, double_token, equals_token) \
-        case character:                                                                      \
-        {                                                                                    \
-            if (*current_char == character)                                                  \
-            {                                                                                \
-                token.type = double_token;                                                   \
-                Advance(&current_char);                                                      \
-            }                                                                                \
-            else if (*current_char == '=')                                                   \
-            {                                                                                \
-                token.type = equals_token;                                                   \
-                Advance(&current_char);                                                      \
-            }                                                                                \
-            else                                                                             \
-            {                                                                                \
-                token.type = single_token;                                                   \
-            }                                                                                \
-        } break
-        
-        SINGLE_DOUBLE_OR_EQUALS('+', Token_Plus,   Token_PlusPlus,   Token_PlusEQ);
-        SINGLE_DOUBLE_OR_EQUALS('&', Token_And,    Token_AndAnd,     Token_AndEQ);
-        SINGLE_DOUBLE_OR_EQUALS('|', Token_Pipe,   Token_PipePipe,   Token_PipeEQ);
-        SINGLE_DOUBLE_OR_EQUALS(':', Token_Colon,  Token_ColonColon, Token_ColonEQ);
-        SINGLE_DOUBLE_OR_EQUALS('=', Token_Equals, Token_EQEQ,       Token_EQEQ);
-        
-#undef SINGLE_DOUBLE_OR_EQUALS
-        
-#define SINGLE_DOUBLE_EQUALS_OR_DOUBLE_AND_EQUALS(character, single_token, double_token, equals_token, double_and_equals_token) \
-        case character:                                                    \
-        {                                                                  \
-            if (*current_char == character)                                \
-            {                                                              \
-                Advance(&current_char);                                    \
-                if (*current_char == '=')                                  \
-                {                                                          \
-                    token.type = double_and_equals_token;                  \
-                    Advance(&current_char);                                \
-                }                                                          \
-                else                                                       \
-                {                                                          \
-                    token.type = double_token;                             \
-                }                                                          \
-            }                                                              \
-            else if (*current_char == '=')                                 \
-            {                                                              \
-                token.type = equals_token;                                 \
-                Advance(&current_char);                                    \
-            }                                                              \
-            else                                                           \
-            {                                                              \
-                token.type = single_token;                                 \
-            }                                                              \
-        } break
-        
-        SINGLE_DOUBLE_EQUALS_OR_DOUBLE_AND_EQUALS('>', Token_GreaterThan, Token_GTGT, Token_GTEQ, Token_GTGTEQ);
-        SINGLE_DOUBLE_EQUALS_OR_DOUBLE_AND_EQUALS('<', Token_LessThan, Token_LTLT, Token_LTEQ, Token_LTLTEQ);
-        
-#undef SINGLE_DOUBLE_EQUALS_OR_DOUBLE_AND_EQUALS
+#undef SINGLE_OR_DOUBLE
         
         case '-':
         {
-            if (*current_char == '-')
-            {
-                token.type = Token_MinusMinus;
-                Advance(&current_char);
-            }
-            
-            else if (*current_char == '=')
+            if (*lexer.current == '=')
             {
                 token.type = Token_MinusEQ;
-                Advance(&current_char);
+                Advance(&lexer, 1);
             }
             
-            else if (*current_char == '>')
+            else if (*lexer.current == '-')
             {
-                token.type = Token_RightArrow;
-                Advance(&current_char);
+                token.type = Token_MinusMinus;
+                Advance(&lexer, 1);
             }
             
-            else
+            else if (*lexer.current == '>')
             {
-                token.type = Token_Minus;
-            }
-        } break;
-        
-        case '.':
-        {
-            if (*current_char == '.')
-            {
-                token.type = Token_PeriodPeriod;
-                Advance(&current_char);
+                token.type = Token_Arrow;
+                Advance(&lexer, 1);
             }
             
-            else
-            {
-                token.type = Token_Period;
-            }
+            else token.type = Token_Minus;
         } break;
         
         default:
         {
-            if (c == '"')
+            if (IsAlpha(c) || c == '_')
             {
-                token.type = Token_String;
-                token.string.data = current_char;
+                token.type = Token_Identifier;
                 
-                while (*current_char != 0 && *current_char != '"')
+                token.string.data = lexer.current - 1;
+                
+                while (IsAlpha(*lexer.current) || IsDigit(*lexer.current) || *lexer.current == '_')
                 {
-                    if (*current_char == '\\' && *(current_char + 1) == '"')
-                    {
-                        Advance(&current_char);
-                    }
-                    
-                    Advance(&current_char);
+                    Advance(&lexer, 1);
                 }
                 
-                if (*current_char == '"')
-                {
-                    token.string.size = current_char - token.string.data;
-                    Advance(&current_char);
-                }
-                
-                else
-                {
-                    //// ERROR
-                    token.type       = Token_Error;
-                    token.error_code = LexerError_MissingTerminatingQuote;
-                }
+                token.string.size = lexer.current - token.string.data;
             }
             
             else if (IsDigit(c))
             {
+                // IMPORTANT TODO(soimn): Implement a proper parser which handles invalid literals gracefully
+                
                 token.type = Token_Number;
                 
-                // NOTE(soimn): This is decremented to include the c character aswell
-                U8* start = current_char - 1;
+                U8* start = lexer.current - 1;
                 
-                bool is_hex = false;
-                if (c == '0' && ToLower(*current_char) == 'x')
+                bool is_hex       = false;
+                bool is_hex_float = false;
+                bool has_point    = false;
+                bool has_exponent = false;
+                
+                I8 exponent_sign = 1;
+                U64 exponent     = 0;
+                
+                if (c == 'x' || c == 'X')      is_hex       = true;
+                else if (c == 'f' || c == 'F') is_hex_float = true;
+                
+                if (is_hex || is_hex_float)
                 {
-                    is_hex = true;
                     start += 2;
-                    Advance(&current_char);
+                    Advance(&lexer, 1);
                 }
                 
-                bool has_passed_point = false;
-                for (;;)
+                while (*lexer.current != 0)
                 {
-                    if (IsDigit(*current_char))
+                    c = *lexer.current;
+                    
+                    if (c == '_'                                           ||
+                        IsDigit(c)                                         ||
+                        (is_hex || is_hex_float) && (c >= 'A' && c <= 'F') ||
+                        (is_hex || is_hex_float) && (c >= 'a' && c <= 'f'))
                     {
-                        Advance(&current_char);
+                        Advance(&lexer, 1);
                     }
                     
-                    else if (*current_char == '.' && IsDigit(*(current_char + 1)))
+                    else if (!has_point && c == '.')
                     {
-                        if (!has_passed_point && !is_hex)
+                        has_point = true;
+                        Advance(&lexer, 1);
+                    }
+                    
+                    else if (c == 'e' || c == 'E')
+                    {
+                        has_exponent = true;
+                        Advance(&lexer, 1);
+                        
+                        if (is_hex || is_hex_float)
                         {
-                            has_passed_point = true;
-                            Advance(&current_char);
+                            if (*lexer.current == '-' || *lexer.current == '+')
+                            {
+                                if (*lexer.current == '-') exponent_sign = -1;
+                                Advance(&lexer, 1);
+                            }
+                            
+                            if (IsDigit(*lexer.current))
+                            {
+                                while (IsDigit(*lexer.current))
+                                {
+                                    exponent *= 10;
+                                    exponent += *lexer.current - '0';
+                                    
+                                    Advance(&lexer, 1);
+                                }
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Missing exponent after exponent specifier in numeric literal
+                                token.type = Token_Error;
+                            }
                         }
                         
-                        else break;
-                    }
-                    
-                    else if (is_hex && ToLower(*current_char) >= 'a' && ToLower(*current_char) <= 'f')
-                    {
-                        Advance(&current_char);
+                        else
+                        {
+                            //// ERROR: Exponents are only allowed on decimal literals
+                            token.type = Token_Error;
+                        }
                     }
                     
                     else break;
                 }
                 
-                U8* end = current_char;
+                U8* end = lexer.current;
                 
-                if (is_hex && start == end)
+                if (end != start && *(end - 1) == '_')
                 {
-                    //// ERROR
-                    token.type       = Token_Error;
-                    token.error_code = LexerError_InvalidHexadecimalLiteral;
+                    //// ERROR: Underscores in numeric literals are only allowed to be used as separators between 
+                    ////        digits, not as the last character in the literal
+                    token.type = Token_Error;
+                }
+                
+                else if ((is_hex || is_hex_float) && end == start)
+                {
+                    //// ERROR: Missing numeric after base specifier in numeric literal
+                    token.type = Token_Error;
+                }
+                
+                else if (has_point && !IsDigit(*(end - 1)))
+                {
+                    //// ERROR: Invalid decimal part following point in numeric literal
+                    token.type = Token_Error;
+                }
+                
+                else if (exponent_sign == 1 && exponent > 127 || exponent_sign == -1 && exponent < -126)
+                {
+                    //// ERROR: Exponent out of range
+                    token.type = Token_Error;
                 }
                 
                 else
                 {
-                    if (!has_passed_point)
+                    if (has_point || has_exponent)
                     {
-                        token.number.is_integer = true;
-                        token.number.u64        = 0;
+                        token.number.is_f32 = true;
+                        
+                        U8* scan = start;
+                        for (; scan < end; ++scan)
+                        {
+                            if (*scan == '.' || *scan == 'e' || *scan == 'E') break;
+                            else
+                            {
+                                F32 next = token.number.f32 * 10 + (*scan - '0');
+                                
+                                if (token.number.f32 > next)
+                                {
+                                    //// ERROR: Floating point literal too large
+                                    token.type = Token_Error;
+                                }
+                                
+                                else token.number.f32 = next;
+                            }
+                        }
+                        
+                        if (has_point)
+                        {
+                            ++scan;
+                            for (; scan < end; ++scan)
+                            {
+                                F32 place = 0.1f;
+                                
+                                if (*scan == 'e' || *scan == 'E') break;
+                                else
+                                {
+                                    F32 next = token.number.f32 + place * (*scan - '0');
+                                    place /= 10;
+                                    
+                                    if (token.number.f32 > next)
+                                    {
+                                        //// ERROR: Floating point literal too large
+                                        token.type = Token_Error;
+                                    }
+                                    
+                                    else token.number.f32 = next;
+                                }
+                            }
+                        }
+                        
+                        if (has_exponent)
+                        {
+                            for (; exponent != 0; exponent += -exponent_sign)
+                            {
+                                token.number.f32 *= (exponent_sign == 1 ? 10 : 0.1f);
+                            }
+                        }
+                    }
+                    
+                    else if (is_hex_float)
+                    {
+                        token.number.is_f32 = true;
+                        
+                        U64 num = 0;
+                        for (U8* scan = start; scan < end; ++scan)
+                        {
+                            U8 digit = 0;
+                            
+                            if (IsDigit(*scan))                    digit = *scan - '0';
+                            else if (*scan >= 'A' && *scan <= 'F') digit = (*scan - 'A') + 10;
+                            else                                   digit = (*scan - 'a') + 10;
+                            
+                            U64 next_num = token.number.u64 * 16 + digit;
+                            
+                            if (num > next_num)
+                            {
+                                //// ERROR: Hexadecimal floating point literal too large
+                                token.type = Token_Error;
+                            }
+                            
+                            else num = next_num;
+                        }
+                    }
+                    
+                    else
+                    {
+                        token.number.is_u64 = true;
                         
                         U8 base = (is_hex ? 16 : 10);
                         for (U8* scan = start; scan < end; ++scan)
                         {
                             U8 digit = 0;
                             
-                            if (IsDigit(*scan))
+                            if (IsDigit(*scan))                    digit = *scan - '0';
+                            else if (*scan >= 'A' && *scan <= 'F') digit = (*scan - 'A') + 10;
+                            else                                   digit = (*scan - 'a') + 10;
+                            
+                            U64 next = token.number.u64 * base + digit;
+                            
+                            if (token.number.u64 > next)
                             {
-                                digit = *scan - '0';
+                                //// ERROR: Integer literal too large
+                                token.type = Token_Error;
                             }
                             
-                            else
-                            {
-                                digit = (ToLower(*scan) - 'a') + 10;
-                            }
-                            
-                            U64 new_number = token.number.u64;
-                            new_number *= base;
-                            new_number += digit;
-                            
-                            if (new_number > token.number.u64 || new_number == 0 && token.number.u64 == 0)
-                            {
-                                token.number.u64 = new_number;
-                            }
-                            
-                            else
-                            {
-                                //// ERROR
-                                token.type       = Token_Error;
-                                token.error_code = LexerError_IntegerLiteralTooLarge;
-                            }
-                        }
-                    }
-                    
-                    else
-                    {
-                        // IMPORTANT TODO(soimn): Implement a proper float parser
-                        // Usefull resources:
-                        //   - https://ampl.com/REFS/rounding.pdf
-                        
-                        // TODO(soimn): Detect under- and overflow
-                        
-                        token.number.is_integer = false;
-                        token.number.f64        = 0;
-                        
-                        U8* scan = start;
-                        for (; scan < end; ++scan)
-                        {
-                            if (*scan == '.') break;
-                            else
-                            {
-                                token.number.f64 *= 10;
-                                token.number.f64 += *scan - '0';
-                            }
-                        }
-                        
-                        ++scan;
-                        
-                        F64 decimal_place = 0.1;
-                        
-                        for (; scan < end; ++scan)
-                        {
-                            token.number.f64 += (*scan - '0') * decimal_place;
-                            decimal_place    /= 10;
+                            else token.number.u64 = next;
                         }
                     }
                 }
             }
             
-            else if (IsAlpha(c) || c == '_' || !IsASCII(c))
+            else if (c == '"')
             {
-                if (c == '_' && !IsAlpha(*current_char) && IsASCII(*current_char))
+                token.type = Token_String;
+                
+                token.string.data = lexer.current;
+                
+                while (*lexer.current != 0 && *lexer.current != '"')
                 {
-                    token.type = Token_Underscore;
+                    Advance(&lexer, 1);
+                }
+                
+                if (*lexer.current == '"')
+                {
+                    token.string.size = lexer.current - token.string.data;
+                    Advance(&lexer, 1);
                 }
                 
                 else
                 {
-                    token.type = Token_Identifier;
-                    
-                    // NOTE(soimn): This is decremented to include the c character aswell
-                    token.string.data = current_char - 1;
-                    
-                    while (*current_char == '_' || IsAlpha(*current_char) || IsDigit(*current_char) || !IsASCII(*current_char))
-                    {
-                        Advance(&current_char);
-                    }
-                    
-                    token.string.size = current_char - token.string.data;
+                    //// ERROR: Missing terminator for string literal
+                    token.type = Token_Error;
                 }
+            }
+            
+            else
+            {
+                token.type = Token_Error;
             }
         } break;
     }
     
-    token.token_string.size = current_char - token.token_string.data;
+    token.token_size = lexer.column - token.column;
     
     return token;
 }
 
 inline void
-SkipPastToken(Lexer* lexer, Token token)
+SkipPastToken(Parser_State* state, Token token)
 {
-    U8* new_current = token.line_start + token.column + token.token_string.size;
-    ASSERT(new_current < lexer->end);
-    
-    lexer->current    = new_current;
-    lexer->line       = token.line;
-    lexer->line_start = token.line_start;
+    state->lexer_state.line_start = token.line_start;
+    state->lexer_state.column     = token.column + token.token_size;
+    state->lexer_state.line       = token.line;
+    state->lexer_state.current    = state->lexer_state.line_start + state->lexer_state.column;
 }
 
 inline Token
-PeekNextToken(Lexer* lexer, Token prev_token)
+PeekNextToken(Parser_State* state, Token token)
 {
-    Lexer tmp_lexer = *lexer;
-    SkipPastToken(&tmp_lexer, prev_token);
-    
-    return GetToken(&tmp_lexer);
+    Parser_State tmp_state = *state;
+    SkipPastToken(&tmp_state, token);
+    return GetToken(&tmp_state);
 }
 
 inline bool
-MetRequiredTokenAndSkip(Lexer* lexer, Enum32(LEXER_TOKEN_TYPE) type)
+MetRequiredToken(Parser_State* state, Enum32(LEXER_TOKEN_TYPE) type)
 {
-    Token token = GetToken(lexer);
-    SkipPastToken(lexer, token);
+    bool result = false;
     
-    return (token.type == type);
+    Token token = GetToken(state);
+    
+    if (token.type == type)
+    {
+        result = true;
+        SkipPastToken(state, token);
+    }
+    
+    return result;
 }
