@@ -30,7 +30,10 @@ enum LEXER_TOKEN_TYPE
     Token_GreaterEQ,
     Token_LessEQ,
     Token_ExclamationEQ,
-    Token_ColonEQ,
+    Token_AndAndEQ,
+    Token_PipePipeEQ,
+    Token_GreaterGreaterEQ,
+    Token_LessLessEQ,
     
     Token_PlusPlus,
     Token_MinusMinus,
@@ -52,6 +55,8 @@ enum LEXER_TOKEN_TYPE
     Token_Arrow,
     Token_Hash,
     Token_At,
+    Token_Quote,
+    Token_QuoteQuote,
     
     Token_Identifier,
     Token_String,
@@ -184,15 +189,43 @@ GetToken(Parser_State* state)
         case '{': token.type  =  Token_OpenBrace;    break;
         case '}': token.type  =  Token_CloseBrace;   break;
         
+#define SINGLE_DOUBLE_DOUBLE_EQ_OR_EQ(character, single_token, double_token, double_eq_token, eq_token) \
+        case character:                                                                                         \
+        {                                                                                                       \
+            if (*lexer.current == character)                                                                    \
+            {                                                                                                   \
+                Advance(&lexer, 1);                                                                             \
+                if (*lexer.current == '=')                                                                      \
+                {                                                                                               \
+                    token.type = double_eq_token;                                                               \
+                    Advance(&lexer, 1);                                                                         \
+                }                                                                                               \
+                else token.type = double_token;                                                                 \
+            }                                                                                                   \
+            else if (*lexer.current == '=')                                                                     \
+            {                                                                                                   \
+                token.type = eq_token;                                                                          \
+                Advance(&lexer, 1);                                                                             \
+            }                                                                                                   \
+            else token.type = single_token;                                                                     \
+        } break;
+        
+        SINGLE_DOUBLE_DOUBLE_EQ_OR_EQ('&', Token_And,     Token_AndAnd,         Token_AndAndEQ,   Token_AndEQ);
+        SINGLE_DOUBLE_DOUBLE_EQ_OR_EQ('|', Token_Pipe,    Token_PipePipe,       Token_PipePipeEQ, Token_PipeEQ);
+        SINGLE_DOUBLE_DOUBLE_EQ_OR_EQ('<', Token_Less,    Token_LessLess,       Token_LessLessEQ, Token_LessEQ);
+        SINGLE_DOUBLE_DOUBLE_EQ_OR_EQ('>', Token_Greater, Token_GreaterGreater, Token_GreaterGreaterEQ, Token_GreaterEQ);
+        
+#undef SINGLE_DOUBLE_DOUBLE_EQ_OR_EQ
+        
 #define SINGLE_DOUBLE_OR_EQ(character, single_token, double_token, eq_token) \
         case character:                                                              \
         {                                                                            \
-            if (*lexer.current == character)                                        \
+            if (*lexer.current == character)                                         \
             {                                                                        \
                 token.type = double_token;                                           \
                 Advance(&lexer, 1);                                                  \
             }                                                                        \
-            else if (*lexer.current == '=')                                         \
+            else if (*lexer.current == '=')                                          \
             {                                                                        \
                 token.type = eq_token;                                               \
                 Advance(&lexer, 1);                                                  \
@@ -200,19 +233,14 @@ GetToken(Parser_State* state)
             else token.type = single_token;                                          \
         } break;
         
-        SINGLE_DOUBLE_OR_EQ('+', Token_Plus,    Token_PlusEQ,    Token_PlusPlus);
-        SINGLE_DOUBLE_OR_EQ('&', Token_And,     Token_AndEQ,     Token_AndAnd);
-        SINGLE_DOUBLE_OR_EQ('|', Token_Pipe,    Token_PipeEQ,    Token_PipePipe);
-        SINGLE_DOUBLE_OR_EQ('>', Token_Greater, Token_GreaterEQ, Token_GreaterGreater);
-        SINGLE_DOUBLE_OR_EQ('<', Token_Less,    Token_LessEQ,    Token_LessLess);
-        SINGLE_DOUBLE_OR_EQ(':', Token_Colon,   Token_ColonEQ,   Token_ColonColon);
+        SINGLE_DOUBLE_OR_EQ('+', Token_Plus, Token_PlusPlus, Token_PlusEQ);
         
 #undef SINGLE_DOUBLE_OR_EQ
         
 #define SINGLE_OR_EQ(character, single_token, eq_token) \
         case character:                                         \
         {                                                       \
-            if (*lexer.current == '=')                         \
+            if (*lexer.current == '=')                          \
             {                                                   \
                 token.type = eq_token;                          \
                 Advance(&lexer, 1);                             \
@@ -220,17 +248,17 @@ GetToken(Parser_State* state)
             else token.type = single_token;                     \
         } break;
         
-        SINGLE_OR_EQ('!', Token_Exclamation, Token_ExclamationEQ);
-        SINGLE_OR_EQ('*', Token_Asterisk, Token_AsteriskEQ);
+        SINGLE_OR_EQ('!', Token_Exclamation,  Token_ExclamationEQ);
+        SINGLE_OR_EQ('*', Token_Asterisk,     Token_AsteriskEQ);
         SINGLE_OR_EQ('/', Token_ForwardSlash, Token_ForwardSlashEQ);
-        SINGLE_OR_EQ('%', Token_Percentage, Token_PercentageEQ);
+        SINGLE_OR_EQ('%', Token_Percentage,   Token_PercentageEQ);
         
 #undef SINGLE_OR_EQ
         
 #define SINGLE_OR_DOUBLE(character, single_token, double_token) \
         case character:                                                 \
         {                                                               \
-            if (*lexer.current == character)                           \
+            if (*lexer.current == character)                            \
             {                                                           \
                 token.type = double_token;                              \
                 Advance(&lexer, 1);                                     \
@@ -238,8 +266,10 @@ GetToken(Parser_State* state)
             else token.type = single_token;                             \
         } break;
         
-        SINGLE_OR_DOUBLE('.', Token_Period, Token_PeriodPeriod);
-        SINGLE_OR_DOUBLE('=', Token_Equals, Token_EqualsEquals);
+        SINGLE_OR_DOUBLE('.',  Token_Period, Token_PeriodPeriod);
+        SINGLE_OR_DOUBLE('=',  Token_Equals, Token_EqualsEquals);
+        SINGLE_OR_DOUBLE(':',  Token_Colon,  Token_ColonColon);
+        SINGLE_OR_DOUBLE('\'', Token_Quote,  Token_QuoteQuote);
         
 #undef SINGLE_OR_DOUBLE
         

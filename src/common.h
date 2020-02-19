@@ -110,7 +110,6 @@ typedef I32 ID;
 typedef I64 Indirect_ID;
 
 typedef ID String_ID;
-typedef ID Scope_ID;
 typedef ID Symbol_Table_ID;
 typedef ID Type_ID;
 typedef Indirect_ID Symbol_ID;

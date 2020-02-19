@@ -1,53 +1,8 @@
-enum SYMBOL_TYPE
-{
-    SymbolType_VarName,
-    SymbolType_StructName,
-    SymbolType_EnumName,
-    SymbolType_ProcName,
-    //SymbolType_Alias,
-};
-
-struct Symbol
-{
-    String_ID name;
-    Enum32(SYMBOL_TYPE) type;
-    bool is_global;
-};
-
-struct Scope_Chain
-{
-    Scope_Chain* next;
-    Scope_Info* scope;
-    U32 current_decl_index;
-};
-
-struct Imported_Symbol_Table
-{
-    // NOTE(soimn): If this id is not equal to INVALID_ID, only symbol lookups in this table from a root with an 
-    //              id equal to the restriction_id are valid
-    //              #import sets this to INVALID_ID, whilst #import_local sets this to the root node's table id
-    Symbol_Table_ID restriction_id;
-    
-    Symbol_Table_ID table_id;
-    U32 num_decls_before_valid;
-};
-
-#define SYMBOL_TABLE_LOCAL_CACHE_SIZE 10
-#define SYMBOL_TABLE_BUCKET_SIZE 10
-struct Symbol_Table
-{
-    Symbol local_cache[SYMBOL_TABLE_LOCAL_CACHE_SIZE];
-    Bucket_Array(Symbol) symbols;
-    U32 total_symbol_count;
-    
-    Bucket_Array(Imported_Symbol_Table) imported_tables;
-};
-
 struct Parser_Context
 {
     Scope_Info* scope;
-    bool global_by_default;
     bool allow_scope_directives;
+    bool allow_loose_expressions;
     bool allow_subscopes;
     bool allow_using;
     bool allow_defer;
@@ -70,13 +25,15 @@ struct Parser_State
     AST* ast;
     struct File* file;
     struct Module* module;
+    
+    bool export_by_default;
 };
 
 enum COMPILATION_STAGE
 {
     CompStage_Invalid    = 0,
-    CompStage_Init       = 1, // The file is initialized
-    CompStage_Parsed     = 2, // The file has undergone parsing
+    CompStage_Init       = 1, // The file has been initialized
+    CompStage_Parsed     = 2, // The file has been parsed
     CompStage_Validated  = 3, // The file has undergone sema
     CompStage_Generated  = 4, // The file has undergone code gen
 };
@@ -84,11 +41,11 @@ enum COMPILATION_STAGE
 struct File
 {
     Enum32(COMPILATION_STAGE) stage;
+    B32 is_worked;
+    
     String file_path;
-    String file_dir;
     String file_contents;
     Parser_State parser_state;
-    Symbol_Table_ID file_table_id;
     AST ast;
 };
 
@@ -101,41 +58,52 @@ struct Module
     Bucket_Array(File) files;
     Bucket_Array(String) string_table;
     Bucket_Array(Symbol_Table) symbol_tables;
-    
-    Mutex file_array_mutex;
 };
 
-inline Symbol_Table_ID
-PushSymbolTable(Module* module)
+enum SYMBOL_TYPE
 {
-    Symbol_Table_ID table_id = (Symbol_Table_ID)ElementCount(&module->symbol_tables);
-    PushElement(&module->symbol_tables);
-    
-    return table_id;
-}
+    Symbol_Var,
+    Symbol_TypeName,
+    Symbol_Constant,
+    Symbol_Func,
+};
 
-inline Symbol_ID
-PushSymbol(Module* module, Symbol_Table_ID table_id, String_ID name, Enum32(SYMBOL_TYPE) type)
+struct Symbol
 {
-    Symbol_Table* table = (Symbol_Table*)ElementAt(&module->symbol_tables, table_id);
+    Enum32(SYMBOL_TYPE) symbol_type;
+    String_ID name;
+    Type_ID type;
     
-    Symbol* symbol = 0;
+    // NOTE(soimn): Add information about functions
+};
+
+#define SYMBOL_TABLE_BUCKET_SIZE 10
+typedef Bucket_Array Symbol_Table;
+
+struct Imported_Symbol_Table
+{
+    // NOTE(soimn): This stores the chain of symbols needed to access the same symbols as the ones in the 
+    //              referenced table, from the current scope. Only usefull when using statements are involved.
+    Symbol_ID* access_chain;
     
-    if (table->total_symbol_count < SYMBOL_TABLE_LOCAL_CACHE_SIZE)
-    {
-        symbol = &table->local_cache[table->total_symbol_count];
-    }
+    Symbol_Table_ID id;
+};
+
+struct Scoped_Symbol_Table
+{
+    Imported_Symbol_Table table;
+    U32 num_decls_before_valid;
     
-    else
-    {
-        symbol = (Symbol*)PushElement(&table->symbols);
-    }
-    
-    Symbol_ID symbol_id = INDIRECT_ID_ASSEMBLE(table_id, table->total_symbol_count);
-    ++table->total_symbol_count;
-    
-    symbol->name = name;
-    symbol->type = type;
-    
-    return symbol_id;
-}
+    B32 is_exported;
+};
+
+struct Type
+{
+    /*Symbol_ID symbol;
+    Symbol_Table_ID table;
+    Bucket_Array(Imported_Symbol_Table) imported_tables;*/
+};
+
+struct Type_Table
+{
+};
