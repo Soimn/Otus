@@ -18,9 +18,7 @@ RegisterString(Parser_State* state, String string)
     
     String* entry = (String*)PushElement(&state->module->string_table);
     entry->size = string.size;
-    entry->data = (U8*)PushSize(&state->module->string_arena, string.size, alignof(U8));
-    
-    Copy(string.data, entry->data, string.size);
+    entry->data = string.data;
     
     return result;
 }
@@ -727,6 +725,7 @@ ParseExpression(Parser_State* state, AST_Node** result, bool at_statement_level)
         switch (token.type)
         {
             
+            case Token_Equals:           type = ASTExpr_Assignment;      is_assignment = true; break;
             case Token_PlusEQ:           type = ASTExpr_AddEQ;           is_assignment = true; break;
             case Token_MinusEQ:          type = ASTExpr_SubEQ;           is_assignment = true; break;
             case Token_AsteriskEQ:       type = ASTExpr_MulEQ;           is_assignment = true; break;
@@ -1042,6 +1041,11 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                 subscope_context.allow_using             = true;
                 subscope_context.allow_defer             = true;
                 subscope_context.allow_ctrl_structs      = true;
+                subscope_context.allow_var_decls         = true;
+                subscope_context.allow_proc_decls        = true;
+                subscope_context.allow_struct_decls      = true;
+                subscope_context.allow_enum_decls        = true;
+                subscope_context.allow_const_decls       = true;
                 
                 if (!ParseScope(state, subscope_context, result, ScopeBracing_Required))
                 {
@@ -1083,6 +1087,11 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                             if_context.allow_subscopes         = true;
                             if_context.allow_using             = true;
                             if_context.allow_defer             = true;
+                            if_context.allow_var_decls         = true;
+                            if_context.allow_proc_decls        = true;
+                            if_context.allow_struct_decls      = true;
+                            if_context.allow_enum_decls        = true;
+                            if_context.allow_const_decls       = true;
                             
                             if (MetRequiredToken(state, Token_CloseParen))
                             {
@@ -1164,6 +1173,11 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                                 while_context.allow_subscopes         = true;
                                 while_context.allow_using             = true;
                                 while_context.allow_defer             = true;
+                                while_context.allow_var_decls         = true;
+                                while_context.allow_proc_decls        = true;
+                                while_context.allow_struct_decls      = true;
+                                while_context.allow_enum_decls        = true;
+                                while_context.allow_const_decls       = true;
                                 
                                 if (!ParseScope(state, while_context, &(*result)->while_body, ScopeBracing_Optional))
                                 {
@@ -1249,11 +1263,34 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
             {
                 if (context.allow_using)
                 {
+                    ASSERT(context.allow_loose_expressions || context.allow_var_decls ||
+                           context.allow_enum_decls);
+                    
                     SkipPastToken(state, token);
                     
                     *result = PushNode(state, ASTNode_Using);
                     
-                    NOT_IMPLEMENTED;
+                    Parser_Context using_context = {};
+                    using_context.allow_scope_directives  = false;
+                    using_context.allow_subscopes         = false;
+                    using_context.allow_using             = false;
+                    using_context.allow_defer             = false;
+                    using_context.allow_return            = false;
+                    using_context.allow_loop_jmp          = false;
+                    using_context.allow_ctrl_structs      = false;
+                    using_context.allow_proc_decls        = false;
+                    using_context.allow_struct_decls      = false;
+                    using_context.allow_const_decls       = false;
+                    
+                    using_context.allow_loose_expressions = context.allow_loose_expressions;
+                    using_context.allow_var_decls         = context.allow_var_decls;
+                    using_context.allow_enum_decls        = context.allow_enum_decls;
+                    
+                    if (!ParseStatement(state, using_context, &(*result)->using_statement))
+                    {
+                        //// ERROR
+                        encountered_errors = true;
+                    }
                 }
                 
                 else
@@ -1278,6 +1315,11 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                     defer_context.allow_loose_expressions = true;
                     defer_context.allow_using             = true;
                     defer_context.allow_ctrl_structs      = true;
+                    defer_context.allow_var_decls         = true;
+                    defer_context.allow_proc_decls        = true;
+                    defer_context.allow_struct_decls      = true;
+                    defer_context.allow_enum_decls        = true;
+                    defer_context.allow_const_decls       = true;
                     
                     if (!ParseScope(state, defer_context, &(*result)->defer_statement, ScopeBracing_Optional))
                     {
@@ -1323,41 +1365,50 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                 
                 if (peek.type == Token_Colon)
                 {
-                    String_ID name = RegisterString(state, token.string);
-                    
-                    SkipPastToken(state, peek);
-                    token = GetToken(state);
-                    
-                    *result = PushNode(state, ASTNode_VarDecl);
-                    ++context.scope->num_decls;
-                    
-                    Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
-                    symbol->symbol_type = Symbol_Var;
-                    symbol->name        = name;
-                    symbol->type        = INVALID_ID;
-                    
-                    if (token.type != Token_Equals)
+                    if (context.allow_var_decls)
                     {
-                        // ParseType
-                        NOT_IMPLEMENTED;
+                        String_ID name = RegisterString(state, token.string);
                         
+                        SkipPastToken(state, peek);
                         token = GetToken(state);
-                    }
-                    
-                    if (!encountered_errors && token.type == Token_Equals)
-                    {
-                        SkipPastToken(state, token);
                         
-                        if (!ParseExpression(state, &(*result)->var_value, false))
+                        *result = PushNode(state, ASTNode_VarDecl);
+                        ++context.scope->num_decls;
+                        
+                        Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
+                        symbol->symbol_type = Symbol_Var;
+                        symbol->name        = name;
+                        symbol->type        = INVALID_ID;
+                        
+                        if (token.type != Token_Equals)
                         {
-                            //// ERROR
+                            // ParseType
+                            NOT_IMPLEMENTED;
+                            
+                            token = GetToken(state);
+                        }
+                        
+                        if (!encountered_errors && token.type == Token_Equals)
+                        {
+                            SkipPastToken(state, token);
+                            
+                            if (!ParseExpression(state, &(*result)->var_value, false))
+                            {
+                                //// ERROR
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        if (!encountered_errors && !MetRequiredToken(state, Token_Semicolon))
+                        {
+                            //// ERROR: Missing semicolon after variable declaration
                             encountered_errors = true;
                         }
                     }
                     
-                    if (!encountered_errors && !MetRequiredToken(state, Token_Semicolon))
+                    else
                     {
-                        //// ERROR: Missing semicolon after variable declaration
+                        //// ERROR: Variable declarations are illegal in the current context
                         encountered_errors = true;
                     }
                 }
@@ -1370,108 +1421,212 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                     {
                         if (StringCompare(peek.string, CONST_STRING("proc")))
                         {
-                            NOT_IMPLEMENTED;
-                            was_handled = true;
+                            if (context.allow_proc_decls)
+                            {
+                                NOT_IMPLEMENTED;
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Procedure declarations are illegal in the current context
+                                encountered_errors = true;
+                            }
                         }
                         
                         else if (StringCompare(peek.string, CONST_STRING("struct")))
                         {
-                            String_ID name = RegisterString(state, token.string);
-                            
-                            SkipPastToken(state, peek);
-                            token = GetToken(state);
-                            
-                            *result = PushNode(state, ASTNode_StructDecl);
-                            ++context.scope->num_decls;
-                            
-                            Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
-                            symbol->symbol_type = Symbol_TypeName;
-                            symbol->name        = name;
-                            symbol->type        = INVALID_ID; // PushType
-                            
-                            NOT_IMPLEMENTED;
-                            
-                            was_handled = !encountered_errors;
-                        }
-                        
-                        else
-                        {
-                            //// ERROR: Missing body of struct
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    else if (StringCompare(peek.string, CONST_STRING("enum")))
-                    {
-                        String_ID name = RegisterString(state, token.string);
-                        
-                        SkipPastToken(state, peek);
-                        token = GetToken(state);
-                        
-                        *result = PushNode(state, ASTNode_EnumDecl);
-                        ++context.scope->num_decls;
-                        
-                        Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
-                        symbol->symbol_type = Symbol_TypeName;
-                        symbol->name        = name;
-                        symbol->type        = INVALID_ID; // PushType
-                        
-                        NOT_IMPLEMENTED;
-                        
-                        was_handled = !encountered_errors;
-                    }
-                    
-                    if (!encountered_errors && !was_handled)
-                    {
-                        *result = PushNode(state, ASTNode_ConstDecl);
-                        
-                        NOT_IMPLEMENTED;
-                        
-                        SkipPastToken(state, token);
-                        token = GetToken(state);
-                        SkipPastToken(state, token);
-                        
-                        if (ParseExpression(state, result, false))
-                        {
-                            if (!MetRequiredToken(state, Token_Semicolon))
+                            if (context.allow_struct_decls)
                             {
-                                //// ERROR: Missing semicolon after loose expression
+                                String_ID name = RegisterString(state, token.string);
+                                
+                                SkipPastToken(state, peek);
+                                token = GetToken(state);
+                                
+                                *result = PushNode(state, ASTNode_StructDecl);
+                                ++context.scope->num_decls;
+                                
+                                Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
+                                symbol->symbol_type = Symbol_TypeName;
+                                symbol->name        = name;
+                                symbol->type        = INVALID_ID;
+                                
+                                Parser_Context struct_context = {};
+                                struct_context.scope                   = context.scope;
+                                struct_context.allow_scope_directives  = false;
+                                struct_context.allow_loose_expressions = false;
+                                struct_context.allow_subscopes         = false;
+                                struct_context.allow_defer             = false;
+                                struct_context.allow_return            = false;
+                                struct_context.allow_loop_jmp          = false;
+                                struct_context.allow_ctrl_structs      = false;
+                                struct_context.allow_proc_decls        = false;
+                                struct_context.allow_struct_decls      = false;
+                                struct_context.allow_enum_decls        = false;
+                                struct_context.allow_const_decls       = false;
+                                
+                                struct_context.allow_using             = true;
+                                struct_context.allow_var_decls         = true;
+                                
+                                if (!ParseScope(state, struct_context, &(*result)->members, ScopeBracing_Required))
+                                {
+                                    //// ERROR
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Struct declarations are illegal in the current context
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else if (StringCompare(peek.string, CONST_STRING("enum")))
+                        {
+                            if (context.allow_enum_decls)
+                            {
+                                String_ID name = RegisterString(state, token.string);
+                                
+                                SkipPastToken(state, peek);
+                                token = GetToken(state);
+                                
+                                *result = PushNode(state, ASTNode_EnumDecl);
+                                ++context.scope->num_decls;
+                                
+                                Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
+                                symbol->symbol_type = Symbol_TypeName;
+                                symbol->name        = name;
+                                symbol->type        = INVALID_ID;
+                                
+                                Parser_Context enum_context = {};
+                                enum_context.scope                   = context.scope;
+                                enum_context.allow_scope_directives  = false;
+                                enum_context.allow_subscopes         = false;
+                                enum_context.allow_using             = false;
+                                enum_context.allow_defer             = false;
+                                enum_context.allow_return            = false;
+                                enum_context.allow_loop_jmp          = false;
+                                enum_context.allow_ctrl_structs      = false;
+                                enum_context.allow_var_decls         = false;
+                                enum_context.allow_proc_decls        = false;
+                                enum_context.allow_struct_decls      = false;
+                                enum_context.allow_enum_decls        = false;
+                                enum_context.allow_const_decls       = false;
+                                
+                                enum_context.allow_loose_expressions = true;
+                                
+                                // HACK(soimn): To produce better error messages the enum body is first parsed as a 
+                                //              regular scope which only allows loose expressions, then the expressions 
+                                //              are iterated, validated and changed from assignments to enum members.
+                                if (ParseScope(state, enum_context, &(*result)->members, ScopeBracing_Required))
+                                {
+                                    for (AST_Node* scan = (*result)->members; scan; scan = scan->next)
+                                    {
+                                        if (scan->expr_type != ASTExpr_Assignment &&
+                                            scan->left->expr_type == ASTExpr_Identifier)
+                                        {
+                                            String_ID member_name  = scan->left->identifier;
+                                            AST_Node* member_value = scan->right;
+                                            
+                                            *scan = {};
+                                            scan->node_type = ASTNode_Expression;
+                                            scan->expr_type = ASTExpr_EnumMember;
+                                            scan->enum_member_value = member_value;
+                                            
+                                            Symbol* member_symbol = PushSymbol(state, (*result)->members->scope.table, &scan->symbol);
+                                            member_symbol->symbol_type = Symbol_EnumValue;
+                                            member_symbol->name        = member_name;
+                                            member_symbol->type        = INVALID_ID;
+                                        }
+                                        
+                                        else
+                                        {
+                                            //// ERROR: Illegal declaration of enum value
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    //// ERROR
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Enum declarations are illegal in the current context
                                 encountered_errors = true;
                             }
                         }
                         
                         else
                         {
-                            //// ERROR
-                            encountered_errors = true;
-                        }
-                    }
-                }
-                
-                else
-                {
-                    if (context.allow_loose_expressions)
-                    {
-                        if (ParseExpression(state, result, true))
-                        {
-                            if (!MetRequiredToken(state, Token_Semicolon))
+                            if (context.allow_const_decls)
                             {
-                                //// ERROR: Missing semicolon after loose expression
+                                String_ID name = RegisterString(state, token.string);
+                                
+                                SkipPastToken(state, token);
+                                token = GetToken(state);
+                                SkipPastToken(state, token);
+                                
+                                *result = PushNode(state, ASTNode_ConstDecl);
+                                
+                                Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
+                                symbol->symbol_type = Symbol_Constant;
+                                symbol->name        = name;
+                                symbol->type        = INVALID_ID;
+                                
+                                if (ParseExpression(state, &(*result)->const_value, false))
+                                {
+                                    if (!MetRequiredToken(state, Token_Semicolon))
+                                    {
+                                        //// ERROR: Missing semicolon after loose expression
+                                        encountered_errors = true;
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    //// ERROR
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Constant declarations are illegal in the current context
                                 encountered_errors = true;
                             }
-                        }
-                        
-                        else
-                        {
-                            //// ERROR
-                            encountered_errors = true;
                         }
                     }
                     
                     else
                     {
-                        //// ERROR: Loose expressions are illegal in the current context
-                        encountered_errors = true;
+                        if (context.allow_loose_expressions)
+                        {
+                            if (ParseExpression(state, result, true))
+                            {
+                                if (!MetRequiredToken(state, Token_Semicolon))
+                                {
+                                    //// ERROR: Missing semicolon after loose expression
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                //// ERROR
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Loose expressions are illegal in the current context
+                            encountered_errors = true;
+                        }
                     }
                 }
             }

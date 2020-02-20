@@ -493,7 +493,7 @@ GetToken(Parser_State* state)
                             else if (*scan >= 'A' && *scan <= 'F') digit = (*scan - 'A') + 10;
                             else                                   digit = (*scan - 'a') + 10;
                             
-                            U64 next_num = token.number.u64 * 16 + digit;
+                            U64 next_num = num * 16 + digit;
                             
                             if (num > next_num)
                             {
@@ -503,6 +503,8 @@ GetToken(Parser_State* state)
                             
                             else num = next_num;
                         }
+                        
+                        token.number.f32 = *(F32*)&num;
                     }
                     
                     else

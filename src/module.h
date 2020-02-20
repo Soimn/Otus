@@ -9,6 +9,11 @@ struct Parser_Context
     bool allow_return;
     bool allow_loop_jmp;
     bool allow_ctrl_structs;
+    bool allow_var_decls;
+    bool allow_proc_decls;
+    bool allow_struct_decls;
+    bool allow_enum_decls;
+    bool allow_const_decls;
 };
 
 struct Lexer_State
@@ -65,6 +70,7 @@ enum SYMBOL_TYPE
     Symbol_Var,
     Symbol_TypeName,
     Symbol_Constant,
+    Symbol_EnumValue,
     Symbol_Func,
 };
 

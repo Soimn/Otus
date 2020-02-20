@@ -1,6 +1,9 @@
-* expand using directives to declarations along with member access
-* define the type table
-* find out how struct and enum bodies should be parsed
-* find out how function arguments and function bodies should be stored
-* settle on a for loop syntax
+PARSING:
 * find out how to store nonvalidated types
+* find out how function arguments and function bodies should be stored
+* define the type table
+* settle on a for loop syntax
+
+SEMA:
+* Check all global using declarations and import the symbol tables before checking everything else
+* Check all global type, var, constant and other declarations before checking functions

@@ -59,6 +59,7 @@ enum AST_EXPR_TYPE
     ASTExpr_Reference,
     ASTExpr_Dereference,
     
+    ASTExpr_Assignment,
     ASTExpr_AddEQ,
     ASTExpr_SubEQ,
     ASTExpr_MulEQ,
@@ -78,6 +79,8 @@ enum AST_EXPR_TYPE
     ASTExpr_Identifier,
     ASTExpr_Number,
     ASTExpr_String,
+    
+    ASTExpr_EnumMember,
 };
 
 #define SCOPE_INFO_IMPORTED_TABLES_BUCKET_SIZE 10
@@ -135,11 +138,12 @@ struct AST_Node
         AST_Node* operand;
         
         AST_Node* return_value;
-        AST_Node* using_value;
+        AST_Node* using_statement;
         AST_Node* defer_statement;
         
         AST_Node* var_value;
         AST_Node* members;
+        AST_Node* enum_member_value;
         AST_Node* function_body;
         AST_Node* const_value;
     };
