@@ -1,7 +1,6 @@
 struct Parser_Context
 {
     Scope_Info* scope;
-    bool allow_scope_directives;
     bool allow_loose_expressions;
     bool allow_subscopes;
     bool allow_using;
@@ -28,10 +27,7 @@ struct Parser_State
 {
     Lexer_State lexer_state;
     AST* ast;
-    struct File* file;
     struct Module* module;
-    
-    bool export_by_default;
 };
 
 enum COMPILATION_STAGE
@@ -46,11 +42,10 @@ enum COMPILATION_STAGE
 struct File
 {
     Enum32(COMPILATION_STAGE) stage;
-    B32 is_worked;
+    B32 is_currently_used;
     
-    String file_path;
+    String absolute_file_path;
     String file_contents;
-    Parser_State parser_state;
     AST ast;
 };
 
@@ -63,6 +58,7 @@ struct Module
     Bucket_Array(File) files;
     Bucket_Array(String) string_table;
     Bucket_Array(Symbol_Table) symbol_tables;
+    Bucket_Array(Export_Info) export_table;
 };
 
 enum SYMBOL_TYPE
@@ -80,36 +76,28 @@ struct Symbol
     String_ID name;
     Type_ID type;
     
-    // NOTE(soimn): Add information about functions
+    union
+    {
+        // Variable - offset of memory from base address
+        U64 address_offset;
+        
+        // Enum member
+        Number enum_member_value;
+        
+        // Constant
+        Number constant_value;
+        
+        // Function
+        // Function_Body_ID function_body_id; ?
+    };
 };
 
 #define SYMBOL_TABLE_BUCKET_SIZE 10
 typedef Bucket_Array Symbol_Table;
 
-struct Imported_Symbol_Table
+struct Export_Info
 {
-    // NOTE(soimn): This stores the chain of symbols needed to access the same symbols as the ones in the 
-    //              referenced table, from the current scope. Only usefull when using statements are involved.
-    Symbol_ID* access_chain;
-    
-    Symbol_Table_ID id;
-};
-
-struct Scoped_Symbol_Table
-{
-    Imported_Symbol_Table table;
-    U32 num_decls_before_valid;
-    
-    B32 is_exported;
-};
-
-struct Type
-{
-    /*Symbol_ID symbol;
-    Symbol_Table_ID table;
-    Bucket_Array(Imported_Symbol_Table) imported_tables;*/
-};
-
-struct Type_Table
-{
+    Bucket_Array(Symbol_ID) exported_symbols;
+    Bucket_Array(File_ID) exported_files;
+    Bucket_Array(Using_Import) exported_using_imports;
 };

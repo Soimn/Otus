@@ -31,8 +31,18 @@ PrintCString(const char* cstring)
     puts(cstring);
 }
 
+inline String
+GetDirFromFilePath(String path)
+{
+    String result = {};
+    
+    NOT_IMPLEMENTED;
+    
+    return result;
+}
+
 inline bool
-TryResolvePath(Memory_Arena* arena, String current_dir, String path, String* resolved_path)
+TryResolveFilePath(struct Memory_Arena* arena, String current_dir, String path, String* abs_path)
 {
     bool encountered_errors = false;
     
@@ -42,7 +52,7 @@ TryResolvePath(Memory_Arena* arena, String current_dir, String path, String* res
 }
 
 inline bool
-TryLoadFile(Memory_Arena* arena, String file_path, String* file_contents)
+TryLoadFileContents(struct Memory_Arena* arena, String path, String* contents)
 {
     bool encountered_errors = false;
     

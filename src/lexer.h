@@ -52,7 +52,8 @@ enum LEXER_TOKEN_TYPE
     Token_OpenBrace,
     Token_CloseBrace,
     
-    Token_Arrow,
+    Token_Arrow,      // ->
+    Token_ThickArrow, // =>
     Token_Hash,
     Token_At,
     Token_Quote,
@@ -267,7 +268,6 @@ GetToken(Parser_State* state)
         } break;
         
         SINGLE_OR_DOUBLE('.',  Token_Period, Token_PeriodPeriod);
-        SINGLE_OR_DOUBLE('=',  Token_Equals, Token_EqualsEquals);
         SINGLE_OR_DOUBLE(':',  Token_Colon,  Token_ColonColon);
         SINGLE_OR_DOUBLE('\'', Token_Quote,  Token_QuoteQuote);
         
@@ -294,6 +294,23 @@ GetToken(Parser_State* state)
             }
             
             else token.type = Token_Minus;
+        } break;
+        
+        case '=':
+        {
+            if (*lexer.current == '=')
+            {
+                token.type = Token_EqualsEquals;
+                Advance(&lexer, 1);
+            }
+            
+            else if (*lexer.current == '>')
+            {
+                token.type = Token_ThickArrow;
+                Advance(&lexer, 1);
+            }
+            
+            else token.type = Token_Equals;
         } break;
         
         default:

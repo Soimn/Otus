@@ -17,6 +17,7 @@ enum AST_NODE_TYPE
     ASTNode_FuncDecl,
     ASTNode_StructDecl,
     ASTNode_EnumDecl,
+    ASTNode_EnumMemberDecl,
     ASTNode_ConstDecl,
     ASTNode_VarDecl,
     
@@ -80,15 +81,26 @@ enum AST_EXPR_TYPE
     ASTExpr_Number,
     ASTExpr_String,
     
-    ASTExpr_EnumMember,
+    ASTExpr_Type,
+    ASTExpr_ReferenceType,
+    ASTExpr_SliceType,
+    ASTExpr_StaticArrayType,
+    ASTExpr_DynamicArrayType,
+    ASTExpr_ProcType,
 };
 
-#define SCOPE_INFO_IMPORTED_TABLES_BUCKET_SIZE 10
+struct Using_Import
+{
+    Symbol_ID* access_chain;
+    Symbol_Table_ID table_id;
+    U32 num_decls_before_valid;
+};
+
 struct Scope_Info
 {
     Symbol_Table_ID table;
     U32 num_decls;
-    Bucket_Array(Scoped_Symbol_Table) imported_tables;
+    Bucket_Array(Using_Import) using_imports;
 };
 
 struct AST_Node
@@ -141,15 +153,53 @@ struct AST_Node
         AST_Node* using_statement;
         AST_Node* defer_statement;
         
-        AST_Node* var_value;
-        AST_Node* members;
+        struct
+        {
+            AST_Node* var_value;
+            AST_Node* var_type;
+        };
+        
+        struct
+        {
+            AST_Node* function_type;
+            AST_Node* function_body;
+        };
+        
+        struct
+        {
+            AST_Node* enum_members;
+            AST_Node* enum_type;
+        };
+        
+        AST_Node* struct_members;
         AST_Node* enum_member_value;
-        AST_Node* function_body;
         AST_Node* const_value;
+        
+        struct
+        {
+            AST_Node* type_base;
+            AST_Node* type_modifiers;
+        };
+        
+        struct
+        {
+            AST_Node* function_arg_types;
+            AST_Node* function_return_types;
+        };
+        
+        AST_Node* static_array_size;
+        
+        AST_Node* cast_transmute_type;
     };
     
     union
     {
+        struct
+        {
+            Scope_Info root_scope;
+            Bucket_Array(File_ID) imported_files;
+        };
+        
         Scope_Info scope;
         
         Symbol_ID symbol;
@@ -161,6 +211,7 @@ struct AST_Node
     };
 };
 
+#define AST_NODE_BUCKET_SIZE 512
 struct AST
 {
     AST_Node* root;

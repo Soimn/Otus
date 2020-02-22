@@ -109,6 +109,7 @@ typedef Buffer String;
 typedef I32 ID;
 typedef I64 Indirect_ID;
 
+typedef ID File_ID;
 typedef ID String_ID;
 typedef ID Symbol_Table_ID;
 typedef ID Type_ID;
@@ -139,8 +140,9 @@ inline void FreeMemory(void* ptr);
 inline void PrintChar(char c);
 inline void PrintCString(const char* cstring);
 
-inline bool TryResolvePath(struct Memory_Arena* arena, String current_dir, String path, String* resolved_path);
-inline bool TryLoadFile(struct Memory_Arena* arena, String path, String* result);
+inline String GetDirFromFilePath(String path);
+inline bool TryResolveFilePath(struct Memory_Arena* arena, String current_dir, String file_path, String* out_path);
+inline bool TryLoadFileContents(struct Memory_Arena* arena, String path, String* out_contents);
 
 inline void LockMutex(Mutex* mutex);
 inline void UnlockMutex(Mutex* mutex);

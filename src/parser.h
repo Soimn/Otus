@@ -1,3 +1,70 @@
+
+// TODO(soimn): Improve this to include certain directories and "libraries" as well
+inline bool
+EnsureFileIsIncludedInCompilation(Module* module, String current_dir, String relative_path, File_ID* file_id)
+{
+    bool encountered_errors = false;
+    
+    Memory_Arena scratch = {};
+    String absolute_path = {};
+    
+    if (TryResolveFilePath(&scratch, current_dir, relative_path, &absolute_path))
+    {
+        bool file_found = false;
+        for (Bucket_Array_Iterator it = Iterate(&module->files);
+             it.current;
+             Advance(&it))
+        {
+            File* current_file = (File*)it.current;
+            
+            if (StringCompare(absolute_path, current_file->absolute_file_path))
+            {
+                *file_id   = (ID)it.current_index;
+                file_found = true;
+            }
+        }
+        
+        if (!file_found)
+        {
+            *file_id = (ID)ElementCount(&module->files);
+            
+            File* file = (File*)PushElement(&module->files);
+            file->stage              = CompStage_Init;
+            file->is_currently_used  = false;
+            file->absolute_file_path = absolute_path;
+            
+            if (!TryLoadFileContents(&module->file_arena, absolute_path,  &file->file_contents))
+            {
+                //// ERROR: Failed to load file contents
+                encountered_errors = true;
+            }
+            
+            file->ast.nodes = BUCKET_ARRAY(&module->main_arena, AST_Node, AST_NODE_BUCKET_SIZE);
+            file->ast.root  = (AST_Node*)PushElement(&file->ast.nodes);
+            
+            AST_Node* root = file->ast.root;
+            root->node_type                = ASTNode_Root;
+            root->root_scope.table         = (ID)ElementCount(&module->symbol_tables);
+            root->root_scope.num_decls     = 0;
+            root->root_scope.using_imports = BUCKET_ARRAY(&module->main_arena, Using_Import, 10);
+            root->imported_files           = BUCKET_ARRAY(&module->main_arena, File_ID, 10);
+            
+            Symbol_Table* table = (Symbol_Table*)PushElement(&module->symbol_tables);
+            *table = BUCKET_ARRAY(&module->main_arena, Symbol, SYMBOL_TABLE_BUCKET_SIZE);
+        }
+    }
+    
+    else
+    {
+        //// ERROR: Failed to resolve file path in import directive
+        encountered_errors = true;
+    }
+    
+    FreeArena(&scratch);
+    
+    return !encountered_errors;
+}
+
 inline AST_Node*
 PushNode(Parser_State* state, Enum32(AST_NODE_TYPE) node_type, Enum32(AST_EXPR_TYPE) expr_type = ASTExpr_Invalid)
 {
@@ -40,19 +107,207 @@ PushSymbol(Parser_State* state, Symbol_Table_ID table_id, Symbol_ID* out_id)
     ASSERT(table_id > 0 && table_id < ElementCount(&state->module->symbol_tables));
     
     Symbol_Table* table = (Symbol_Table*)ElementAt(&state->module->symbol_tables, table_id);
-    *out_id = ElementCount(&state->module->symbol_tables);
+    if (out_id) *out_id = ElementCount(&state->module->symbol_tables);
     
     return (Symbol*)PushElement(table);
 }
 
-inline Symbol_Table_ID
-PushFileForParsing(Parser_State* state, String file_path, Symbol_Table_ID* export_table)
+inline bool
+ParseType(Parser_State* state, AST_Node** result)
 {
-    Symbol_Table_ID result = INVALID_ID;
+    bool encountered_errors = false;
     
-    NOT_IMPLEMENTED;
+    *result = PushNode(state, ASTNode_Expression, ASTExpr_Type);
     
-    return result;
+    AST_Node** current_mod = &(*result)->type_modifiers;
+    while (!encountered_errors)
+    {
+        Token token = GetToken(state);
+        
+        if (token.type == Token_And)
+        {
+            *current_mod = PushNode(state, ASTNode_Expression, ASTExpr_ReferenceType);
+        }
+        
+        else if (token.type == Token_OpenBracket)
+        {
+            SkipPastToken(state, token);
+            
+            if (token.type == Token_CloseBracket)
+            {
+                *result = PushNode(state, ASTNode_Expression, ASTExpr_SliceType);
+            }
+            
+            else if (token.type == Token_PeriodPeriod)
+            {
+                *result = PushNode(state, ASTNode_Expression, ASTExpr_DynamicArrayType);
+            }
+            
+            else
+            {
+                *result = PushNode(state, ASTNode_Expression, ASTExpr_StaticArrayType);
+                
+                bool ParseExpression(Parser_State* state, AST_Node** result, bool at_statement_level);
+                
+                if (!ParseExpression(state, &(*result)->static_array_size, false))
+                {
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        else if (token.type == Token_Identifier)
+        {
+            if (StringCompare(token.string, CONST_STRING("proc")))
+            {
+                (*result)->type_base = PushNode(state, ASTNode_Expression, ASTExpr_ProcType);
+                
+                SkipPastToken(state, token);
+                token = GetToken(state);
+                
+                if (token.type == Token_OpenParen)
+                {
+                    SkipPastToken(state, token);
+                    
+                    AST_Node** current_arg = &(*result)->type_base->function_arg_types;
+                    while (!encountered_errors)
+                    {
+                        token = GetToken(state);
+                        
+                        if (token.type == Token_CloseParen)
+                        {
+                            SkipPastToken(state, token);
+                            break;
+                        }
+                        
+                        else
+                        {
+                            Token peek = PeekNextToken(state, token);
+                            if (token.type == Token_Identifier && peek.type == Token_Colon)
+                            {
+                                SkipPastToken(state, peek);
+                            }
+                            
+                            if (ParseType(state, current_arg))
+                            {
+                                token = GetToken(state);
+                                
+                                if (token.type == Token_Comma || token.type == Token_CloseParen)
+                                {
+                                    if (token.type == Token_Comma)
+                                    {
+                                        SkipPastToken(state, token);
+                                    }
+                                    
+                                }
+                                
+                                else
+                                {
+                                    //// ERROR: Missing closing parenthesis after arguments in function type
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                //// ERROR
+                                encountered_errors = true;
+                            }
+                            
+                            current_arg = &(*current_arg)->next;
+                        }
+                    }
+                }
+                
+                token = GetToken(state);
+                if (!encountered_errors && token.type == Token_Arrow)
+                {
+                    SkipPastToken(state, token);
+                    token = GetToken(state);
+                    
+                    if (token.type == Token_OpenParen)
+                    {
+                        SkipPastToken(state, token);
+                        
+                        AST_Node** current_value = &(*result)->type_base->function_return_types;
+                        while (!encountered_errors)
+                        {
+                            token = GetToken(state);
+                            
+                            if (token.type == Token_CloseParen)
+                            {
+                                SkipPastToken(state, token);
+                                break;
+                            }
+                            
+                            else
+                            {
+                                Token peek = PeekNextToken(state, token);
+                                if (token.type == Token_Identifier && peek.type == Token_Colon)
+                                {
+                                    SkipPastToken(state, peek);
+                                }
+                                
+                                if (ParseType(state, current_value))
+                                {
+                                    token = GetToken(state);
+                                    
+                                    if (token.type == Token_Comma || token.type == Token_CloseParen)
+                                    {
+                                        if (token.type == Token_Comma)
+                                        {
+                                            SkipPastToken(state, token);
+                                        }
+                                        
+                                    }
+                                    
+                                    else
+                                    {
+                                        //// ERROR: Missing closing parenthesis after return types in function type
+                                        encountered_errors = true;
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    //// ERROR
+                                    encountered_errors = true;
+                                }
+                                
+                                current_value = &(*current_value)->next;
+                            }
+                        }
+                    }
+                    
+                    else
+                    {
+                        if (!ParseType(state, &(*result)->type_base->function_return_types))
+                        {
+                            //// ERROR
+                            encountered_errors = true;
+                        }
+                    }
+                }
+            }
+            
+            else
+            {
+                (*result)->type_base = PushNode(state, ASTNode_Expression, ASTExpr_Identifier);
+                (*result)->identifier = RegisterString(state, token.string);
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Invalid identifier in type
+            encountered_errors = true;
+        }
+        
+        current_mod = &(*current_mod)->next;
+    }
+    
+    return !encountered_errors;
 }
 
 // NOTE(soimn): Operator precedence
@@ -69,8 +324,6 @@ PushFileForParsing(Parser_State* state, String file_path, Symbol_Table_ID* expor
 
 // NOTE(soimn): All operators on the same level of precedence are left associative, except unary operators, which 
 //              are right-associative
-
-bool ParseExpression(Parser_State* state, AST_Node** result, bool at_statement_level);
 
 inline bool
 ParsePostfixOrPrimaryExpression(Parser_State* state, AST_Node** result)
@@ -201,6 +454,8 @@ ParsePostfixOrPrimaryExpression(Parser_State* state, AST_Node** result)
                 AST_Node* pointer = *result;
                 AST_Node* start   = 0;
                 AST_Node* length  = 0;
+                
+                bool ParseExpression(Parser_State* state, AST_Node** result, bool at_statement_level);
                 
                 if (token.type != Token_Colon)
                 {
@@ -345,16 +600,23 @@ ParseUnaryExpression(Parser_State* state, AST_Node** result)
             
             if (MetRequiredToken(state, Token_OpenParen))
             {
-                NOT_IMPLEMENTED;
-                
-                if (MetRequiredToken(state, Token_CloseParen))
+                if (ParseType(state, &(*current_expr)->cast_transmute_type))
                 {
-                    current_expr = &(*current_expr)->operand;
+                    if (MetRequiredToken(state, Token_CloseParen))
+                    {
+                        current_expr = &(*current_expr)->operand;
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing closing parenthesis after target type in cast/trasnmute expression
+                        encountered_errors = true;
+                    }
                 }
                 
                 else
                 {
-                    //// ERROR: Missing closing parenthesis after target type in cast/trasnmute expression
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
@@ -755,13 +1017,7 @@ ParseExpression(Parser_State* state, AST_Node** result, bool at_statement_level)
                     *result = PushNode(state, ASTNode_Expression, type);
                     (*result)->left = left;
                     
-                    if (ParseSequenceExpression(state, &(*result)->right))
-                    {
-                        // TODO(soimn): Should the number of elements in the sequences on either side be validated 
-                        //              here?
-                    }
-                    
-                    else
+                    if (!ParseSequenceExpression(state, &(*result)->right))
                     {
                         //// ERROR
                         encountered_errors = true;
@@ -805,15 +1061,8 @@ ParseExpression(Parser_State* state, AST_Node** result, bool at_statement_level)
     return !encountered_errors;
 }
 
-enum PARSER_SCOPE_BRACING
-{
-    ScopeBracing_EOF,
-    ScopeBracing_Optional,
-    ScopeBracing_Required,
-};
-
 bool
-ParseScope(Parser_State* state, Parser_Context context,  AST_Node** result, Enum32(PARSER_SCOPE_BRACING) scope_bracing)
+ParseScope(Parser_State* state, Parser_Context context,  AST_Node** result, bool require_braces)
 {
     bool encountered_errors = false;
     
@@ -824,24 +1073,20 @@ ParseScope(Parser_State* state, Parser_Context context,  AST_Node** result, Enum
     {
         is_braced = true;
         
-        if (scope_bracing != ScopeBracing_EOF)
-        {
-            SkipPastToken(state, token);
-            token = GetToken(state);
-        }
+        SkipPastToken(state, token);
+        token = GetToken(state);
     }
     
-    if (scope_bracing == ScopeBracing_Required && !is_braced)
+    if (require_braces && !is_braced)
     {
         //// ERROR: Braces are required for scope delimitation in the current context
         encountered_errors = true;
     }
     
     *result = PushNode(state, ASTNode_Scope);
-    (*result)->scope.table           = PushSymbolTable(state);
-    (*result)->scope.num_decls       = 0;
-    (*result)->scope.imported_tables = BUCKET_ARRAY(&state->module->main_arena, Scoped_Symbol_Table, 
-                                                    SCOPE_INFO_IMPORTED_TABLES_BUCKET_SIZE);
+    (*result)->scope.table         = PushSymbolTable(state);
+    (*result)->scope.num_decls     = 0;
+    (*result)->scope.using_imports = BUCKET_ARRAY(&state->module->main_arena, Using_Import, 10);
     
     bool is_done = false;
     AST_Node** current_statement = &(*result)->first_in_scope;
@@ -866,16 +1111,8 @@ ParseScope(Parser_State* state, Parser_Context context,  AST_Node** result, Enum
         
         else if (token.type == Token_EndOfStream)
         {
-            if (scope_bracing == ScopeBracing_EOF)
-            {
-                is_done = true;
-            }
-            
-            else
-            {
-                //// ERROR: Unexpected EOF in scope
-                encountered_errors = true;
-            }
+            //// ERROR: Unexpected EOF in scope
+            encountered_errors = true;
         }
         
         else
@@ -897,7 +1134,7 @@ ParseScope(Parser_State* state, Parser_Context context,  AST_Node** result, Enum
             }
         }
         
-        if (scope_bracing == ScopeBracing_Optional && !is_braced) is_done = true;
+        if (!is_braced) is_done = true;
     }
     
     return !encountered_errors;
@@ -910,7 +1147,6 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
     
     Token token = GetToken(state);
     
-    bool was_handled = false;
     if (token.type == Token_EndOfStream || token.type == Token_Error)
     {
         if (token.type == Token_EndOfStream)
@@ -921,133 +1157,216 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
         encountered_errors = true;
     }
     
-    else if (token.type == Token_Hash)
+    else if (token.type == Token_OpenBrace)
     {
-        SkipPastToken(state, token);
-        token = GetToken(state);
-        
-        if (token.type == Token_Identifier)
+        if (context.allow_subscopes)
         {
-            if (StringCompare(token.string, CONST_STRING("import")) ||
-                StringCompare(token.string, CONST_STRING("import_local")))
-            {
-                if (context.allow_scope_directives)
-                {
-                    bool is_exported = StringCompare(token.string, CONST_STRING("import"));
-                    
-                    SkipPastToken(state, token);
-                    token = GetToken(state);
-                    
-                    if (token.type == Token_String)
-                    {
-                        String path = token.string;
-                        SkipPastToken(state, token);
-                        
-                        Symbol_Table_ID imported_table;
-                        if (PushFileForParsing(state, path, &imported_table))
-                        {
-                            bool found_dup = false;
-                            for (Bucket_Array_Iterator it = Iterate(&context.scope->imported_tables);
-                                 it.current;
-                                 Advance(&it))
-                            {
-                                Scoped_Symbol_Table* table = (Scoped_Symbol_Table*)it.current;
-                                
-                                if (table->table.id == imported_table && table->table.access_chain == 0)
-                                {
-                                    table->is_exported = table->is_exported || is_exported;
-                                    
-                                    found_dup = true;
-                                    break;
-                                }
-                            }
-                            
-                            if (!found_dup)
-                            {
-                                Scoped_Symbol_Table* table = (Scoped_Symbol_Table*)PushElement(&context.scope->imported_tables);
-                                table->table.access_chain     = 0;
-                                table->table.id               = imported_table;
-                                table->num_decls_before_valid = 0;
-                                table->is_exported            = is_exported;
-                            }
-                            
-                            was_handled = true;
-                        }
-                        
-                        else
-                        {
-                            //// ERROR
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    else
-                    {
-                        //// ERROR: Missing path to file in import directive
-                        encountered_errors = true;
-                    }
-                }
-                
-                else
-                {
-                    //// ERROR: Scope controlling compiler directives are illegal in the current context
-                    encountered_errors = true;
-                }
-            }
+            Parser_Context subscope_context = context;
+            subscope_context.allow_loose_expressions = true;
+            subscope_context.allow_using             = true;
+            subscope_context.allow_defer             = true;
+            subscope_context.allow_ctrl_structs      = true;
+            subscope_context.allow_var_decls         = true;
+            subscope_context.allow_proc_decls        = true;
+            subscope_context.allow_struct_decls      = true;
+            subscope_context.allow_enum_decls        = true;
+            subscope_context.allow_const_decls       = true;
             
-            
-            else if (StringCompare(token.string, CONST_STRING("scope_export")) ||
-                     StringCompare(token.string, CONST_STRING("scope_local")))
+            if (!ParseScope(state, subscope_context, result, true))
             {
-                if (context.allow_scope_directives)
-                {
-                    state->export_by_default = StringCompare(token.string, CONST_STRING("scope_export"));
-                    
-                    SkipPastToken(state, token);
-                    was_handled = true;
-                }
-                
-                else
-                {
-                    //// ERROR: Scope controlling compiler directives are illegal in the current context
-                    encountered_errors = true;
-                }
-            }
-            
-            else
-            {
-                //// ERROR: Unknown compiler directive
+                //// ERROR
                 encountered_errors = true;
             }
         }
         
         else
         {
-            //// ERROR: Missing name of compiler directive after pound sign
+            //// ERROR: Subscopes are illegal in the current context
             encountered_errors = true;
         }
     }
     
-    if (!encountered_errors && !was_handled)
+    else if (token.type == Token_Semicolon)
     {
-        if (token.type == Token_OpenBrace)
+        SkipPastToken(state, token);
+    }
+    
+    else if (token.type == Token_Identifier)
+    {
+        if (StringCompare(token.string, CONST_STRING("if")))
         {
-            if (context.allow_subscopes)
+            if (context.allow_ctrl_structs)
             {
-                Parser_Context subscope_context = context;
-                subscope_context.allow_scope_directives  = false;
+                SkipPastToken(state, token);
                 
-                subscope_context.allow_loose_expressions = true;
-                subscope_context.allow_using             = true;
-                subscope_context.allow_defer             = true;
-                subscope_context.allow_ctrl_structs      = true;
-                subscope_context.allow_var_decls         = true;
-                subscope_context.allow_proc_decls        = true;
-                subscope_context.allow_struct_decls      = true;
-                subscope_context.allow_enum_decls        = true;
-                subscope_context.allow_const_decls       = true;
+                *result = PushNode(state, ASTNode_IfElse);
                 
-                if (!ParseScope(state, subscope_context, result, ScopeBracing_Required))
+                if (MetRequiredToken(state, Token_OpenParen))
+                {
+                    if (ParseExpression(state, &(*result)->if_condition, false))
+                    {
+                        Parser_Context if_context = context;
+                        if_context.allow_loose_expressions = true;
+                        if_context.allow_subscopes         = true;
+                        if_context.allow_using             = true;
+                        if_context.allow_defer             = true;
+                        if_context.allow_var_decls         = true;
+                        if_context.allow_proc_decls        = true;
+                        if_context.allow_struct_decls      = true;
+                        if_context.allow_enum_decls        = true;
+                        if_context.allow_const_decls       = true;
+                        
+                        if (MetRequiredToken(state, Token_CloseParen))
+                        {
+                            if (ParseScope(state, if_context, &(*result)->true_body, false))
+                            {
+                                token = GetToken(state);
+                                
+                                if (token.type == Token_Identifier && StringCompare(token.string, CONST_STRING("else")))
+                                {
+                                    SkipPastToken(state, token);
+                                    
+                                    if (!ParseScope(state, if_context, &(*result)->false_body, false))
+                                    {
+                                        //// ERROR
+                                        encountered_errors = true;
+                                    }
+                                }
+                            }
+                            
+                            else
+                            {
+                                //// ERROR
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Missing closing parenthesis after if statement condition
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Missing condition after if keyword in if statement
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Control structures are illegal in the current context
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringCompare(token.string, CONST_STRING("else")))
+        {
+            //// ERROR: Illegal else without matching if
+            encountered_errors = true;
+        }
+        
+        else if (StringCompare(token.string, CONST_STRING("while")))
+        {
+            if (context.allow_ctrl_structs)
+            {
+                SkipPastToken(state, token);
+                
+                *result = PushNode(state, ASTNode_While);
+                
+                if (MetRequiredToken(state, Token_OpenParen))
+                {
+                    if (ParseExpression(state, &(*result)->while_condition, false))
+                    {
+                        if (MetRequiredToken(state, Token_CloseParen))
+                        {
+                            Parser_Context while_context = context;
+                            while_context.allow_loose_expressions = true;
+                            while_context.allow_subscopes         = true;
+                            while_context.allow_using             = true;
+                            while_context.allow_defer             = true;
+                            while_context.allow_var_decls         = true;
+                            while_context.allow_proc_decls        = true;
+                            while_context.allow_struct_decls      = true;
+                            while_context.allow_enum_decls        = true;
+                            while_context.allow_const_decls       = true;
+                            
+                            if (!ParseScope(state, while_context, &(*result)->while_body, false))
+                            {
+                                //// ERROR
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Missing closing parenthesis after condition in while statement
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Missing condition after while keyword in while statement
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Control structures are illegal in the current context
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringCompare(token.string, CONST_STRING("for")))
+        {
+            if (context.allow_ctrl_structs)
+            {
+                NOT_IMPLEMENTED;
+            }
+            
+            else
+            {
+                //// ERROR: Control structures are illegal in the current context
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringCompare(token.string, CONST_STRING("return")))
+        {
+            if (context.allow_return)
+            {
+                SkipPastToken(state, token);
+                
+                *result = PushNode(state, ASTNode_Return);
+                
+                if (ParseExpression(state, &(*result)->return_value, false))
+                {
+                    if (!MetRequiredToken(state, Token_Semicolon))
+                    {
+                        //// ERROR: Missing terminating semicolon after return statement
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
                 {
                     //// ERROR
                     encountered_errors = true;
@@ -1056,471 +1375,320 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
             
             else
             {
-                //// ERROR: Subscopes are illegal in the current context
+                //// ERROR: Return statements are illegal in the current context
                 encountered_errors = true;
             }
         }
         
-        else if (token.type == Token_Semicolon)
+        else if (StringCompare(token.string, CONST_STRING("using")))
         {
-            SkipPastToken(state, token);
-        }
-        
-        else if (token.type == Token_Identifier)
-        {
-            if (StringCompare(token.string, CONST_STRING("if")))
+            if (context.allow_using)
             {
-                if (context.allow_ctrl_structs)
-                {
-                    SkipPastToken(state, token);
-                    
-                    *result = PushNode(state, ASTNode_IfElse);
-                    
-                    if (MetRequiredToken(state, Token_OpenParen))
-                    {
-                        if (ParseExpression(state, &(*result)->if_condition, false))
-                        {
-                            Parser_Context if_context = context;
-                            if_context.allow_scope_directives  = false;
-                            
-                            if_context.allow_loose_expressions = true;
-                            if_context.allow_subscopes         = true;
-                            if_context.allow_using             = true;
-                            if_context.allow_defer             = true;
-                            if_context.allow_var_decls         = true;
-                            if_context.allow_proc_decls        = true;
-                            if_context.allow_struct_decls      = true;
-                            if_context.allow_enum_decls        = true;
-                            if_context.allow_const_decls       = true;
-                            
-                            if (MetRequiredToken(state, Token_CloseParen))
-                            {
-                                if (ParseScope(state, if_context, &(*result)->true_body, ScopeBracing_Optional))
-                                {
-                                    token = GetToken(state);
-                                    
-                                    if (token.type == Token_Identifier && StringCompare(token.string, CONST_STRING("else")))
-                                    {
-                                        SkipPastToken(state, token);
-                                        
-                                        if (!ParseScope(state, if_context, &(*result)->false_body, ScopeBracing_Optional))
-                                        {
-                                            //// ERROR
-                                            encountered_errors = true;
-                                        }
-                                    }
-                                }
-                                
-                                else
-                                {
-                                    //// ERROR
-                                    encountered_errors = true;
-                                }
-                            }
-                            
-                            else
-                            {
-                                //// ERROR: Missing closing parenthesis after if statement condition
-                                encountered_errors = true;
-                            }
-                        }
-                        
-                        else
-                        {
-                            //// ERROR
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    else
-                    {
-                        //// ERROR: Missing condition after if keyword in if statement
-                        encountered_errors = true;
-                    }
-                }
+                ASSERT(context.allow_loose_expressions || context.allow_var_decls ||
+                       context.allow_enum_decls);
                 
-                else
-                {
-                    //// ERROR: Control structures are illegal in the current context
-                    encountered_errors = true;
-                }
-            }
-            
-            else if (StringCompare(token.string, CONST_STRING("else")))
-            {
-                //// ERROR: Illegal else without matching if
-                encountered_errors = true;
-            }
-            
-            else if (StringCompare(token.string, CONST_STRING("while")))
-            {
-                if (context.allow_ctrl_structs)
-                {
-                    SkipPastToken(state, token);
-                    
-                    *result = PushNode(state, ASTNode_While);
-                    
-                    if (MetRequiredToken(state, Token_OpenParen))
-                    {
-                        if (ParseExpression(state, &(*result)->while_condition, false))
-                        {
-                            if (MetRequiredToken(state, Token_CloseParen))
-                            {
-                                Parser_Context while_context = context;
-                                while_context.allow_scope_directives  = false;
-                                
-                                while_context.allow_loose_expressions = true;
-                                while_context.allow_subscopes         = true;
-                                while_context.allow_using             = true;
-                                while_context.allow_defer             = true;
-                                while_context.allow_var_decls         = true;
-                                while_context.allow_proc_decls        = true;
-                                while_context.allow_struct_decls      = true;
-                                while_context.allow_enum_decls        = true;
-                                while_context.allow_const_decls       = true;
-                                
-                                if (!ParseScope(state, while_context, &(*result)->while_body, ScopeBracing_Optional))
-                                {
-                                    //// ERROR
-                                    encountered_errors = true;
-                                }
-                            }
-                            
-                            else
-                            {
-                                //// ERROR: Missing closing parenthesis after condition in while statement
-                                encountered_errors = true;
-                            }
-                        }
-                        
-                        else
-                        {
-                            //// ERROR
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    else
-                    {
-                        //// ERROR: Missing condition after while keyword in while statement
-                        encountered_errors = true;
-                    }
-                }
+                SkipPastToken(state, token);
                 
-                else
-                {
-                    //// ERROR: Control structures are illegal in the current context
-                    encountered_errors = true;
-                }
-            }
-            
-            else if (StringCompare(token.string, CONST_STRING("for")))
-            {
-                if (context.allow_ctrl_structs)
-                {
-                    NOT_IMPLEMENTED;
-                }
+                *result = PushNode(state, ASTNode_Using);
                 
-                else
-                {
-                    //// ERROR: Control structures are illegal in the current context
-                    encountered_errors = true;
-                }
-            }
-            
-            else if (StringCompare(token.string, CONST_STRING("return")))
-            {
-                if (context.allow_return)
-                {
-                    SkipPastToken(state, token);
-                    
-                    *result = PushNode(state, ASTNode_Return);
-                    
-                    if (ParseExpression(state, &(*result)->return_value, false))
-                    {
-                        if (!MetRequiredToken(state, Token_Semicolon))
-                        {
-                            //// ERROR: Missing terminating semicolon after return statement
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    else
-                    {
-                        //// ERROR
-                        encountered_errors = true;
-                    }
-                }
+                Parser_Context using_context = {};
+                using_context.scope = context.scope;
                 
-                else
-                {
-                    //// ERROR: Return statements are illegal in the current context
-                    encountered_errors = true;
-                }
-            }
-            
-            else if (StringCompare(token.string, CONST_STRING("using")))
-            {
-                if (context.allow_using)
-                {
-                    ASSERT(context.allow_loose_expressions || context.allow_var_decls ||
-                           context.allow_enum_decls);
-                    
-                    SkipPastToken(state, token);
-                    
-                    *result = PushNode(state, ASTNode_Using);
-                    
-                    Parser_Context using_context = {};
-                    using_context.allow_scope_directives  = false;
-                    using_context.allow_subscopes         = false;
-                    using_context.allow_using             = false;
-                    using_context.allow_defer             = false;
-                    using_context.allow_return            = false;
-                    using_context.allow_loop_jmp          = false;
-                    using_context.allow_ctrl_structs      = false;
-                    using_context.allow_proc_decls        = false;
-                    using_context.allow_struct_decls      = false;
-                    using_context.allow_const_decls       = false;
-                    
-                    using_context.allow_loose_expressions = context.allow_loose_expressions;
-                    using_context.allow_var_decls         = context.allow_var_decls;
-                    using_context.allow_enum_decls        = context.allow_enum_decls;
-                    
-                    if (!ParseStatement(state, using_context, &(*result)->using_statement))
-                    {
-                        //// ERROR
-                        encountered_errors = true;
-                    }
-                }
+                using_context.allow_subscopes    = false;
+                using_context.allow_using        = false;
+                using_context.allow_defer        = false;
+                using_context.allow_return       = false;
+                using_context.allow_loop_jmp     = false;
+                using_context.allow_ctrl_structs = false;
+                using_context.allow_proc_decls   = false;
+                using_context.allow_struct_decls = false;
+                using_context.allow_const_decls  = false;
                 
-                else
-                {
-                    //// ERROR: Using declarations are illegal in the current context
-                    encountered_errors = true;
-                }
-            }
-            
-            else if (StringCompare(token.string, CONST_STRING("defer")))
-            {
-                if (context.allow_defer)
-                {
-                    SkipPastToken(state, token);
-                    
-                    *result = PushNode(state, ASTNode_Defer);
-                    
-                    Parser_Context defer_context = context;
-                    defer_context.allow_scope_directives  = false;
-                    
-                    defer_context.allow_subscopes         = true;
-                    defer_context.allow_loose_expressions = true;
-                    defer_context.allow_using             = true;
-                    defer_context.allow_ctrl_structs      = true;
-                    defer_context.allow_var_decls         = true;
-                    defer_context.allow_proc_decls        = true;
-                    defer_context.allow_struct_decls      = true;
-                    defer_context.allow_enum_decls        = true;
-                    defer_context.allow_const_decls       = true;
-                    
-                    if (!ParseScope(state, defer_context, &(*result)->defer_statement, ScopeBracing_Optional))
-                    {
-                        //// ERROR
-                        encountered_errors = true;
-                    }
-                }
+                using_context.allow_loose_expressions = context.allow_loose_expressions;
+                using_context.allow_var_decls         = context.allow_var_decls;
+                using_context.allow_enum_decls        = context.allow_enum_decls;
                 
-                else
+                if (!ParseStatement(state, using_context, &(*result)->using_statement))
                 {
-                    //// ERROR: Defer statements are illegal in the current context
-                    encountered_errors = true;
-                }
-            }
-            
-            else if (StringCompare(token.string, CONST_STRING("break")) || 
-                     StringCompare(token.string, CONST_STRING("continue")))
-            {
-                if (context.allow_loop_jmp)
-                {
-                    bool is_break = StringCompare(token.string, CONST_STRING("break"));
-                    SkipPastToken(state, token);
-                    
-                    *result = PushNode(state, (is_break ? ASTNode_Break : ASTNode_Continue));
-                    
-                    if (!MetRequiredToken(state, Token_Semicolon))
-                    {
-                        //// ERROR: Missing semicolon after loop jump statement
-                        encountered_errors = true;
-                    }
-                }
-                
-                else
-                {
-                    //// ERROR: Loop flow control statements are illegal in the current context
+                    //// ERROR
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                Token peek = PeekNextToken(state, token);
+                //// ERROR: Using declarations are illegal in the current context
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringCompare(token.string, CONST_STRING("defer")))
+        {
+            if (context.allow_defer)
+            {
+                SkipPastToken(state, token);
                 
-                if (peek.type == Token_Colon)
+                *result = PushNode(state, ASTNode_Defer);
+                
+                Parser_Context defer_context = context;
+                defer_context.allow_subscopes         = true;
+                defer_context.allow_loose_expressions = true;
+                defer_context.allow_using             = true;
+                defer_context.allow_ctrl_structs      = true;
+                defer_context.allow_var_decls         = true;
+                defer_context.allow_proc_decls        = true;
+                defer_context.allow_struct_decls      = true;
+                defer_context.allow_enum_decls        = true;
+                defer_context.allow_const_decls       = true;
+                
+                if (!ParseScope(state, defer_context, &(*result)->defer_statement, false))
                 {
-                    if (context.allow_var_decls)
+                    //// ERROR
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Defer statements are illegal in the current context
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringCompare(token.string, CONST_STRING("break")) || 
+                 StringCompare(token.string, CONST_STRING("continue")))
+        {
+            if (context.allow_loop_jmp)
+            {
+                bool is_break = StringCompare(token.string, CONST_STRING("break"));
+                SkipPastToken(state, token);
+                
+                *result = PushNode(state, (is_break ? ASTNode_Break : ASTNode_Continue));
+                
+                if (!MetRequiredToken(state, Token_Semicolon))
+                {
+                    //// ERROR: Missing semicolon after loop jump statement
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Loop flow control statements are illegal in the current context
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            Token peek = PeekNextToken(state, token);
+            
+            if (peek.type == Token_Colon)
+            {
+                if (context.allow_var_decls)
+                {
+                    String_ID name = RegisterString(state, token.string);
+                    
+                    SkipPastToken(state, peek);
+                    token = GetToken(state);
+                    
+                    *result = PushNode(state, ASTNode_VarDecl);
+                    ++context.scope->num_decls;
+                    
+                    Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
+                    symbol->symbol_type = Symbol_Var;
+                    symbol->name        = name;
+                    symbol->type        = INVALID_ID;
+                    
+                    if (token.type != Token_Equals)
                     {
-                        String_ID name = RegisterString(state, token.string);
-                        
-                        SkipPastToken(state, peek);
-                        token = GetToken(state);
-                        
-                        *result = PushNode(state, ASTNode_VarDecl);
-                        ++context.scope->num_decls;
-                        
-                        Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
-                        symbol->symbol_type = Symbol_Var;
-                        symbol->name        = name;
-                        symbol->type        = INVALID_ID;
-                        
-                        if (token.type != Token_Equals)
+                        if (!ParseType(state, &(*result)->var_type))
                         {
-                            // ParseType
-                            NOT_IMPLEMENTED;
-                            
-                            token = GetToken(state);
+                            //// ERROR
+                            encountered_errors = true;
                         }
                         
-                        if (!encountered_errors && token.type == Token_Equals)
+                        token = GetToken(state);
+                    }
+                    
+                    if (!encountered_errors && token.type == Token_Equals)
+                    {
+                        SkipPastToken(state, token);
+                        
+                        if (!ParseExpression(state, &(*result)->var_value, false))
                         {
-                            SkipPastToken(state, token);
+                            //// ERROR
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    if (!encountered_errors && !MetRequiredToken(state, Token_Semicolon))
+                    {
+                        //// ERROR: Missing semicolon after variable declaration
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    //// ERROR: Variable declarations are illegal in the current context
+                    encountered_errors = true;
+                }
+            }
+            
+            else if (peek.type == Token_ColonColon)
+            {
+                peek = PeekNextToken(state, peek);
+                
+                if (peek.type == Token_Identifier)
+                {
+                    if (StringCompare(peek.string, CONST_STRING("proc")))
+                    {
+                        if (context.allow_proc_decls)
+                        {
+                            String_ID name = RegisterString(state, token.string);
+                            SkipPastToken(state, peek);
                             
-                            if (!ParseExpression(state, &(*result)->var_value, false))
+                            *result = PushNode(state, ASTNode_FuncDecl);
+                            ++context.scope->num_decls;
+                            
+                            Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
+                            symbol->symbol_type = Symbol_Func;
+                            symbol->name        = name;
+                            symbol->type        = INVALID_ID;
+                            
+                            // TODO(soimn): How should function arguments, and default values be stored?
+                            NOT_IMPLEMENTED;
+                            
+                            Parser_Context function_context = {};
+                            function_context.scope = context.scope;
+                            
+                            function_context.allow_loop_jmp = false;
+                            
+                            function_context.allow_loose_expressions = true;
+                            function_context.allow_subscopes         = true;
+                            function_context.allow_using             = true;
+                            function_context.allow_defer             = true;
+                            function_context.allow_return            = true;
+                            function_context.allow_ctrl_structs      = true;
+                            function_context.allow_var_decls         = true;
+                            function_context.allow_proc_decls        = true;
+                            function_context.allow_struct_decls      = true;
+                            function_context.allow_enum_decls        = true;
+                            function_context.allow_const_decls       = true;
+                            
+                            if (!ParseScope(state, function_context, &(*result)->function_body, true))
                             {
                                 //// ERROR
                                 encountered_errors = true;
                             }
                         }
                         
-                        if (!encountered_errors && !MetRequiredToken(state, Token_Semicolon))
+                        else
                         {
-                            //// ERROR: Missing semicolon after variable declaration
+                            //// ERROR: Procedure declarations are illegal in the current context
                             encountered_errors = true;
                         }
                     }
                     
-                    else
+                    else if (StringCompare(peek.string, CONST_STRING("struct")))
                     {
-                        //// ERROR: Variable declarations are illegal in the current context
-                        encountered_errors = true;
-                    }
-                }
-                
-                else if (peek.type == Token_ColonColon)
-                {
-                    peek = PeekNextToken(state, peek);
-                    
-                    if (peek.type == Token_Identifier)
-                    {
-                        if (StringCompare(peek.string, CONST_STRING("proc")))
+                        if (context.allow_struct_decls)
                         {
-                            if (context.allow_proc_decls)
-                            {
-                                NOT_IMPLEMENTED;
-                            }
+                            String_ID name = RegisterString(state, token.string);
                             
-                            else
+                            SkipPastToken(state, peek);
+                            token = GetToken(state);
+                            
+                            *result = PushNode(state, ASTNode_StructDecl);
+                            ++context.scope->num_decls;
+                            
+                            Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
+                            symbol->symbol_type = Symbol_TypeName;
+                            symbol->name        = name;
+                            symbol->type        = INVALID_ID;
+                            
+                            Parser_Context struct_context = {};
+                            struct_context.scope                   = context.scope;
+                            struct_context.allow_loose_expressions = false;
+                            struct_context.allow_subscopes         = false;
+                            struct_context.allow_defer             = false;
+                            struct_context.allow_return            = false;
+                            struct_context.allow_loop_jmp          = false;
+                            struct_context.allow_ctrl_structs      = false;
+                            struct_context.allow_proc_decls        = false;
+                            struct_context.allow_struct_decls      = false;
+                            struct_context.allow_enum_decls        = false;
+                            struct_context.allow_const_decls       = false;
+                            
+                            struct_context.allow_using             = true;
+                            struct_context.allow_var_decls         = true;
+                            
+                            if (!ParseScope(state, struct_context, &(*result)->struct_members, true))
                             {
-                                //// ERROR: Procedure declarations are illegal in the current context
+                                //// ERROR
                                 encountered_errors = true;
                             }
                         }
                         
-                        else if (StringCompare(peek.string, CONST_STRING("struct")))
+                        else
                         {
-                            if (context.allow_struct_decls)
+                            //// ERROR: Struct declarations are illegal in the current context
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else if (StringCompare(peek.string, CONST_STRING("enum")))
+                    {
+                        if (context.allow_enum_decls)
+                        {
+                            String_ID name = RegisterString(state, token.string);
+                            
+                            SkipPastToken(state, peek);
+                            token = GetToken(state);
+                            
+                            *result = PushNode(state, ASTNode_EnumDecl);
+                            ++context.scope->num_decls;
+                            
+                            Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
+                            symbol->symbol_type = Symbol_TypeName;
+                            symbol->name        = name;
+                            symbol->type        = INVALID_ID;
+                            
+                            if (token.type != Token_OpenBrace)
                             {
-                                String_ID name = RegisterString(state, token.string);
-                                
-                                SkipPastToken(state, peek);
-                                token = GetToken(state);
-                                
-                                *result = PushNode(state, ASTNode_StructDecl);
-                                ++context.scope->num_decls;
-                                
-                                Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
-                                symbol->symbol_type = Symbol_TypeName;
-                                symbol->name        = name;
-                                symbol->type        = INVALID_ID;
-                                
-                                Parser_Context struct_context = {};
-                                struct_context.scope                   = context.scope;
-                                struct_context.allow_scope_directives  = false;
-                                struct_context.allow_loose_expressions = false;
-                                struct_context.allow_subscopes         = false;
-                                struct_context.allow_defer             = false;
-                                struct_context.allow_return            = false;
-                                struct_context.allow_loop_jmp          = false;
-                                struct_context.allow_ctrl_structs      = false;
-                                struct_context.allow_proc_decls        = false;
-                                struct_context.allow_struct_decls      = false;
-                                struct_context.allow_enum_decls        = false;
-                                struct_context.allow_const_decls       = false;
-                                
-                                struct_context.allow_using             = true;
-                                struct_context.allow_var_decls         = true;
-                                
-                                if (!ParseScope(state, struct_context, &(*result)->members, ScopeBracing_Required))
+                                if (!ParseType(state, &(*result)->enum_type))
                                 {
                                     //// ERROR
                                     encountered_errors = true;
                                 }
                             }
                             
-                            else
+                            Parser_Context enum_context = {};
+                            enum_context.scope                   = context.scope;
+                            enum_context.allow_subscopes         = false;
+                            enum_context.allow_using             = false;
+                            enum_context.allow_defer             = false;
+                            enum_context.allow_return            = false;
+                            enum_context.allow_loop_jmp          = false;
+                            enum_context.allow_ctrl_structs      = false;
+                            enum_context.allow_var_decls         = false;
+                            enum_context.allow_proc_decls        = false;
+                            enum_context.allow_struct_decls      = false;
+                            enum_context.allow_enum_decls        = false;
+                            enum_context.allow_const_decls       = false;
+                            
+                            enum_context.allow_loose_expressions = true;
+                            
+                            if (!encountered_errors)
                             {
-                                //// ERROR: Struct declarations are illegal in the current context
-                                encountered_errors = true;
-                            }
-                        }
-                        
-                        else if (StringCompare(peek.string, CONST_STRING("enum")))
-                        {
-                            if (context.allow_enum_decls)
-                            {
-                                String_ID name = RegisterString(state, token.string);
-                                
-                                SkipPastToken(state, peek);
-                                token = GetToken(state);
-                                
-                                *result = PushNode(state, ASTNode_EnumDecl);
-                                ++context.scope->num_decls;
-                                
-                                Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
-                                symbol->symbol_type = Symbol_TypeName;
-                                symbol->name        = name;
-                                symbol->type        = INVALID_ID;
-                                
-                                Parser_Context enum_context = {};
-                                enum_context.scope                   = context.scope;
-                                enum_context.allow_scope_directives  = false;
-                                enum_context.allow_subscopes         = false;
-                                enum_context.allow_using             = false;
-                                enum_context.allow_defer             = false;
-                                enum_context.allow_return            = false;
-                                enum_context.allow_loop_jmp          = false;
-                                enum_context.allow_ctrl_structs      = false;
-                                enum_context.allow_var_decls         = false;
-                                enum_context.allow_proc_decls        = false;
-                                enum_context.allow_struct_decls      = false;
-                                enum_context.allow_enum_decls        = false;
-                                enum_context.allow_const_decls       = false;
-                                
-                                enum_context.allow_loose_expressions = true;
-                                
                                 // HACK(soimn): To produce better error messages the enum body is first parsed as a 
                                 //              regular scope which only allows loose expressions, then the expressions 
                                 //              are iterated, validated and changed from assignments to enum members.
-                                if (ParseScope(state, enum_context, &(*result)->members, ScopeBracing_Required))
+                                
+                                if (ParseScope(state, enum_context, &(*result)->enum_members, true))
                                 {
-                                    for (AST_Node* scan = (*result)->members; scan; scan = scan->next)
+                                    for (AST_Node* scan = (*result)->enum_members; scan; scan = scan->next)
                                     {
                                         if (scan->expr_type != ASTExpr_Assignment &&
                                             scan->left->expr_type == ASTExpr_Identifier)
@@ -1529,11 +1697,10 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                                             AST_Node* member_value = scan->right;
                                             
                                             *scan = {};
-                                            scan->node_type = ASTNode_Expression;
-                                            scan->expr_type = ASTExpr_EnumMember;
+                                            scan->node_type = ASTNode_EnumMemberDecl;
                                             scan->enum_member_value = member_value;
                                             
-                                            Symbol* member_symbol = PushSymbol(state, (*result)->members->scope.table, &scan->symbol);
+                                            Symbol* member_symbol = PushSymbol(state, (*result)->enum_members->scope.table, &scan->symbol);
                                             member_symbol->symbol_type = Symbol_EnumValue;
                                             member_symbol->name        = member_name;
                                             member_symbol->type        = INVALID_ID;
@@ -1553,60 +1720,33 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                                     encountered_errors = true;
                                 }
                             }
-                            
-                            else
-                            {
-                                //// ERROR: Enum declarations are illegal in the current context
-                                encountered_errors = true;
-                            }
                         }
                         
                         else
                         {
-                            if (context.allow_const_decls)
-                            {
-                                String_ID name = RegisterString(state, token.string);
-                                
-                                SkipPastToken(state, token);
-                                token = GetToken(state);
-                                SkipPastToken(state, token);
-                                
-                                *result = PushNode(state, ASTNode_ConstDecl);
-                                
-                                Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
-                                symbol->symbol_type = Symbol_Constant;
-                                symbol->name        = name;
-                                symbol->type        = INVALID_ID;
-                                
-                                if (ParseExpression(state, &(*result)->const_value, false))
-                                {
-                                    if (!MetRequiredToken(state, Token_Semicolon))
-                                    {
-                                        //// ERROR: Missing semicolon after loose expression
-                                        encountered_errors = true;
-                                    }
-                                }
-                                
-                                else
-                                {
-                                    //// ERROR
-                                    encountered_errors = true;
-                                }
-                            }
-                            
-                            else
-                            {
-                                //// ERROR: Constant declarations are illegal in the current context
-                                encountered_errors = true;
-                            }
+                            //// ERROR: Enum declarations are illegal in the current context
+                            encountered_errors = true;
                         }
                     }
                     
                     else
                     {
-                        if (context.allow_loose_expressions)
+                        if (context.allow_const_decls)
                         {
-                            if (ParseExpression(state, result, true))
+                            String_ID name = RegisterString(state, token.string);
+                            
+                            SkipPastToken(state, token);
+                            token = GetToken(state);
+                            SkipPastToken(state, token);
+                            
+                            *result = PushNode(state, ASTNode_ConstDecl);
+                            
+                            Symbol* symbol = PushSymbol(state, context.scope->table, &(*result)->symbol);
+                            symbol->symbol_type = Symbol_Constant;
+                            symbol->name        = name;
+                            symbol->type        = INVALID_ID;
+                            
+                            if (ParseExpression(state, &(*result)->const_value, false))
                             {
                                 if (!MetRequiredToken(state, Token_Semicolon))
                                 {
@@ -1624,37 +1764,250 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                         
                         else
                         {
-                            //// ERROR: Loose expressions are illegal in the current context
+                            //// ERROR: Constant declarations are illegal in the current context
                             encountered_errors = true;
                         }
-                    }
-                }
-            }
-        }
-        
-        else
-        {
-            if (context.allow_loose_expressions)
-            {
-                if (ParseExpression(state, result, true))
-                {
-                    if (!MetRequiredToken(state, Token_Semicolon))
-                    {
-                        //// ERROR: Missing semicolon after loose expression
-                        encountered_errors = true;
                     }
                 }
                 
                 else
                 {
-                    //// ERROR
+                    if (context.allow_loose_expressions)
+                    {
+                        if (ParseExpression(state, result, true))
+                        {
+                            if (!MetRequiredToken(state, Token_Semicolon))
+                            {
+                                //// ERROR: Missing semicolon after loose expression
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Loose expressions are illegal in the current context
+                        encountered_errors = true;
+                    }
+                }
+            }
+        }
+    }
+    
+    else
+    {
+        if (context.allow_loose_expressions)
+        {
+            if (ParseExpression(state, result, true))
+            {
+                if (!MetRequiredToken(state, Token_Semicolon))
+                {
+                    //// ERROR: Missing semicolon after loose expression
                     encountered_errors = true;
                 }
             }
             
             else
             {
-                //// ERROR: Loose expressions are illegal in the current context
+                //// ERROR
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            //// ERROR: Loose expressions are illegal in the current context
+            encountered_errors = true;
+        }
+    }
+    
+    return !encountered_errors;
+}
+
+bool
+ParseFile(Module* module, File_ID file_id)
+{
+    bool encountered_errors = true;
+    
+    File* file               = (File*)ElementAt(&module->files, file_id);
+    Export_Info* export_info = (Export_Info*)ElementAt(&module->export_table, file_id);
+    
+    Parser_State state = {};
+    state.lexer_state.current    = file->file_contents.data;
+    state.lexer_state.line_start = file->file_contents.data;
+    state.lexer_state.column     = 0;
+    state.lexer_state.line       = 0;
+    state.ast    = &file->ast;
+    state.module = module;
+    
+    AST_Node* root = state.ast->root;
+    
+    bool should_export = true;
+    AST_Node** current_statement = &root->first_in_scope;
+    while (!encountered_errors)
+    {
+        Token token = GetToken(&state);
+        
+        if (token.type == Token_Hash)
+        {
+            SkipPastToken(&state, token);
+            token = GetToken(&state);
+            
+            if (token.type == Token_Identifier)
+            {
+                if (StringCompare(token.string, CONST_STRING("import")) ||
+                    StringCompare(token.string, CONST_STRING("import_local")))
+                {
+                    bool is_exported = (StringCompare(token.string, CONST_STRING("import")) && should_export);
+                    
+                    SkipPastToken(&state, token);
+                    token = GetToken(&state);
+                    
+                    if (token.type == Token_String)
+                    {
+                        String path        = token.string;
+                        String current_dir = GetDirFromFilePath(file->absolute_file_path);
+                        SkipPastToken(&state, token);
+                        
+                        Memory_Arena scratch = {};
+                        
+                        File_ID imported_file_id = INVALID_ID;
+                        if (EnsureFileIsIncludedInCompilation(module, current_dir, path, &imported_file_id))
+                        {
+                            bool found = false;
+                            for (Bucket_Array_Iterator it = Iterate(&root->imported_files);
+                                 it.current;
+                                 Advance(&it))
+                            {
+                                if (imported_file_id == *(File_ID*)it.current)
+                                {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!found)
+                            {
+                                *(File_ID*)PushElement(&root->imported_files) = imported_file_id;
+                            }
+                            
+                            if (is_exported)
+                            {
+                                found = false;
+                                for (Bucket_Array_Iterator it = Iterate(&export_info->exported_files);
+                                     it.current;
+                                     Advance(&it))
+                                {
+                                    if (imported_file_id == *(File_ID*)it.current)
+                                    {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if (!found)
+                                {
+                                    *(File_ID*)PushElement(&export_info->exported_files) = imported_file_id;
+                                }
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing path to file in import directive
+                        encountered_errors = true;
+                    }
+                }
+                
+                
+                else if (StringCompare(token.string, CONST_STRING("scope_export")) ||
+                         StringCompare(token.string, CONST_STRING("scope_local")))
+                {
+                    should_export = StringCompare(token.string, CONST_STRING("scope_export"));
+                    
+                    SkipPastToken(&state, token);
+                }
+                
+                else
+                {
+                    //// ERROR: Unknown compiler directive
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                //// ERROR: Missing name of compiler directive after pound sign
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            Parser_Context stmnt_context = {};
+            stmnt_context.scope = &root->root_scope;
+            
+            stmnt_context.allow_loose_expressions = false;
+            stmnt_context.allow_subscopes         = false;
+            stmnt_context.allow_defer             = false;
+            stmnt_context.allow_return            = false;
+            stmnt_context.allow_loop_jmp          = false;
+            stmnt_context.allow_ctrl_structs      = false;
+            
+            stmnt_context.allow_using        = true;
+            stmnt_context.allow_var_decls    = true;
+            stmnt_context.allow_proc_decls   = true;
+            stmnt_context.allow_struct_decls = true;
+            stmnt_context.allow_enum_decls   = true;
+            stmnt_context.allow_const_decls  = true;
+            
+            if (ParseStatement(&state, stmnt_context, current_statement))
+            {
+                AST_Node* statement = *current_statement;
+                
+                if (statement != 0)
+                {
+                    if (should_export && (statement->node_type == ASTNode_VarDecl    ||
+                                          statement->node_type == ASTNode_FuncDecl   ||
+                                          statement->node_type == ASTNode_ConstDecl  ||
+                                          statement->node_type == ASTNode_StructDecl ||
+                                          statement->node_type == ASTNode_EnumDecl))
+                    {
+                        *(Symbol_ID*)PushElement(&export_info->exported_symbols) = statement->symbol;
+                    }
+                    
+                    else if (should_export && statement->node_type == ASTNode_Using)
+                    {
+                        UMM newest_index = ElementCount(&root->root_scope.using_imports) - 1;
+                        Using_Import* newest_entry = (Using_Import*)ElementAt(&root->root_scope.using_imports,
+                                                                              newest_index);
+                        
+                        Using_Import* import = (Using_Import*)PushElement(&export_info->exported_using_imports);
+                        import->access_chain           = newest_entry->access_chain;
+                        import->table_id               = newest_entry->table_id;
+                        import->num_decls_before_valid = newest_entry->num_decls_before_valid;
+                    }
+                    
+                    current_statement = &(*current_statement)->next;
+                }
+            }
+            
+            else
+            {
+                //// ERROR
                 encountered_errors = true;
             }
         }
