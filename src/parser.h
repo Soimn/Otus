@@ -1557,8 +1557,132 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                             symbol->name        = name;
                             symbol->type        = INVALID_ID;
                             
-                            // TODO(soimn): How should function arguments, and default values be stored?
-                            NOT_IMPLEMENTED;
+                            token = GetToken(state);
+                            if (token.type == Token_OpenParen)
+                            {
+                                SkipPastToken(state, token);
+                                
+                                AST_Node** current_arg = &(*result)->function_args;
+                                while (!encountered_errors)
+                                {
+                                    token = GetToken(state);
+                                    
+                                    if (token.type == Token_CloseParen)
+                                    {
+                                        SkipPastToken(state, token);
+                                        break;
+                                    }
+                                    
+                                    else
+                                    {
+                                        Parser_Context arg_context = {};
+                                        arg_context.allow_loose_expressions = false;
+                                        arg_context.allow_subscopes         = false;
+                                        arg_context.allow_defer             = false;
+                                        arg_context.allow_return            = false;
+                                        arg_context.allow_loop_jmp          = false;
+                                        arg_context.allow_ctrl_structs      = false;
+                                        arg_context.allow_proc_decls        = false;
+                                        arg_context.allow_struct_decls      = false;
+                                        arg_context.allow_enum_decls        = false;
+                                        arg_context.allow_const_decls       = false;
+                                        
+                                        arg_context.allow_using     = true;
+                                        arg_context.allow_var_decls = true;
+                                        
+                                        if (ParseStatement(state, arg_context, current_arg))
+                                        {
+                                            token = GetToken(state);
+                                            
+                                            if (token.type == Token_Comma || token.type == Token_CloseParen)
+                                            {
+                                                if (token.type == Token_Comma) SkipPastToken(state, token);
+                                            }
+                                            
+                                            else
+                                            {
+                                                //// ERROR: Missing closing parenthesis after argument list
+                                                ////        in function declaration
+                                                encountered_errors = true;
+                                            }
+                                        }
+                                        
+                                        else
+                                        {
+                                            //// ERROR
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                    
+                                    current_arg = &(*current_arg)->next;
+                                }
+                            }
+                            
+                            token = GetToken(state);
+                            if (token.type == Token_Arrow)
+                            {
+                                SkipPastToken(state, token);
+                                token = GetToken(state);
+                                
+                                if (token.type == Token_OpenParen)
+                                {
+                                    SkipPastToken(state, token);
+                                    
+                                    AST_Node** current_value = &(*result)->function_return;
+                                    while (!encountered_errors)
+                                    {
+                                        token = GetToken(state);
+                                        peek  = PeekNextToken(state, token);
+                                        
+                                        if (token.type == Token_Identifier && peek.type == Token_Colon)
+                                        {
+                                            SkipPastToken(state, peek);
+                                            token = GetToken(state);
+                                        }
+                                        
+                                        if (token.type == Token_CloseParen)
+                                        {
+                                            SkipPastToken(state, token);
+                                            break;
+                                        }
+                                        
+                                        else
+                                        {
+                                            if (ParseType(state, current_value))
+                                            {
+                                                token = GetToken(state);
+                                                
+                                                if (token.type == Token_Comma || token.type == Token_CloseParen)
+                                                {
+                                                    if (token.type == Token_Comma) SkipPastToken(state, token);
+                                                }
+                                                
+                                                else
+                                                {
+                                                    //// ERROR: Missing closing parenthesis after return value list in
+                                                    ////        function declaration
+                                                    encountered_errors = true;
+                                                }
+                                            }
+                                            
+                                            else
+                                            {
+                                                //// ERROR
+                                                encountered_errors = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    if (!ParseType(state, &(*result)->function_return))
+                                    {
+                                        //// ERROR
+                                        encountered_errors = true;
+                                    }
+                                }
+                            }
                             
                             Parser_Context function_context = {};
                             function_context.scope = context.scope;
@@ -1655,11 +1779,19 @@ ParseStatement(Parser_State* state, Parser_Context context, AST_Node** result)
                             symbol->name        = name;
                             symbol->type        = INVALID_ID;
                             
-                            if (token.type != Token_OpenBrace)
+                            if (token.type == Token_OpenParen)
                             {
+                                SkipPastToken(state, token);
+                                
                                 if (!ParseType(state, &(*result)->enum_type))
                                 {
                                     //// ERROR
+                                    encountered_errors = true;
+                                }
+                                
+                                if (!encountered_errors && !MetRequiredToken(state, Token_CloseParen))
+                                {
+                                    //// ERROR: Missing closing parenthesis after enum type argument
                                     encountered_errors = true;
                                 }
                             }

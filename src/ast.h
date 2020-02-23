@@ -161,7 +161,8 @@ struct AST_Node
         
         struct
         {
-            AST_Node* function_type;
+            AST_Node* function_args;
+            AST_Node* function_return;
             AST_Node* function_body;
         };
         
