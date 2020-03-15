@@ -6,6 +6,7 @@ enum AST_NODE_TYPE
     ASTNode_Scope,
     
     ASTNode_IfElse,
+    ASTNode_ConstIfElse,
     ASTNode_While,
     ASTNode_Break,
     ASTNode_Continue,

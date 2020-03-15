@@ -1,6 +1,4 @@
 PARSING:
-* find out how to store nonvalidated types
-* find out how function arguments and function bodies should be stored
 * define the type table
 * settle on a for loop syntax
 

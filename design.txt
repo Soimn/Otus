@@ -1,0 +1,117 @@
+Metaprogramming
+ * The syntax of the language is immutable
+ * Metaprograms cannot remove or alter declarations
+
+Procedures
+ProcName :: proc(arg_list) -> return_sequence tags { statements } @user_tags
+
+Example of horrible use:
+Procedure :: proc(n: float, $v: V3) -> (succeeded: bool, vec: V3) #must #inline #export #no_abc
+#modify {
+    if (v.y == 2) return true;
+    else return false;
+}
+
+#body_text {
+    return "return true, V3{0, 0, 1};";
+} @Command
+
+
+Structs
+StructName :: struct(arg_list) tags { statements } @user_tags
+
+Example of use:
+Structure :: struct(N: int, T: type) #ordererd
+{
+    arr: [N] T;
+} @Printable @Serializable
+
+
+Enums
+EnumName :: enum(arg) tags { statements } @user_tags
+
+Example of use:
+Enumeration :: enum(U64) #no_defaults
+{
+    Value = 2,
+} @Serializable
+
+
+import path_string as name with importer
+
+import "Module" as module with ModuleImporter
+
+ModuleImporter :: proc(structure: Some_Compiler_Structure) -> Some_Compiler_Structure
+{
+     using module;
+     return structure;
+}
+
+Compiler directives
+#directive_without_code    - example: #scope_export, evaluates to nothing
+#directive_with_expr       - example: #char "hello" or #text_import "file.txt", evaluates to expression
+#directive_with_stmnt      - example: #no_abc a[1], evaluates to statement
+#expr_directive_with_stmnt - example: #code print(1), evaluates to expression
+
+#run func(#code x :: 7);
+
+Const if: the condition is evaluated and the correct scope is merged with the parent scope
+#if condition { statements } #else { statements }
+
+
+Types
+pointers: ^type - deref with var^
+slices: []type
+arrays: [N]type
+dynamic arrays: [..]type
+
+For loop
+for low..high do statement
+for it: low..high do statement
+for array do statement
+for elem, index: array do statement
+for low..high { statement }
+for it: low..high { statement }
+for array { statement }
+for elem, index: array { statement }
+
+Break and continue
+break/continue      - closest loop
+break/continue name - loop which declares name in init clause
+
+Struct literals
+type{arg_list}
+
+Array literals
+[?]type{arg_list}
+[N]type{arg_list}
+
+Top scope
+* only declarations and const if are allowed
+
+Struct scope
+* using decls
+* var decls
+* const decls
+* no default values
+
+
+
+
+
+
+
+
+
+do print(a);
+
+do
+{
+    print(a);
+    if (a == 2) break;
+}
+
+do_while(N == 2)
+{
+    N = 3;
+}

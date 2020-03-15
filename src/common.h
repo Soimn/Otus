@@ -85,16 +85,15 @@ typedef U64 B64;
 #define I32_MIN ((I32)1 << 31)
 #define I64_MIN ((I64)1 << 63)
 
+#define F32_MIN 1.4012984643e-45
+#define F32_MAX 3.4028234664e+38
+
 #define Enum8(NAME)  U8
 #define Enum16(NAME) U16
 #define Enum32(NAME) U32
 #define Enum64(NAME) U64
 
-#define INVALID_ID (ID)-1
-#define INDIRECT_ID_ASSEMBLE(first, last) ((Indirect_ID)(first) | ((Indirect_ID)(last) << 32))
-#define INVALID_INDIRECT_ID INDIRECT_ID_ASSEMBLE(INVALID_ID, INVALID_ID)
-#define INDIRECT_ID_FIRST_PART(indirect_id) (ID)(indirect_id & 0xFFFFFFFF)
-#define INDIRECT_ID_LAST_PART(indirect_id) (ID)((indirect_id >> 32) & 0xFFFFFFFF)
+#define INVALID_ID (ID)0
 
 /// Common types
 //////////////////////////////////////////
@@ -106,14 +105,13 @@ struct Buffer
 };
 
 typedef Buffer String;
-typedef I32 ID;
-typedef I64 Indirect_ID;
+typedef U32 ID;
 
 typedef ID File_ID;
-typedef ID String_ID;
-typedef ID Symbol_Table_ID;
-typedef ID Type_ID;
-typedef Indirect_ID Symbol_ID;
+typedef ID Scope_ID;
+typedef ID Decl_ID;
+
+typedef U32 Scope_Index;
 
 struct Number
 {
@@ -121,15 +119,11 @@ struct Number
     {
         U64 u64;
         F32 f32;
+        F64 f64;
     };
     
-    bool is_u64;
-    bool is_f32;
-};
-
-struct Mutex
-{
-    // TODO(soimn): Implement this
+    bool is_int;
+    bool is_f64;
 };
 
 /// Platform layer functions
@@ -139,13 +133,6 @@ inline void* AllocateMemory(UMM size);
 inline void FreeMemory(void* ptr);
 inline void PrintChar(char c);
 inline void PrintCString(const char* cstring);
-
-inline String GetDirFromFilePath(String path);
-inline bool TryResolveFilePath(struct Memory_Arena* arena, String current_dir, String file_path, String* out_path);
-inline bool TryLoadFileContents(struct Memory_Arena* arena, String path, String* out_contents);
-
-inline void LockMutex(Mutex* mutex);
-inline void UnlockMutex(Mutex* mutex);
 
 /// Common functions
 //////////////////////////////////////////

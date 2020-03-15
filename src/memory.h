@@ -67,12 +67,22 @@ struct Memory_Block
     UMM size;
 };
 
+struct Free_List_Entry
+{
+    Free_List_Entry* next;
+    UMM size;
+    U8 offset;
+};
+
 #define MEMORY_ARENA_DEFAULT_BLOCK_SIZE (4096 - sizeof(Memory_Block))
 struct Memory_Arena
 {
     Memory_Block* first_block;
     Memory_Block* current_block;
     UMM default_block_size;
+    Free_List_Entry* first_free;
+    Free_List_Entry* last_free;
+    UMM largest_free;
 };
 
 inline void*
@@ -223,9 +233,10 @@ ElementAt(Bucket_Array* array, UMM index)
 
 struct Bucket_Array_Iterator
 {
-    void* current_bucket;
     UMM current_index;
     void* current;
+    
+    void* current_bucket;
     U32 last_bucket_size;
     U32 bucket_capacity;
     U32 element_size;
@@ -261,7 +272,7 @@ Advance(Bucket_Array_Iterator* it)
         
         if (it->current_bucket == 0 || *(void**)it->current_bucket == 0 && offset >= it->last_bucket_size)
         {
-            it->current = 0;
+            *it = {};
         }
         
         else

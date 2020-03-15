@@ -1,8 +1,7 @@
 #include "common.h"
 
 #include "memory.h"
-#include "ast.h"
-#include "module.h"
+#include "compstate.h"
 #include "lexer.h"
 #include "parser.h"
 
