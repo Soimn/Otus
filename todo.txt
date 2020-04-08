@@ -1,7 +1,0 @@
-PARSING:
-* define the type table
-* settle on a for loop syntax
-
-SEMA:
-* Check all global using declarations and import the symbol tables before checking everything else
-* Check all global type, var, constant and other declarations before checking functions
