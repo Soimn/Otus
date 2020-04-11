@@ -23,7 +23,7 @@ StringCompare(String s0, String s1)
     bool result = false;
     
     if (s0.data == s1.data && s0.size == s1.size) result = true;
-    else
+    else if (s0.size == s1.size)
     {
         while (s0.size && s1.size && *s0.data == *s1.data)
         {
@@ -43,10 +43,23 @@ StringCompare(String s0, String s1)
 inline bool
 StringCStringCompare(String string, const char* cstring)
 {
+    while (string.size != 0 && *cstring != 0)
+    {
+        string.data += 1;
+        string.size -= 1;
+        cstring      = (char*)cstring + 1;
+    }
+    
+    return (string.size == 0 && *cstring == 0);
+}
+
+inline bool
+StringConstStringCompare(String string, const char* cstring, UMM cstring_length)
+{
     bool result = false;
     
-    if (string.data == (U8*)cstring && string.size == StringLength(cstring)) result = true;
-    else
+    if (string.data == (U8*)cstring && string.size == cstring_length) result = true;
+    else if (string.size == cstring_length)
     {
         while (string.size != 0 && *cstring != 0)
         {

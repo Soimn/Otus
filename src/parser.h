@@ -1,11 +1,8 @@
 // TODO(soimn):
-// * Improve compiler directive parsing (cleanup and error on duplicates)
+// - Store the location of the directive which modified each bit in the current_flag
 
-typedef struct Expression_State_Flag
-{
-    bool is_set;
-    Text_Interval text;
-} Expression_State_Flag;
+/// Helper macros
+#define PARSER_SET_FLAG(flag, is_set) state.current_flags = ((is_set) ? state.current_flags | (U32)(flag) : state.current_flags & ~(U32)flag)
 
 typedef struct Parser_State
 {
@@ -13,9 +10,8 @@ typedef struct Parser_State
     Lexer* lexer;
     
     Block* current_block;
-    bool allow_scope_controlling_directives;
-    bool should_export;
-    Expression_State_Flag current_flags[EXPRESSION_FLAG_COUNT];
+    bool allow_scope_directives;
+    Flag32(EXPRESSION_FLAG) current_flags;
 } Parser_State;
 
 inline void
@@ -33,8 +29,7 @@ PushExpression(Parser_State state, Enum32(EXPRESSION_KIND) kind)
 {
     Expression* expression = BucketArray_Append(&state.current_block->expressions);
     expression->kind  = kind;
-    
-    NOT_IMPLEMENTED; // flags
+    expression->flags = state.current_flags;
     
     Memory_Arena* arena  = &state.context->arena;
     U32 default_capacity = 4; // TODO(soimn): Find a reasonable value for this
@@ -43,7 +38,7 @@ PushExpression(Parser_State state, Enum32(EXPRESSION_KIND) kind)
     {
         case ExprKind_TypeLiteral:
         case ExprKind_Call:
-        expression->call_expr.args = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->call_expr.args          = ARRAY_INIT(arena, Named_Expression, default_capacity);
         break;
         
         case ExprKind_Proc:
@@ -52,13 +47,13 @@ PushExpression(Parser_State state, Enum32(EXPRESSION_KIND) kind)
         break;
         
         case ExprKind_Struct:
-        expression->struct_expr.args    = ARRAY_INIT(arena, Named_Expression, default_capacity);
-        expression->struct_expr.members = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->struct_expr.args        = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->struct_expr.members     = ARRAY_INIT(arena, Named_Expression, default_capacity);
         break;
         
         case ExprKind_Enum:
-        expression->enum_expr.args    = ARRAY_INIT(arena, Named_Expression, default_capacity);
-        expression->enum_expr.members = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->enum_expr.args          = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->enum_expr.members       = ARRAY_INIT(arena, Named_Expression, default_capacity);
         break;
     }
     
@@ -70,6 +65,17 @@ PushDeclaration(Parser_State state, Enum32(DECLARATION_KIND) kind)
 {
     Declaration* declaration = Array_Append(&state.current_block->declarations);
     declaration->kind = kind;
+    
+    if (declaration->kind == DeclKind_VariableDecl)
+    {
+        declaration->var_decl.values = ARRAY_INIT(&state.context->arena, Expression*, 4);
+    }
+    
+    else if (declaration->kind == DeclKind_ConstantDecl)
+    {
+        declaration->const_decl.values = ARRAY_INIT(&state.context->arena, Expression*, 4);
+    }
+    
     return declaration;
 }
 
@@ -118,7 +124,7 @@ PushIdentifier(Parser_State state, String string)
 }
 
 bool
-PushStringLiteral(Parser_State state, Token token, String_Literal* literal, I64* out_character)
+PushStringLiteral(Parser_State state, Token token, String_Literal* literal)
 {
     bool encountered_errors = false;
     
@@ -282,97 +288,41 @@ PushStringLiteral(Parser_State state, Token token, String_Literal* literal, I64*
     
     UnlockMutex(workspace->identifier_storage_mutex);
     
-    if (processed_string.size != 0 && out_character != 0)
-    {
-        U32 first_char = 0;
-        
-        if (processed_string.data[0] < I8_MAX)
-        {
-            first_char = processed_string.data[0];
-            processed_string.size -= 1;
-        }
-        
-        else
-        {
-            // NOTE(soimn): The file loader ensures the file is encoded in valid UTF-8 characters
-            
-            U8 first_byte = processed_string.data[0];
-            
-            U8 bytes[4] = {0};
-            
-            if ((first_byte & 0xF0) == 0xF0)
-            {
-                ASSERT(processed_string.size >= 4);
-                
-                bytes[0] = processed_string.data[0];
-                bytes[1] = processed_string.data[1];
-                bytes[2] = processed_string.data[2];
-                bytes[3] = processed_string.data[3];
-                
-                processed_string.size -= 4;
-            }
-            
-            else if ((first_byte & (1 << 5)) != 0)
-            {
-                ASSERT(processed_string.size >= 3);
-                
-                bytes[0] = processed_string.data[0];
-                bytes[1] = processed_string.data[1];
-                bytes[2] = processed_string.data[2];
-                
-                processed_string.size -= 3;
-            }
-            
-            else
-            {
-                ASSERT(processed_string.size >= 2);
-                
-                bytes[0] = processed_string.data[0];
-                bytes[1] = processed_string.data[1];
-                
-                processed_string.size -= 2;
-            }
-            
-            NOT_IMPLEMENTED;
-        }
-        
-        if (processed_string.size == 0)
-        {
-            *out_character = first_char;
-        }
-    }
-    
     MemoryArena_FreeSize(&state.context->arena, buffer.data, (U32)buffer.size);
     
     return !encountered_errors;
 }
 
-bool
-IsNameOfCompilerDirective(String string)
+inline bool
+ParseCharacter(Parser_State state, Token token, Character* character)
 {
-    bool result = (StringCStringCompare(string, "import")          ||
-                   StringCStringCompare(string, "if")              ||
-                   StringCStringCompare(string, "scope_export")    ||
-                   StringCStringCompare(string, "scope_file")      ||
-                   StringCStringCompare(string, "foreign")         ||
-                   StringCStringCompare(string, "strict")          ||
-                   StringCStringCompare(string, "loose")           ||
-                   StringCStringCompare(string, "packed")          ||
-                   StringCStringCompare(string, "padded")          ||
-                   StringCStringCompare(string, "no_discard")      ||
-                   StringCStringCompare(string, "deprecated")      ||
-                   StringCStringCompare(string, "align")           ||
-                   StringCStringCompare(string, "bounds_check")    ||
-                   StringCStringCompare(string, "no_bounds_check") ||
-                   StringCStringCompare(string, "inline")          ||
-                   StringCStringCompare(string, "no_inline")       ||
-                   StringCStringCompare(string, "type")            ||
-                   StringCStringCompare(string, "distinct")        ||
-                   StringCStringCompare(string, "char")            ||
-                   StringCStringCompare(string, "run"));
+    ASSERT(token.kind == Token_String);
     
-    return result;
+    bool encountered_errors = false;
+    
+    // TODO(soimn): Better error reports with the text interval encompassing the #char directive and the string literal
+    
+    if (token.string.size == 0)
+    {
+        ParserReport(state, ReportSeverity_Error, token.text,
+                     "Cannot convert a string literal of zero length to a character literal");
+        
+        encountered_errors = true;
+    }
+    
+    else if (token.string.size == 1)
+    {
+        *character = token.string.data[0];
+    }
+    
+    else
+    {
+        NOT_IMPLEMENTED;
+    }
+    
+    return !encountered_errors;
 }
+
 
 bool ParseNamedExpressionList(Parser_State state, Array(Named_Expression)* result);
 
@@ -391,7 +341,382 @@ bool ParseExpression(Parser_State state, Expression** result, bool allow_assignm
 
 bool ParseDeclaration(Parser_State state);
 bool ParseStatement(Parser_State state);
-bool ParseBlock(Parser_State state, Block* block, bool allow_single_statement);
+bool ParseBlock(Parser_State state, Block* block, bool allow_single_statement, bool is_transparent);
+
+enum COMPILER_DIRECTIVE_KIND
+{
+    Directive_BoundsCheck = 0x0001,
+    Directive_Run         = 0x0002,
+    Directive_Type        = 0x0004,
+    Directive_Distinct    = 0x0008,
+    Directive_Strict      = 0x0010,
+    Directive_Packed      = 0x0020,
+    Directive_Align       = 0x0040,
+    Directive_Inline      = 0x0080,
+    Directive_Foreign     = 0x0100,
+    Directive_NoDiscard   = 0x0200,
+    Directive_Deprecated  = 0x0400,
+    Directive_Char        = 0x0800,
+    Directive_If          = 0x1000,
+    Directive_Import      = 0x2000,
+    Directive_ScopeExport = 0x4000,
+    
+    COMPILER_DIRECTIVE_KIND_COUNT
+};
+
+typedef struct Compiler_Directive_Info
+{
+    Enum32(COMPILER_DIRECTIVE_KIND) kind;
+    
+    union
+    {
+        // BoundsCheck, Strict, Packed, Inline, ScopeExport
+        bool is_set;
+        
+        Expression* align_expression;
+        Expression* foreign_library;
+        Expression* deprecation_notice;
+        
+        Character character;
+        
+        struct
+        {
+            Expression* condition;
+            Block true_block;
+            Block false_block;
+        } const_if;
+        
+        struct
+        {
+            String_Literal path;
+            Identifier alias;
+        } import;
+    };
+} Compiler_Directive_Info;
+
+bool
+ParseCompilerDirective(Parser_State state, Compiler_Directive_Info* info, bool consume_expression_directives)
+{
+    bool encountered_errors = false;
+    
+    Token token = GetToken(state.lexer);
+    ASSERT(token.kind == Token_Hash);
+    
+    Text_Pos start_of_directive = token.text.position;
+    
+    Token peek = PeekNextToken(state.lexer, token);
+    
+    if (peek.kind == Token_Identifier)
+    {
+        if (StringConstStringCompare(peek.string, CONST_STRING("bounds_check")))
+        {
+            info->kind   = Directive_BoundsCheck;
+            info->is_set = true;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("no_bounds_check")))
+        {
+            info->kind   = Directive_BoundsCheck;
+            info->is_set = false;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("run")))
+        {
+            info->kind = Directive_Run;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("type")))
+        {
+            info->kind = Directive_Type;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("distinct")))
+        {
+            info->kind = Directive_Distinct;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("strict")))
+        {
+            info->kind   = Directive_Strict;
+            info->is_set = true;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("loose")))
+        {
+            info->kind   = Directive_Strict;
+            info->is_set = false;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("packed")))
+        {
+            info->kind   = Directive_Packed;
+            info->is_set = true;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("padded")))
+        {
+            info->kind   = Directive_Packed;
+            info->is_set = false;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("align")))
+        {
+            info->kind = Directive_Align;
+            
+            SkipPastToken(state.lexer, peek);
+            
+            if (!ParseExpression(state, &info->align_expression, false))
+            {
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("inline")))
+        {
+            info->kind   = Directive_Inline;
+            info->is_set = true;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("no_inline")))
+        {
+            info->kind   = Directive_Inline;
+            info->is_set = false;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("foreign")))
+        {
+            info->kind = Directive_Foreign;
+            
+            SkipPastToken(state.lexer, peek);
+            
+            if (!ParseExpression(state, &info->foreign_library, false))
+            {
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("no_discard")))
+        {
+            info->kind = Directive_NoDiscard;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("deprecated")))
+        {
+            info->kind = Directive_Deprecated;
+            
+            SkipPastToken(state.lexer, peek);
+            
+            if (!ParseExpression(state, &info->deprecation_notice, false))
+            {
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("char")))
+        {
+            info->kind = Directive_Char;
+            
+            if (consume_expression_directives)
+            {
+                SkipPastToken(state.lexer, peek);
+                token = GetToken(state.lexer);
+                
+                if (peek.kind == Token_String)
+                {
+                    if (ParseCharacter(state, token, &info->character))
+                    {
+                        SkipPastToken(state.lexer, token);
+                    }
+                    
+                    else encountered_errors = true;
+                }
+                
+                else
+                {
+                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                              token.text.position);
+                    
+                    ParserReport(state, ReportSeverity_Error, report_interval,
+                                 "Missing string literal after 'char' directive");
+                    
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("import")))
+        {
+            info->kind = Directive_Import;
+            
+            SkipPastToken(state.lexer, peek);
+            token = GetToken(state.lexer);
+            
+            if (token.kind == Token_String)
+            {
+                if (PushStringLiteral(state, token, &info->import.path))
+                {
+                    SkipPastToken(state.lexer, token);
+                    
+                    info->import.alias = NULL_IDENTIFIER;
+                }
+                
+                else encountered_errors = true;
+            }
+            
+            else
+            {
+                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                          token.text.position);
+                
+                ParserReport(state, ReportSeverity_Error, report_interval,
+                             "Missing path string after 'import' directive");
+                
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("import_as")))
+        {
+            info->kind = Directive_Import;
+            
+            SkipPastToken(state.lexer, peek);
+            token = GetToken(state.lexer);
+            
+            if (token.kind == Token_String)
+            {
+                if (PushStringLiteral(state, token, &info->import.path))
+                {
+                    SkipPastToken(state.lexer, token);
+                    token = GetToken(state.lexer);
+                    
+                    if (token.kind == Token_Identifier)
+                    {
+                        info->import.alias = PushIdentifier(state, token.string);
+                        
+                        SkipPastToken(state.lexer, token);
+                    }
+                    
+                    else
+                    {
+                        Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                                  token.text.position);
+                        
+                        ParserReport(state, ReportSeverity_Error, report_interval,
+                                     "Missing alias identifier after path string for 'import_as' directive");
+                        
+                        encountered_errors = true;
+                    }
+                }
+                
+                else encountered_errors = true;
+            }
+            
+            else
+            {
+                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                          token.text.position);
+                
+                ParserReport(state, ReportSeverity_Error, report_interval,
+                             "Missing path string after 'import_as' directive");
+                
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("scope_export")))
+        {
+            info->kind   = Directive_ScopeExport;
+            info->is_set = true;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("scope_file")))
+        {
+            info->kind   = Directive_ScopeExport;
+            info->is_set = false;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
+        else
+        {
+            Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive, 
+                                                                      peek.text.position);
+            
+            ParserReport(state, ReportSeverity_Error, report_interval,
+                         "Missing name of compiler directive after '#' token");
+            
+            encountered_errors = true;
+        }
+    }
+    
+    else if (peek.kind == Token_Keyword && peek.keyword == Keyword_If)
+    {
+        info->kind = Directive_If;
+        
+        SkipPastToken(state.lexer, peek);
+        
+        if (ParseExpression(state, &info->const_if.condition, false))
+        {
+            if (ParseBlock(state, &info->const_if.true_block, false, true))
+            {
+                token = GetToken(state.lexer);
+                
+                if (token.kind == Token_Keyword && token.keyword == Keyword_Else)
+                {
+                    SkipPastToken(state.lexer, token);
+                    
+                    if (!ParseBlock(state, &info->const_if.false_block, true, true))
+                    {
+                        encountered_errors = true;
+                    }
+                }
+            }
+            
+            else encountered_errors = true;
+        }
+        
+        else encountered_errors = true;
+    }
+    
+    else
+    {
+        Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive, 
+                                                                  peek.text.position);
+        
+        ParserReport(state, ReportSeverity_Error, report_interval,
+                     "Missing name of compiler directive after '#' token");
+        
+        encountered_errors = true;
+    }
+    
+    return !encountered_errors;
+}
 
 bool
 ParseNamedExpressionList(Parser_State state, Array(Named_Expression)* result)
@@ -435,15 +760,8 @@ ParseNamedExpressionList(Parser_State state, Array(Named_Expression)* result)
             token = GetToken(state.lexer);
         }
         
-        else if (token.kind == Token_Blank)
-        {
-            expr->name = BLANK_IDENTIFIER;
-            
-            SkipPastToken(state.lexer, token);
-            token = GetToken(state.lexer);
-        }
-        
         else expr->name = NULL_IDENTIFIER;
+        
         
         if (token.kind == Token_Colon)
         {
@@ -616,7 +934,8 @@ ParsePostfixExpression(Parser_State state, Expression** result)
                 
                 else
                 {
-                    Text_Interval report_interval = TextIntervalFromEndpoints(slice_pointer->text.position, token.text.position);
+                    Text_Interval report_interval = TextIntervalFromEndpoints(slice_pointer->text.position, 
+                                                                              token.text.position);
                     
                     ParserReport(state, ReportSeverity_Error, report_interval, 
                                  "Missing matching closing bracket before end of statement");
@@ -626,7 +945,7 @@ ParsePostfixExpression(Parser_State state, Expression** result)
             }
         }
         
-        else if (token.kind == Token_OpenBracket)
+        else if (token.kind == Token_OpenBrace)
         {
             Expression* type = *result;
             
@@ -690,109 +1009,65 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
     bool encountered_errors = false;
     
     Token token = GetToken(state.lexer);
+    Text_Pos start_of_expression = token.text.position;
     
-    // NOTE(soimn): These convey information about the #char directive without the need to store it in the 
-    //              Parser_State
-    bool is_char            = false;
-    Text_Interval char_text = {0};
+    Flag32(COMPILER_DIRECTIVE_KIND) encountered_directives = 0;
     
-    while (!encountered_errors && token.kind == Token_Hash)
+    while (token.kind == Token_Hash)
     {
-        Token peek = PeekNextToken(state.lexer, token);
+        Compiler_Directive_Info info = {0};
         
-        if (peek.kind == Token_Identifier)
+        Text_Pos  start_of_directive = token.text.position;
+        Token name_token = PeekNextToken(state.lexer, token);
+        
+        if (ParseCompilerDirective(state, &info, true))
         {
-            if (StringCStringCompare(peek.string, "bounds_check"))
+            if ((info.kind & encountered_directives) == 0)
             {
-                state.current_flags[ExprFlag_BoundsCheck].is_set = true;
-                state.current_flags[ExprFlag_BoundsCheck].text   = TextIntervalMerge(token.text, peek.text);
+                encountered_directives |= info.kind;
                 
-                SkipPastToken(state.lexer, peek);
-            }
-            
-            else if (StringCStringCompare(peek.string, "no_bounds_check"))
-            {
-                state.current_flags[ExprFlag_BoundsCheck].is_set = false;
-                state.current_flags[ExprFlag_BoundsCheck].text   = TextIntervalMerge(token.text, peek.text);
+                if (info.kind == Directive_BoundsCheck)   PARSER_SET_FLAG(ExprFlag_BoundsCheck, info.is_set);
+                else if (info.kind == Directive_Run)      PARSER_SET_FLAG(ExprFlag_Run, info.is_set);
+                else if (info.kind == Directive_Type)     PARSER_SET_FLAG(ExprFlag_TypeEvalContext, info.is_set);
+                else if (info.kind == Directive_Distinct) PARSER_SET_FLAG(ExprFlag_DistinctType, info.is_set);
+                else if (info.kind == Directive_Inline)   PARSER_SET_FLAG(ExprFlag_InlineCall, info.is_set);
+                else if (info.kind == Directive_Char)
+                {
+                    *result = PushExpression(state, ExprKind_Character);
+                    (*result)->character = info.character;
+                }
                 
-                SkipPastToken(state.lexer, peek);
+                else
+                {
+                    token = GetToken(state.lexer);
+                    
+                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                              token.text.position);
+                    
+                    ParserReport(state, ReportSeverity_Error, report_interval, "Invalid use of compiler directive. The '%S' directive cannot be used in an expression context", name_token.string);
+                    
+                    encountered_errors = true;
+                }
             }
-            
-            else if (StringCStringCompare(peek.string, "type"))
-            {
-                state.current_flags[ExprFlag_TypeEvalContext].is_set = true;
-                state.current_flags[ExprFlag_TypeEvalContext].text   = TextIntervalMerge(token.text, peek.text);
-                
-                SkipPastToken(state.lexer, peek);
-            }
-            
-            else if (StringCStringCompare(peek.string, "inline"))
-            {
-                state.current_flags[ExprFlag_InlineCall].is_set = true;
-                state.current_flags[ExprFlag_InlineCall].text   = TextIntervalMerge(token.text, peek.text);
-                
-                SkipPastToken(state.lexer, peek);
-            }
-            
-            else if (StringCStringCompare(peek.string, "no_inline"))
-            {
-                state.current_flags[ExprFlag_InlineCall].is_set = false;
-                state.current_flags[ExprFlag_InlineCall].text   = TextIntervalMerge(token.text, peek.text);
-                
-                SkipPastToken(state.lexer, peek);
-            }
-            
-            else if (StringCStringCompare(peek.string, "run"))
-            {
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (StringCStringCompare(peek.string, "distinct"))
-            {
-                state.current_flags[ExprFlag_DistinctType].is_set = true;
-                state.current_flags[ExprFlag_DistinctType].text   = TextIntervalMerge(token.text, peek.text);
-                
-                SkipPastToken(state.lexer, peek);
-            }
-            
-            else if (StringCStringCompare(peek.string, "char"))
-            {
-                is_char   = true;
-                char_text = TextIntervalMerge(token.text, peek.text);
-            }
-            
-            else if (IsNameOfCompilerDirective(peek.string))
-            {
-                Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                
-                ParserReport(state, ReportSeverity_Error, report_interval,
-                             "The '%S' compiler directive cannot be used in an expression context", peek.string);
-                
-                encountered_errors = true;
-            }
-            
             
             else
             {
-                Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
+                token = GetToken(state.lexer);
+                
+                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                          token.text.position);
                 
                 ParserReport(state, ReportSeverity_Error, report_interval,
-                             "unknown compiler directive");
+                             "Duplicate use of the '%S' directive", name_token.string);
                 
                 encountered_errors = true;
             }
         }
         
-        else
-        {
-            ParserReport(state, ReportSeverity_Error, token.text,
-                         "Missing name of compiler directive after '#' token");
-            
-            encountered_errors = true;
-        }
+        else encountered_errors = true;
     }
     
-    if (!encountered_errors)
+    if (!encountered_errors && *result == 0)
     {
         if (token.kind == Token_Keyword)
         {
@@ -891,149 +1166,77 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                     else encountered_errors = true;
                 }
                 
-                token = GetToken(state.lexer);
-                while (!encountered_errors && token.kind == Token_Hash)
+                Flag32(COMPILER_DIRECTIVE_KIND) encountered_proc_directives = 0;
+                
+                while (!encountered_errors)
                 {
-                    if (peek.kind == Token_Identifier)
-                    {
-                        if (StringCStringCompare(peek.string, "bounds_check"))
-                        {
-                            state.current_flags[ExprFlag_BoundsCheck].is_set = true;
-                            state.current_flags[ExprFlag_BoundsCheck].text   = TextIntervalMerge(token.text, peek.text);
-                            
-                            SkipPastToken(state.lexer, peek);
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "no_bounds_check"))
-                        {
-                            state.current_flags[ExprFlag_BoundsCheck].is_set = false;
-                            state.current_flags[ExprFlag_BoundsCheck].text   = TextIntervalMerge(token.text, peek.text);
-                            
-                            SkipPastToken(state.lexer, peek);
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "inline"))
-                        {
-                            SkipPastToken(state.lexer, peek);
-                            (*result)->proc_expr.is_inlined = true;
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "no_inline"))
-                        {
-                            SkipPastToken(state.lexer, peek);
-                            (*result)->proc_expr.is_inlined = false;
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "deprecated"))
-                        {
-                            Text_Pos start_of_directive = token.text.position;
-                            
-                            SkipPastToken(state.lexer, peek);
-                            
-                            (*result)->proc_expr.is_deprecated = true;
-                            
-                            token = GetToken(state.lexer);
-                            if (token.kind == Token_String)
-                            {
-                                SkipPastToken(state.lexer, token);
-                                
-                                if (!PushStringLiteral(state, token, &(*result)->proc_expr.deprecation_note, 0))
-                                {
-                                    encountered_errors = true;
-                                }
-                            }
-                            
-                            else
-                            {
-                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive, 
-                                                                                          token.text.position);
-                                
-                                ParserReport(state, ReportSeverity_Error, report_interval,
-                                             "Missing deprecation notice after 'deprecated' compiler directive");
-                                
-                                encountered_errors = true;
-                            }
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "no_discard"))
-                        {
-                            SkipPastToken(state.lexer, peek);
-                            (*result)->proc_expr.no_discard = true;
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "foreign"))
-                        {
-                            Text_Pos start_of_directive = token.text.position;
-                            
-                            SkipPastToken(state.lexer, peek);
-                            
-                            (*result)->proc_expr.is_foreign = true;
-                            
-                            token = GetToken(state.lexer);
-                            if (token.kind == Token_String)
-                            {
-                                SkipPastToken(state.lexer, token);
-                                
-                                if (!PushStringLiteral(state, token, &(*result)->proc_expr.foreign_library, 0))
-                                {
-                                    encountered_errors = true;
-                                }
-                            }
-                            
-                            else
-                            {
-                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive, 
-                                                                                          token.text.position);
-                                
-                                ParserReport(state, ReportSeverity_Error, report_interval,
-                                             "Missing foreign library name after 'foreign' compiler directive");
-                                
-                                encountered_errors = true;
-                            }
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "import")       ||
-                                 StringCStringCompare(peek.string, "scope_export") ||
-                                 StringCStringCompare(peek.string, "scope_file"))
-                        {
-                            Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                            
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "Scope controlling directives are illegal in this context. Scope controlling directives can only be used in global scope");
-                            
-                            encountered_errors = true;
-                        }
-                        
-                        else if (IsNameOfCompilerDirective(peek.string))
-                        {
-                            Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                            
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "The '%S' directive cannot be used in this context", peek.string);
-                            
-                            encountered_errors = true;
-                        }
-                        
-                        else
-                        {
-                            Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                            
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "unknown compiler directive");
-                            
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    else
-                    {
-                        ParserReport(state, ReportSeverity_Error, token.text,
-                                     "Missing name of compiler directive after '#' token");
-                        
-                        encountered_errors = true;
-                    }
-                    
                     token = GetToken(state.lexer);
+                    
+                    if (token.kind == Token_Hash)
+                    {
+                        Compiler_Directive_Info info = {0};
+                        
+                        Text_Pos start_of_directive = token.text.position;
+                        Token name_token = PeekNextToken(state.lexer, token);
+                        
+                        if (ParseCompilerDirective(state, &info, true))
+                        {
+                            if ((info.kind & encountered_proc_directives) == 0)
+                            {
+                                encountered_proc_directives |= info.kind;
+                                
+                                if (info.kind == Directive_Inline) PARSER_SET_FLAG(ExprFlag_InlineCall, info.is_set);
+                                else if (info.kind == Directive_BoundsCheck) PARSER_SET_FLAG(ExprFlag_BoundsCheck,
+                                                                                             info.is_set);
+                                
+                                else if (info.kind == Directive_Deprecated)
+                                {
+                                    (*result)->proc_expr.is_deprecated      = true;
+                                    (*result)->proc_expr.deprecation_notice = info.deprecation_notice;
+                                }
+                                
+                                else if (info.kind == Directive_NoDiscard)
+                                {
+                                    (*result)->proc_expr.no_discard = true;
+                                }
+                                
+                                else if (info.kind == Directive_Foreign)
+                                {
+                                    (*result)->proc_expr.is_foreign       = true;
+                                    (*result)->proc_expr.foreign_library = info.foreign_library;
+                                }
+                                
+                                
+                                else
+                                {
+                                    token = GetToken(state.lexer);
+                                    
+                                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive, 
+                                                                                              token.text.position);
+                                    
+                                    ParserReport(state, ReportSeverity_Error, report_interval,
+                                                 "Invalid use of compiler directive. The '%S' directive cannot be used to tag a procedure", name_token.string);
+                                    
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                                          token.text.position);
+                                
+                                ParserReport(state, ReportSeverity_Error, report_interval,
+                                             "Duplicate use of the '%S' directive", name_token.string);
+                                
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else encountered_errors = true;
+                    }
                 }
                 
                 token = GetToken(state.lexer);
@@ -1045,7 +1248,7 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                     
                     if (token.kind == Token_OpenBrace)
                     {
-                        if (!ParseBlock(state, &(*result)->proc_expr.block, false))
+                        if (!ParseBlock(state, &(*result)->proc_expr.block, false, false))
                         {
                             encountered_errors = true;
                         }
@@ -1092,68 +1295,70 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                     }
                 }
                 
-                token = GetToken(state.lexer);
+                Flag32(COMPILER_DIRECTIVE_KIND) encountered_struct_directives = 0;
                 
-                while (!encountered_errors && token.kind == Token_Hash)
+                while (!encountered_errors)
                 {
-                    Token peek = PeekNextToken(state.lexer, token);
-                    
-                    if (peek.kind == Token_Identifier)
-                    {
-                        if (StringCStringCompare(peek.string, "strict"))
-                        {
-                            SkipPastToken(state.lexer, peek);
-                            (*result)->struct_expr.is_strict = true;
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "loose"))
-                        {
-                            SkipPastToken(state.lexer, peek);
-                            (*result)->struct_expr.is_strict = false;
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "packed"))
-                        {
-                            SkipPastToken(state.lexer, peek);
-                            (*result)->struct_expr.is_packed = true;
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "padded"))
-                        {
-                            SkipPastToken(state.lexer, peek);
-                            (*result)->struct_expr.is_packed = false;
-                        }
-                        
-                        else if (IsNameOfCompilerDirective(peek.string))
-                        {
-                            Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                            
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "The '%S' directive cannot be used in this context", peek.string);
-                            
-                            encountered_errors = true;
-                        }
-                        
-                        else
-                        {
-                            Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                            
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "unknown compiler directive");
-                            
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    else
-                    {
-                        ParserReport(state, ReportSeverity_Error, token.text,
-                                     "Missing name of compiler directive after '#' token");
-                        
-                        encountered_errors = true;
-                    }
-                    
                     token = GetToken(state.lexer);
+                    
+                    if (token.kind == Token_Hash)
+                    {
+                        Compiler_Directive_Info info = {0};
+                        
+                        Text_Pos start_of_directive = token.text.position;
+                        Token name_token = PeekNextToken(state.lexer, token);
+                        
+                        if (ParseCompilerDirective(state, &info, true))
+                        {
+                            if ((info.kind & encountered_struct_directives) == 0)
+                            {
+                                encountered_struct_directives |= info.kind;
+                                
+                                if (info.kind == Directive_Align)
+                                {
+                                    (*result)->struct_expr.alignment = info.align_expression;
+                                }
+                                
+                                else if (info.kind == Directive_Packed)
+                                {
+                                    (*result)->struct_expr.is_packed = info.is_set;
+                                }
+                                
+                                else if (info.kind == Directive_Strict)
+                                {
+                                    (*result)->struct_expr.is_strict = info.is_set;
+                                }
+                                
+                                else
+                                {
+                                    token = GetToken(state.lexer);
+                                    
+                                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive, 
+                                                                                              token.text.position);
+                                    
+                                    ParserReport(state, ReportSeverity_Error, report_interval,
+                                                 "Invalid use of compiler directive. The '%S' directive cannot be used to tag a structure", name_token.string);
+                                    
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                                          token.text.position);
+                                
+                                ParserReport(state, ReportSeverity_Error, report_interval,
+                                             "Duplicate use of the '%S' directive", name_token.string);
+                                
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else encountered_errors = true;
+                    }
                 }
                 
                 if (!encountered_errors)
@@ -1250,56 +1455,60 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                     }
                 }
                 
-                token = GetToken(state.lexer);
+                Flag32(COMPILER_DIRECTIVE_KIND) encountered_enum_directives = 0;
                 
-                while (!encountered_errors && token.kind == Token_Hash)
+                while (!encountered_errors)
                 {
-                    Token peek = PeekNextToken(state.lexer, token);
-                    
-                    if (peek.kind == Token_Identifier)
-                    {
-                        if (StringCStringCompare(peek.string, "strict"))
-                        {
-                            SkipPastToken(state.lexer, peek);
-                            (*result)->enum_expr.is_strict = true;
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "loose"))
-                        {
-                            SkipPastToken(state.lexer, peek);
-                            (*result)->enum_expr.is_strict = false;
-                        }
-                        
-                        else if (IsNameOfCompilerDirective(peek.string))
-                        {
-                            Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                            
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "The '%S' directive cannot be used in this context", peek.string);
-                            
-                            encountered_errors = true;
-                        }
-                        
-                        else
-                        {
-                            Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                            
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "unknown compiler directive");
-                            
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    else
-                    {
-                        ParserReport(state, ReportSeverity_Error, token.text,
-                                     "Missing name of compiler directive after '#' token");
-                        
-                        encountered_errors = true;
-                    }
-                    
                     token = GetToken(state.lexer);
+                    
+                    if (token.kind == Token_Hash)
+                    {
+                        Compiler_Directive_Info info = {0};
+                        
+                        Text_Pos start_of_directive = token.text.position;
+                        Token name_token = PeekNextToken(state.lexer, token);
+                        
+                        if (ParseCompilerDirective(state, &info, true))
+                        {
+                            if ((info.kind & encountered_enum_directives) == 0)
+                            {
+                                encountered_enum_directives |= info.kind;
+                                
+                                if (info.kind == Directive_Strict)
+                                {
+                                    (*result)->enum_expr.is_strict = info.is_set;
+                                }
+                                
+                                else
+                                {
+                                    token = GetToken(state.lexer);
+                                    
+                                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive, 
+                                                                                              token.text.position);
+                                    
+                                    ParserReport(state, ReportSeverity_Error, report_interval,
+                                                 "Invalid use of compiler directive. The '%S' directive cannot be used to tag an enumeration", name_token.string);
+                                    
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                                          token.text.position);
+                                
+                                ParserReport(state, ReportSeverity_Error, report_interval,
+                                             "Duplicate use of the '%S' directive", name_token.string);
+                                
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else encountered_errors = true;
+                    }
                 }
                 
                 if (!encountered_errors)
@@ -1355,100 +1564,75 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                     }
                 }
             }
-        }
-        
-        else if (token.kind == Token_Number)
-        {
-            *result = PushExpression(state, ExprKind_Number);
-            (*result)->number = token.number;
-            (*result)->text = token.text;
-            SkipPastToken(state.lexer, token);
-        }
-        
-        else if (token.kind == Token_String)
-        {
-            String_Literal literal;
-            I64 character = -1;
-            if (PushStringLiteral(state, token, &literal, &character))
+            
+            else if (token.kind == Token_Number)
             {
-                if (is_char)
-                {
-                    *result = PushExpression(state, ExprKind_Character);
-                    (*result)->character = (Character)character;
-                    (*result)->text      = TextIntervalMerge(char_text, token.text);
-                }
-                
-                else
-                {
-                    *result = PushExpression(state, ExprKind_String);
-                    (*result)->string = literal;
-                    (*result)->text   = token.text;
-                }
-                
+                *result = PushExpression(state, ExprKind_Number);
+                (*result)->number = token.number;
+                (*result)->text = token.text;
                 SkipPastToken(state.lexer, token);
             }
             
-            else encountered_errors = true;
-        }
-        
-        
-        else if (token.kind == Token_Identifier)
-        {
-            *result = PushExpression(state, ExprKind_Identifier);
-            (*result)->identifier = PushIdentifier(state, token.string);
-            (*result)->text = token.text;
-            SkipPastToken(state.lexer, token);
-        }
-        
-        else if (token.kind == Token_OpenParen)
-        {
-            SkipPastToken(state.lexer, token);
-            
-            if (ParseExpression(state, result, false))
+            else if (token.kind == Token_String)
             {
-                token = GetToken(state.lexer);
+                *result = PushExpression(state, ExprKind_String);
                 
-                if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
-                else
+                if (PushStringLiteral(state, token, &(*result)->string))
                 {
-                    Text_Interval report_interval = TextIntervalFromEndpoints((*result)->text.position, 
-                                                                              token.text.position);
+                    (*result)->text = token.text;
+                    SkipPastToken(state.lexer, token);
+                }
+                
+                else encountered_errors = true;
+            }
+            
+            
+            else if (token.kind == Token_Identifier)
+            {
+                *result = PushExpression(state, ExprKind_Identifier);
+                (*result)->identifier = PushIdentifier(state, token.string);
+                (*result)->text = token.text;
+                SkipPastToken(state.lexer, token);
+            }
+            
+            else if (token.kind == Token_OpenParen)
+            {
+                SkipPastToken(state.lexer, token);
+                
+                if (ParseExpression(state, result, false))
+                {
+                    token = GetToken(state.lexer);
                     
-                    ParserReport(state, ReportSeverity_Error, report_interval,
-                                 "Missing closing parnethesis after enclosed expression");
-                    
+                    if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
+                    else
+                    {
+                        Text_Interval report_interval = TextIntervalFromEndpoints((*result)->text.position, 
+                                                                                  token.text.position);
+                        
+                        ParserReport(state, ReportSeverity_Error, report_interval,
+                                     "Missing closing parnethesis after enclosed expression");
+                        
+                        encountered_errors = true;
+                    }
+                }
+                
+                else encountered_errors = true;
+            }
+            
+            if (*result == 0)
+            {
+                ParserReport(state, ReportSeverity_Error, TextInterval(token.text.position, 0),
+                             "Missing primary expression");
+                encountered_errors = true;
+            }
+            
+            
+            if (!encountered_errors)
+            {
+                if (!ParsePostfixExpression(state, result))
+                {
                     encountered_errors = true;
                 }
-            }
-            
-            else encountered_errors = true;
-        }
-        
-        if (*result == 0)
-        {
-            ParserReport(state, ReportSeverity_Error, TextInterval(token.text.position, 0),
-                         "Missing primary expression");
-            encountered_errors = true;
-        }
-        
-        
-        if (!encountered_errors)
-        {
-            if (!ParsePostfixExpression(state, result))
-            {
-                encountered_errors = true;
-            }
-            
-            if (is_char && (*result)->kind != ExprKind_Character)
-            {
-                token = GetToken(state.lexer);
-                Text_Interval report_interval = TextIntervalFromEndpoints(char_text.position, 
-                                                                          token.text.position);
-                
-                ParserReport(state, ReportSeverity_Error, report_interval, 
-                             "Expected a string literal after #char directive");
-                
-                encountered_errors = true;
             }
         }
     }
@@ -2161,74 +2345,134 @@ bool
 ParseStatement(Parser_State state)
 {
     bool encountered_errors = false;
+    bool emitted_statement  = false;
     
     Token token = GetToken(state.lexer);
     
+    Flag32(COMPILER_DIRECTIVE_KIND) encountered_directives = 0;
+    
     while (!encountered_errors && token.kind == Token_Hash)
     {
-        Token peek = PeekNextToken(state.lexer, token);
+        Text_Pos start_of_directive = token.text.position;
         
-        if (peek.kind == Token_Identifier)
+        Token name_token = PeekNextToken(state.lexer, token);
+        
+        Compiler_Directive_Info info = {0};
+        
+        if (ParseCompilerDirective(state, &info, false))
         {
-            if (StringCStringCompare(peek.string, "bounds_check"))
+            if ((info.kind & encountered_directives) == 0)
             {
-                state.current_flags[ExprFlag_BoundsCheck].is_set = true;
-                state.current_flags[ExprFlag_BoundsCheck].text   = TextIntervalMerge(token.text, peek.text);
+                if (info.kind != Directive_Import      &&
+                    info.kind != Directive_ScopeExport &&
+                    info.kind != Directive_If)
+                {
+                    encountered_directives |= info.kind;
+                }
                 
-                SkipPastToken(state.lexer, peek);
-            }
-            
-            else if (StringCStringCompare(peek.string, "no_bounds_check"))
-            {
-                state.current_flags[ExprFlag_BoundsCheck].is_set = false;
-                state.current_flags[ExprFlag_BoundsCheck].text   = TextIntervalMerge(token.text, peek.text);
+                if (info.kind == Directive_BoundsCheck)   PARSER_SET_FLAG(ExprFlag_BoundsCheck, info.is_set);
+                else if (info.kind == Directive_Run)      PARSER_SET_FLAG(ExprFlag_Run, info.is_set);
+                else if (info.kind == Directive_Type)     PARSER_SET_FLAG(ExprFlag_TypeEvalContext, info.is_set);
+                else if (info.kind == Directive_Distinct) PARSER_SET_FLAG(ExprFlag_DistinctType, info.is_set);
+                else if (info.kind == Directive_Inline)   PARSER_SET_FLAG(ExprFlag_InlineCall, info.is_set);
+                else if (info.kind == Directive_Char)
+                {
+                    break;
+                }
                 
-                SkipPastToken(state.lexer, peek);
+                else if (info.kind == Directive_Import || info.kind == Directive_ScopeExport)
+                {
+                    if (state.allow_scope_directives)
+                    {
+                        if (info.kind == Directive_Import)
+                        {
+                            NOT_IMPLEMENTED;
+                        }
+                        
+                        else
+                        {
+                            state.current_block->export_by_default = info.is_set;
+                        }
+                    }
+                    
+                    else
+                    {
+                        token = GetToken(state.lexer);
+                        
+                        Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                                  token.text.position);
+                        
+                        ParserReport(state, ReportSeverity_Error, report_interval,
+                                     "Scope altering compiler directives are not allowed in this context");
+                        
+                        encountered_errors = true;
+                    }
+                }
+                
+                else if (info.kind == Directive_If)
+                {
+                    Statement* statement = PushStatement(state, StatementKind_If);
+                    
+                    statement->if_stmnt.condition   = info.const_if.condition;
+                    statement->if_stmnt.true_block  = info.const_if.true_block;
+                    statement->if_stmnt.false_block = info.const_if.false_block;
+                    
+                    statement->if_stmnt.is_const = true;
+                    
+                    token = GetToken(state.lexer);
+                    statement->text = TextIntervalFromEndpoints(start_of_directive, 
+                                                                token.text.position);
+                    
+                    emitted_statement = true;
+                }
+                
+                else
+                {
+                    token = GetToken(state.lexer);
+                    
+                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                              token.text.position);
+                    
+                    ParserReport(state, ReportSeverity_Error, report_interval, "Invalid use of compiler directive. The '%S' directive cannot be used in a statement context", name_token.string);
+                    
+                    encountered_errors = true;
+                }
             }
             
-            else if (StringCStringCompare(peek.string, "if"))
+            else
             {
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (StringCStringCompare(peek.string, "import")       ||
-                     StringCStringCompare(peek.string, "scope_export") ||
-                     StringCStringCompare(peek.string, "scope_file"))
-            {
-                Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
+                token = GetToken(state.lexer);
+                
+                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                          token.text.position);
                 
                 ParserReport(state, ReportSeverity_Error, report_interval,
-                             "Scope controlling directives are illegal in this context. Scope controlling directives can only be used in global scope");
+                             "Duplicate use of the '%S' directive", name_token.string);
                 
                 encountered_errors = true;
             }
-            
-            else if (!IsNameOfCompilerDirective(peek.string))
-            {
-                Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                
-                ParserReport(state, ReportSeverity_Error, report_interval,
-                             "unknown compiler directive");
-                
-                encountered_errors = true;
-            }
-            
-            else break;
         }
         
-        else
-        {
-            ParserReport(state, ReportSeverity_Error, token.text,
-                         "Missing name of compiler directive after '#' token");
-            
-            encountered_errors = true;
-        }
+        else encountered_errors = true;
         
         token = GetToken(state.lexer);
     }
     
-    if (!encountered_errors)
+    if (!encountered_errors && !emitted_statement)
     {
+        token = GetToken(state.lexer);
+        
+        bool encountered_using       = false;
+        bool handled_using           = false;
+        Text_Pos start_of_using_decl = {0};
+        if (token.kind == Token_Keyword && token.keyword == Keyword_Using)
+        {
+            encountered_using   = true;
+            start_of_using_decl = token.text.position;
+            
+            SkipPastToken(state.lexer, token);
+        }
+        
         if (token.kind == Token_Error)
         {
             encountered_errors = true;
@@ -2257,7 +2501,7 @@ ParseStatement(Parser_State state)
         {
             Statement* statement = PushStatement(state, StatementKind_Block);
             
-            if (!ParseBlock(state, &statement->block_stmnt, false))
+            if (!ParseBlock(state, &statement->block_stmnt, false, false))
             {
                 encountered_errors = true;
             }
@@ -2278,7 +2522,7 @@ ParseStatement(Parser_State state)
                     token = GetToken(state.lexer);
                     statement->text = TextIntervalFromEndpoints(start_of_if, token.text.position);
                     
-                    if (ParseBlock(state, &statement->if_stmnt.true_block, true))
+                    if (ParseBlock(state, &statement->if_stmnt.true_block, true, false))
                     {
                         token = GetToken(state.lexer);
                         
@@ -2286,7 +2530,7 @@ ParseStatement(Parser_State state)
                         {
                             SkipPastToken(state.lexer, token);
                             
-                            if (!ParseBlock(state, &statement->if_stmnt.false_block, true))
+                            if (!ParseBlock(state, &statement->if_stmnt.false_block, true, false))
                             {
                                 encountered_errors = true;
                             }
@@ -2319,7 +2563,7 @@ ParseStatement(Parser_State state)
                     token = GetToken(state.lexer);
                     statement->text = TextIntervalFromEndpoints(start_of_while, token.text.position);
                     
-                    if (!ParseBlock(state, &statement->while_stmnt.block, true))
+                    if (!ParseBlock(state, &statement->while_stmnt.block, true, false))
                     {
                         encountered_errors = true;
                     }
@@ -2385,7 +2629,7 @@ ParseStatement(Parser_State state)
                 
                 Statement* statement = PushStatement(state, StatementKind_Defer);
                 
-                if (!ParseBlock(state, &statement->defer_stmnt.block, true))
+                if (!ParseBlock(state, &statement->defer_stmnt.block, true, false))
                 {
                     encountered_errors = true;
                 }
@@ -2461,8 +2705,11 @@ ParseStatement(Parser_State state)
                                 // NOTE(soimn): This is considered a variable declaration
                                 
                                 declaration = PushDeclaration(state, DeclKind_VariableDecl);
-                                declaration->var_decl.names = expression_list;
-                                declaration->var_decl.types = types;
+                                declaration->var_decl.names   = expression_list;
+                                declaration->var_decl.types   = types;
+                                declaration->var_decl.is_used = encountered_using;
+                                
+                                handled_using = true;
                                 
                                 declaration->var_decl.values = ARRAY_INIT(&state.context->arena, Expression*, 4);
                             }
@@ -2701,27 +2948,46 @@ ParseStatement(Parser_State state)
                     
                     else
                     {
-                        statement = PushStatement(state, StatementKind_Expression);
                         
-                        if (expression_list.size != 1)
+                        if (encountered_using)
                         {
-                            token = GetToken(state.lexer);
+                            Declaration* declaration = PushDeclaration(state, DeclKind_UsingDecl);
                             
-                            Text_Interval report_interval = TextIntervalFromEndpoints(start_of_expression, 
-                                                                                      token.text.position);
+                            declaration->using_decl.expressions = expression_list;
                             
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "Expression lists are not allowed to be used as statements. Expression lists can only be used in argument lists and multiple declaration and assignment");
+                            declaration->text = TextIntervalFromEndpoints(start_of_using_decl, 
+                                                                          token.text.position);
                             
-                            encountered_errors = true;
+                            handled_using = true;
                         }
                         
                         else
                         {
-                            // NOTE(soimn): expression_list stores pointers to the expression
-                            statement->expression_stmnt = Array_ElementAt(&expression_list, 0);
-                            Array_RemoveAllAndFreeHeader(&expression_list);
+                            if (expression_list.size != 1)
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_expression, 
+                                                                                          token.text.position);
+                                
+                                ParserReport(state, ReportSeverity_Error, report_interval,
+                                             "Expression lists are not allowed to be used as statements. Expression lists can only be used in argument lists and multiple declaration and assignment");
+                                
+                                encountered_errors = true;
+                            }
                             
+                            else
+                            {
+                                statement = PushStatement(state, StatementKind_Expression);
+                                
+                                // NOTE(soimn): expression_list stores pointers to the expressions
+                                statement->expression_stmnt = Array_ElementAt(&expression_list, 0);
+                                Array_RemoveAllAndFreeHeader(&expression_list);
+                            }
+                        }
+                        
+                        if (!encountered_errors)
+                        {
                             token = GetToken(state.lexer);
                             
                             if (token.kind == Token_Semicolon)
@@ -2739,10 +3005,23 @@ ParseStatement(Parser_State state)
                                 encountered_errors = true;
                             }
                         }
-                        
                     }
                 }
             }
+        }
+        
+        if (!encountered_errors && encountered_errors && !handled_using)
+        {
+            token = GetToken(state.lexer);
+            Text_Interval report_interval = TextIntervalFromEndpoints(start_of_using_decl,
+                                                                      token.text.position);
+            
+            ParserReport(state, ReportSeverity_Error, report_interval,
+                         "'using' cannot be used in this context");
+            ParserReport(state, ReportSeverity_Info, report_interval,
+                         "Valid use of 'using' declarations are exclusive to variable declarations, named expressions in procedures and structures, and as a prefix to member expressions in a non global block");
+            
+            encountered_errors = true;
         }
     }
     
@@ -2750,7 +3029,7 @@ ParseStatement(Parser_State state)
 }
 
 bool
-ParseBlock(Parser_State state, Block* block, bool allow_single_statement)
+ParseBlock(Parser_State state, Block* block, bool allow_single_statement, bool is_transparent)
 {
     bool encountered_errors = false;
     
@@ -2759,223 +3038,61 @@ ParseBlock(Parser_State state, Block* block, bool allow_single_statement)
     block->statements      = ARRAY_INIT(&state.context->arena, Statement, 4);
     block->expressions     = BUCKET_ARRAY_INIT(&state.context->arena, Expression, 8);
     
+    state.allow_scope_directives = (is_transparent ? state.allow_scope_directives : false);
+    
     Token token = GetToken(state.lexer);
     
     Text_Pos start_of_block = token.text.position;
     
-    while (!encountered_errors && token.kind == Token_Hash)
+    bool is_single_statement = false;
+    if (token.kind == Token_OpenBrace)
     {
-        Token peek = PeekNextToken(state.lexer, token);
-        
-        if (peek.kind == Token_Identifier)
-        {
-            if (StringCStringCompare(peek.string, "bounds_check"))
-            {
-                state.current_flags[ExprFlag_BoundsCheck].is_set = true;
-                state.current_flags[ExprFlag_BoundsCheck].text   = TextIntervalMerge(token.text, peek.text);
-                
-                SkipPastToken(state.lexer, peek);
-            }
-            
-            else if (StringCStringCompare(peek.string, "no_bounds_check"))
-            {
-                state.current_flags[ExprFlag_BoundsCheck].is_set = false;
-                state.current_flags[ExprFlag_BoundsCheck].text   = TextIntervalMerge(token.text, peek.text);
-                
-                SkipPastToken(state.lexer, peek);
-            }
-            else if (StringCStringCompare(peek.string, "import")       ||
-                     StringCStringCompare(peek.string, "scope_export") ||
-                     StringCStringCompare(peek.string, "scope_file"))
-            {
-                Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                
-                ParserReport(state, ReportSeverity_Error, report_interval,
-                             "Scope controlling directives are illegal in this context. Scope controlling directives can only be used in global scope");
-                
-                encountered_errors = true;
-            }
-            
-            else if (IsNameOfCompilerDirective(peek.string))
-            {
-                Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                
-                ParserReport(state, ReportSeverity_Error, report_interval,
-                             "The '%S' directive is not allowed to be used at statement level", peek.string);
-                
-                encountered_errors = true;
-            }
-            
-            else
-            {
-                Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                
-                ParserReport(state, ReportSeverity_Error, report_interval,
-                             "unknown compiler directive");
-                
-                encountered_errors = true;
-            }
-        }
-        
-        else
+        is_single_statement = false;
+        SkipPastToken(state.lexer, token);
+    }
+    
+    else
+    {
+        if (!allow_single_statement)
         {
             ParserReport(state, ReportSeverity_Error, token.text,
-                         "Missing name of compiler directive after '#' token");
+                         "Expected a block, but got a single statement");
             
             encountered_errors = true;
         }
-        
-        token = GetToken(state.lexer);
     }
     
-    if (!encountered_errors)
+    while (!encountered_errors)
     {
         token = GetToken(state.lexer);
         
-        bool is_single_statement = false;
-        if (token.kind == Token_OpenBrace)
+        if (token.kind == Token_CloseBrace)
         {
-            is_single_statement = false;
-            SkipPastToken(state.lexer, token);
-        }
-        
-        else
-        {
-            if (!allow_single_statement)
+            if (is_single_statement)
             {
                 ParserReport(state, ReportSeverity_Error, token.text,
-                             "Expected a block, but got a single statement");
+                             "Encountered closing brace before a statement in single statement block");
                 
                 encountered_errors = true;
-            }
-        }
-        
-        while (!encountered_errors)
-        {
-            token = GetToken(state.lexer);
-            
-            if (token.kind == Token_CloseBrace)
-            {
-                if (is_single_statement)
-                {
-                    ParserReport(state, ReportSeverity_Error, token.text,
-                                 "Encountered closing brace before a statement in single statement block");
-                    
-                    encountered_errors = true;
-                }
-                
-                else
-                {
-                    SkipPastToken(state.lexer, token);
-                    break;
-                }
             }
             
             else
             {
-                bool was_handled = false;
-                
-                if (token.kind == Token_Hash)
-                {
-                    Token peek = PeekNextToken(state.lexer, token);
-                    
-                    if (peek.kind == Token_Identifier)
-                    {
-                        if (StringCStringCompare(peek.string, "import"))
-                        {
-                            was_handled = true;
-                            
-                            if (state.allow_scope_controlling_directives)
-                            {
-                                Text_Pos start_of_directive = token.text.position;
-                                
-                                SkipPastToken(state.lexer, peek);
-                                token = GetToken(state.lexer);
-                                
-                                if (token.kind == Token_String)
-                                {
-                                    String import_path = token.string;
-                                    
-                                    SkipPastToken(state.lexer, token);
-                                    
-                                    Scope_ID scope_id = AddSourceFile(state.context->workspace, import_path);
-                                    
-                                    Array(Imported_Scope)* imported_scopes = &state.current_block->imported_scopes;
-                                    
-                                    bool did_find = false;
-                                    
-                                    Imported_Scope* data = (Imported_Scope*)imported_scopes->data;
-                                    for (U32 i = 0; i < imported_scopes->size; ++i)
-                                    {
-                                        if (data[i].scope_id == scope_id)
-                                        {
-                                            did_find = true;
-                                        }
-                                    }
-                                    
-                                    if (!did_find)
-                                    {
-                                        Imported_Scope* scope = Array_Append(imported_scopes);
-                                        scope->scope_id = scope_id;
-                                    }
-                                }
-                                
-                                else
-                                {
-                                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
-                                                                                              token.text.position);
-                                    
-                                    ParserReport(state, ReportSeverity_Error, report_interval,
-                                                 "Missing import path in import directive");
-                                    
-                                    encountered_errors = true;
-                                }
-                            }
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "scope_export"))
-                        {
-                            was_handled = true;
-                            
-                            if (state.allow_scope_controlling_directives)
-                            {
-                                SkipPastToken(state.lexer, peek);
-                                state.should_export = true;
-                            }
-                        }
-                        
-                        else if (StringCStringCompare(peek.string, "scope_file"))
-                        {
-                            was_handled = true;
-                            
-                            if (state.allow_scope_controlling_directives)
-                            {
-                                SkipPastToken(state.lexer, peek);
-                                state.should_export = false;
-                            }
-                        }
-                        
-                        if (!encountered_errors && !state.allow_scope_controlling_directives)
-                        {
-                            Text_Interval report_interval = TextIntervalMerge(token.text, peek.text);
-                            
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "Scope controlling directives are illegal in this context. Scope controlling directives can only be used in global scope");
-                            
-                            encountered_errors = true;
-                        }
-                    }
-                }
-                
-                if (!was_handled && !ParseStatement(state))
-                {
-                    encountered_errors = true;
-                }
+                SkipPastToken(state.lexer, token);
+                break;
             }
-            
-            if (is_single_statement) break;
-            else continue;
         }
+        
+        else
+        {
+            if (!ParseStatement(state))
+            {
+                encountered_errors = true;
+            }
+        }
+        
+        if (is_single_statement) break;
+        else continue;
     }
     
     token = GetToken(state.lexer);
@@ -2991,17 +3108,11 @@ ParseFile(Worker_Context* context, File_ID file_id)
     Lexer lexer_state = LexFile(context, file_id);
     
     Parser_State state = {0};
-    state.context = context;
-    state.lexer   = &lexer_state;
+    state.context                = context;
+    state.lexer                  = &lexer_state;
+    state.allow_scope_directives = true;
     
     NOT_IMPLEMENTED; // setup
-    
-    Block* block = 0;
-    
-    block->imported_scopes = ARRAY_INIT(&state.context->arena, Imported_Scope, 4);
-    block->declarations    = ARRAY_INIT(&state.context->arena, Declaration, 4);
-    block->statements      = ARRAY_INIT(&state.context->arena, Statement, 4);
-    block->expressions     = BUCKET_ARRAY_INIT(&state.context->arena, Expression, 8);
     
     bool encountered_errors = false;
     
@@ -3011,68 +3122,6 @@ ParseFile(Worker_Context* context, File_ID file_id)
         Token peek  = PeekNextToken(state.lexer, token);
         
         if (token.kind == Token_EndOfStream) break;
-        
-        else if (token.kind == Token_Hash && peek.kind == Token_Identifier &&
-                 StringCStringCompare(peek.string, "import"))
-        {
-            Text_Pos start_of_directive = token.text.position;
-            
-            SkipPastToken(state.lexer, peek);
-            token = GetToken(state.lexer);
-            
-            if (token.kind == Token_String)
-            {
-                String import_path = token.string;
-                
-                SkipPastToken(state.lexer, token);
-                
-                Scope_ID scope_id = AddSourceFile(state.context->workspace, import_path);
-                
-                Array(Imported_Scope)* imported_scopes = &state.current_block->imported_scopes;
-                
-                bool did_find = false;
-                
-                Imported_Scope* data = (Imported_Scope*)imported_scopes->data;
-                for (U32 i = 0; i < imported_scopes->size; ++i)
-                {
-                    if (data[i].scope_id == scope_id)
-                    {
-                        did_find = true;
-                    }
-                }
-                
-                if (!did_find)
-                {
-                    Imported_Scope* scope = Array_Append(imported_scopes);
-                    scope->scope_id = scope_id;
-                }
-            }
-            
-            else
-            {
-                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
-                                                                          token.text.position);
-                
-                ParserReport(state, ReportSeverity_Error, report_interval,
-                             "Missing import path in import directive");
-                
-                encountered_errors = true;
-            }
-        }
-        
-        else if (token.kind == Token_Hash && peek.kind == Token_Identifier &&
-                 StringCStringCompare(peek.string, "scope_export"))
-        {
-            SkipPastToken(state.lexer, peek);
-            state.should_export = true;
-        }
-        
-        else if (token.kind == Token_Hash && peek.kind == Token_Identifier &&
-                 StringCStringCompare(peek.string, "scope_file"))
-        {
-            SkipPastToken(state.lexer, peek);
-            state.should_export = false;
-        }
         
         else
         {

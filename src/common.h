@@ -95,8 +95,7 @@ typedef B8 bool;
 
 #define ARRAY_COUNT(EX) (sizeof(EX) / sizeof((EX)[0]))
 
-// NOTE(soimn): Sadly this does not behave as intended in C
-// #define CONST_STRING(str) {(U8*)(str), sizeof((str)[0]) - 1} 
+#define CONST_STRING(str) (str), sizeof((str)[0]) - 1
 
 #define U8_MAX  ((U8)0xFF)
 #define U16_MAX ((U16)0xFFFF)

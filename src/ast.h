@@ -12,6 +12,8 @@ typedef struct Block
     Array(Declaration) declarations;
     Array(Statement) statements;
     Bucket_Array(Expression) expressions;
+    
+    bool export_by_default;
 } Block;
 
 enum EXPRESSION_KIND
@@ -69,19 +71,11 @@ enum EXPRESSION_KIND
 
 enum EXPRESSION_FLAG
 {
-    ExprFlag_Invalid,
-    
-    // Statement and expression level
-    ExprFlag_BoundsCheck,
-    
-    // Expression level
-    ExprFlag_TypeEvalContext,
-    ExprFlag_InlineCall,
-    ExprFlag_Run,
-    ExprFlag_ForeignLibrary,
-    ExprFlag_DistinctType,
-    
-    EXPRESSION_FLAG_COUNT
+    ExprFlag_BoundsCheck      = 0x01,
+    ExprFlag_TypeEvalContext  = 0x02,
+    ExprFlag_InlineCall       = 0x04,
+    ExprFlag_Run              = 0x08,
+    ExprFlag_DistinctType     = 0x10,
 };
 
 typedef struct Named_Expression
@@ -126,8 +120,8 @@ typedef struct Proc_Expression
     bool is_inlined;
     bool no_discard;
     bool is_foreign;
-    String_Literal foreign_library;
-    String_Literal deprecation_note;
+    struct Expression* foreign_library;
+    struct Expression* deprecation_notice;
     Block block;
 } Proc_Expression;
 
@@ -135,7 +129,7 @@ typedef struct Struct_Expression
 {
     Array(Named_Expression) args;
     Array(Named_Expression) members;
-    U8 forced_alignment;
+    struct Expression* alignment;
     bool is_strict;
     bool is_packed;
 } Struct_Expression;
@@ -262,6 +256,7 @@ typedef struct If_Statement
     Expression* condition;
     Block true_block;
     Block false_block;
+    bool is_const;
 } If_Statement;
 
 typedef struct While_Statement

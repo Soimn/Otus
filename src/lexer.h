@@ -34,7 +34,6 @@ typedef enum LEXER_TOKEN_KIND
     Token_OpenBrace,
     Token_CloseBrace,
     
-    Token_Blank,
     Token_Identifier,
     Token_Keyword,
     Token_String,
@@ -240,7 +239,7 @@ GetToken(Lexer* lexer)
                     }
                 }
                 
-                else if (IsAlpha(current[0]) ||(current[0] == '_' && IsAlpha(current[1])))
+                else if (IsAlpha(current[0]) || current[0] == '_')
                 {
                     token.kind        = Token_Identifier;
                     token.string.data = (U8*)current;
@@ -275,11 +274,6 @@ GetToken(Lexer* lexer)
                             break;
                         }
                     }
-                }
-                
-                else if (current[0] == '_')
-                {
-                    token.kind = Token_Blank;
                 }
                 
                 else if (IsDigit(current[0]))
