@@ -31,51 +31,88 @@ enum REPORT_STYLE
     ReportStyle_Colored         = 0x20, // NOTE(soimn): Display the text view in full color
 };
 
+enum WORK_KIND
+{
+    WorkKind_Invalid,
+    
+    WorkKind_Parsing,
+    WorkKind_Sema,
+};
+
 typedef struct Worker_Context
 {
     struct Workspace* workspace;
     Memory_Arena arena;
 } Worker_Context;
 
+typedef struct Work
+{
+    Enum32(WORK_KIND) kind;
+    
+    union
+    {
+        // Parsing and lexing
+        File_ID file_id;
+    };
+} Work;
+
 typedef struct Source_File
 {
     String path;
     String contents;
-    Scope_ID exported_scope_id;
 } Source_File;
+
+// NOTE(soimn): The function ParserImportSourceFile requires that mounting point paths are terminated with a path 
+//              separator
+typedef struct Mounting_Point
+{
+    String name;
+    String path;
+} Mounting_Point;
 
 typedef struct Build_Options
 {
     Enum32(REPORT_SEVERITY) min_report_severity;
     Flag32(REPORT_STYLE) report_style[REPORT_SEVERITY_COUNT][COMPILATION_STAGE_COUNT];
+    Flag32(EXPRESSION_FLAG) default_expression_flags;
+    bool export_by_default;
+    
+    String default_mounting_point_path;
+    Array(Mounting_Point) mounting_points;
 } Build_Options;
 
 #define WORKSPACE_MAX_WORKER_COUNT 8
 typedef struct Workspace
 {
     Memory_Allocator page_allocator;
-    Memory_Arena workspace_arena;
+    Memory_Arena report_arena;
     Memory_Arena string_arena;
+    Memory_Arena file_arena;
     
     Bucket_Array(String) identifier_storage;
-    Mutex identifier_storage_mutex;
-    
     Bucket_Array(String) string_storage;
-    Mutex string_storage_mutex;
+    Mutex string_mutex;
     
+    Bucket_Array(String) imported_directories;
     Bucket_Array(Source_File) source_files;
+    Bucket_Array(Scope) file_scopes;
+    Mutex file_mutex;
     
     Worker_Context workers[WORKSPACE_MAX_WORKER_COUNT];
-    Array(Work_Queue) work_array;
+    Array(Work) work_array;
     Mutex work_mutex;
     
-    // NOTE(soimn): The ides behind using a report buffer instead of printing the reports straight away is to 
+    // NOTE(soimn): The idea behind using a report buffer instead of printing the reports straight away is to 
     //              allow the compiler to supress unnecesary warnings, errors and other reports which are not 
     //              filtered out by the severity level.
     Array(Report_Data) report_buffer;
     Mutex report_mutex;
     
     Build_Options build_options;
+    
+    Scope_ID scope_count;
+    
+    bool encountered_errors;
     
 } Workspace;
 
@@ -175,13 +212,13 @@ Report(Workspace* workspace, Enum32(REPORT_SEVERITY) severity, Enum32(COMPILATIO
         
         required_buffer_size += FormatString(message, format_string, arg_list);
         
-        TryLockMutex(workspace->report_mutex);
+        LockMutex(workspace->report_mutex);
         
         Report_Data* report = Array_Append(&workspace->report_buffer);
         report->severity = severity;
         report->stage    = compilation_stage;
         
-        report->message.data = MemoryArena_AllocSize(&workspace->workspace_arena, required_buffer_size + 1,
+        report->message.data = MemoryArena_AllocSize(&workspace->report_arena, required_buffer_size + 1,
                                                      ALIGNOF(U8));
         report->message.size = required_buffer_size + 1;
         
@@ -208,12 +245,74 @@ Report(Workspace* workspace, Enum32(REPORT_SEVERITY) severity, Enum32(COMPILATIO
     }
 }
 
-Scope_ID
+void
 AddSourceFile(Workspace* workspace, String path)
 {
-    Scope_ID scope_id = 0;
+    LockMutex(workspace->file_mutex);
     
-    NOT_IMPLEMENTED;
+    bool is_imported = false;
+    for (Bucket_Array_Iterator it = BucketArray_Iterate(&workspace->source_files);
+         it.current;
+         BucketArrayIterator_Advance(&it))
+    {
+        Source_File* it_file = it.current;
+        
+        if (StringCompare(path, it_file->path))
+        {
+            is_imported = true;
+        }
+    }
     
-    return scope_id;
+    File_ID imported_file_id = 0;
+    if (!is_imported)
+    {
+        imported_file_id = BucketArray_ElementCount(&workspace->source_files);
+        Source_File* imported_file = BucketArray_Append(&workspace->source_files);
+        
+        imported_file->path.size = path.size;
+        imported_file->path.data = MemoryArena_AllocSize(&workspace->file_arena,
+                                                         path.size + 1,
+                                                         ALIGNOF(U8));
+        
+        Copy(path.data, imported_file->path.data, path.size);
+        imported_file->path.data[imported_file->path.size] = 0;
+    }
+    
+    UnlockMutex(workspace->file_mutex);
+    
+    if (!is_imported)
+    {
+        LockMutex(workspace->work_mutex);
+        
+        Work* work = Array_Append(&workspace->work_array);
+        work->kind = WorkKind_Parsing;
+        work->file_id = imported_file_id;
+        
+        UnlockMutex(workspace->work_mutex);
+    }
+}
+
+void
+AddAllSourceFilesInDirectory(Workspace* workspace, String dir_path)
+{
+    LockMutex(workspace->file_mutex);
+    
+    bool has_been_imported = false;
+    for (Bucket_Array_Iterator it = BucketArray_Iterate(&workspace->imported_directories);
+         it.current;
+         BucketArrayIterator_Advance(&it))
+    {
+        if (DoesStringStartWith(dir_path, *(String*)it.current))
+        {
+            has_been_imported = true;
+            break;
+        }
+    }
+    
+    UnlockMutex(workspace->file_mutex);
+    
+    if (!has_been_imported)
+    {
+        NOT_IMPLEMENTED;
+    }
 }

@@ -53,6 +53,10 @@ enum LEXER_KEYWORD_KIND
     Keyword_Enum,
     Keyword_Struct,
     Keyword_Proc,
+    Keyword_Import,
+    Keyword_True,
+    Keyword_False,
+    Keyword_Nil
 };
 
 typedef struct Token
@@ -84,14 +88,13 @@ typedef struct Lexer
 } Lexer;
 
 Lexer
-LexFile(Worker_Context* context, File_ID file_id)
+LexFile(Worker_Context* context, File_ID file_id, String file_contents)
 {
-    Source_File* file = BucketArray_ElementAt(&context->workspace->source_files, file_id);
-    ASSERT(file->contents.data[file->contents.size - 1] == 0);
+    ASSERT(file_contents.data[file_contents.size - 1] == 0);
     
     Lexer lexer = {0};
     lexer.context         = context;
-    lexer.start           = file->contents.data;
+    lexer.start           = file_contents.data;
     lexer.current.file_id = file_id;
     
     return lexer;
@@ -261,7 +264,11 @@ GetToken(Lexer* lexer)
                         [Keyword_Return]   = "return",
                         [Keyword_Enum]     = "enum",
                         [Keyword_Struct]   = "struct",
-                        [Keyword_Proc]     = "proc"
+                        [Keyword_Proc]     = "proc",
+                        [Keyword_Import]   = "import",
+                        [Keyword_True]     = "true",
+                        [Keyword_False]    = "false",
+                        [Keyword_Nil]      = "nil"
                     };
                     
                     for (U32 i = 0; i < ARRAY_COUNT(keyword_strings); ++i)
@@ -395,9 +402,11 @@ GetToken(Lexer* lexer)
                     {
                         if (!float_value_oop)
                         {
-                            token.kind   = Token_Number;
+                            token.kind          = Token_Number;
                             token.number.is_f64 = true;
                             token.number.f64    = f64;
+                            
+                            token.number.min_fit_bits = 32;
                         }
                         
                         else
@@ -420,12 +429,24 @@ GetToken(Lexer* lexer)
                     {
                         if (num_digits == 8)
                         {
-                            NOT_IMPLEMENTED;
+                            F32 f32;
+                            Copy((U32*)&u64 + 1, &f32, sizeof(U32));
+                            
+                            token.kind          = Token_Number;
+                            token.number.is_f64 = true;
+                            token.number.f64    = (F64)f32;
+                            
+                            token.number.min_fit_bits = 32;
                         }
                         
                         else if (num_digits == 16)
                         {
-                            NOT_IMPLEMENTED;
+                            Copy((U32*)&u64 + 1, &token.number.f64, sizeof(U32));
+                            
+                            token.kind          = Token_Number;
+                            token.number.is_f64 = true;
+                            
+                            token.number.min_fit_bits = 64;
                         }
                         
                         else

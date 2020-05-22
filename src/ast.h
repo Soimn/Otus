@@ -1,20 +1,26 @@
-
-typedef struct Imported_Scope
-{
-    // Access_Chain access_chain
-    Scope_ID scope_id;
-} Imported_Scope;
-
 typedef struct Block
 {
     Text_Interval text;
-    Array(Imported_Scope) imported_scopes;
-    Array(Declaration) declarations;
-    Array(Statement) statements;
-    Bucket_Array(Expression) expressions;
     
-    bool export_by_default;
+    Array(Statement) statements;
+    Array(Expression) expressions;
+    
+    HIDDEN(bool) export_by_default;
 } Block;
+
+typedef struct Scope
+{
+    Block block;
+    
+    HIDDEN(Array(Symbol)) symbols;
+    HIDDEN(Scope_ID) scope_id;
+} Scope;
+
+typedef struct Scope_Chain
+{
+    struct Scope_Chain* next;
+    Scope* scope;
+} Scope_Chain;
 
 enum EXPRESSION_KIND
 {
@@ -59,12 +65,14 @@ enum EXPRESSION_KIND
     ExprKind_Struct,
     ExprKind_Enum,
     ExprKind_Proc,
+    ExprKind_Run,
     
     /// Primary
     ExprKind_Identifier,
     ExprKind_Number,
     ExprKind_String,
     ExprKind_Character,
+    ExprKind_Trilean,
     
     EXPRESSION_KIND_COUNT
 };
@@ -73,8 +81,6 @@ enum EXPRESSION_FLAG
 {
     ExprFlag_BoundsCheck      = 0x01,
     ExprFlag_TypeEvalContext  = 0x02,
-    ExprFlag_InlineCall       = 0x04,
-    ExprFlag_Run              = 0x08,
     ExprFlag_DistinctType     = 0x10,
 };
 
@@ -83,7 +89,7 @@ typedef struct Named_Expression
     Identifier name;
     bool is_const;
     bool is_baked;
-    bool is_used;
+    bool is_using;
     struct Expression* type;
     struct Expression* value;
 } Named_Expression;
@@ -110,20 +116,8 @@ typedef struct Call_Expression
 {
     struct Expression* pointer;
     Array(Named_Expression) args;
+    tri forced_inline;
 } Call_Expression;
-
-typedef struct Proc_Expression
-{
-    Array(Named_Expression) args;
-    Array(Named_Expression) return_values;
-    bool is_deprecated;
-    bool is_inlined;
-    bool no_discard;
-    bool is_foreign;
-    struct Expression* foreign_library;
-    struct Expression* deprecation_notice;
-    Block block;
-} Proc_Expression;
 
 typedef struct Struct_Expression
 {
@@ -140,6 +134,21 @@ typedef struct Enum_Expression
     Array(Named_Expression) members;
     bool is_strict;
 } Enum_Expression;
+
+typedef struct Proc_Expression
+{
+    Array(Named_Expression) args;
+    Array(Named_Expression) return_values;
+    struct Expression* foreign_library;
+    struct Expression* deprecation_notice;
+    bool is_deprecated;
+    bool is_inlined;
+    bool no_discard;
+    bool is_foreign;
+    bool has_body;
+    Scope scope;
+    HIDDEN(bool) is_polymorphic;
+} Proc_Expression;
 
 typedef struct Expression
 {
@@ -158,74 +167,15 @@ typedef struct Expression
         Struct_Expression struct_expr;
         Enum_Expression enum_expr;
         
+        struct Expression* run_expr;
+        
         Identifier identifier;
         String_Literal string;
         Character character;
         Number number;
+        tri trilean;
     };
 } Expression;
-
-
-
-
-
-
-
-
-
-enum DECLARATION_KIND
-{
-    DeclKind_Invalid,
-    
-    DeclKind_VariableDecl,
-    DeclKind_ConstantDecl,
-    DeclKind_UsingDecl,
-    
-    DECLARATION_KIND_COUNT
-};
-
-typedef struct Code_Note
-{
-    Identifier name;
-    Array(Expression*) args;
-} Code_Note;
-
-typedef struct Variable_Declaration
-{
-    Array(Expression*) names;
-    Array(Expression*) types;
-    Array(Expression*) values;
-    bool is_used;
-    bool is_uninitialized;
-} Variable_Declaration;
-
-typedef struct Constant_Declaration
-{
-    Array(Expression*) names;
-    Array(Expression*) types;
-    Array(Expression*) values;
-} Constant_Declaration;
-
-typedef struct Using_Declaration
-{
-    Array(Expression*) expressions;
-} Using_Declaration;
-
-typedef struct Declaration
-{
-    Enum32(DECLARATION_KIND) kind;
-    Code_Note note;
-    Text_Interval text;
-    
-    union
-    {
-        Variable_Declaration var_decl;
-        Constant_Declaration const_decl;
-        Using_Declaration using_decl;
-    };
-} Declaration;
-
-
 
 
 
@@ -238,7 +188,12 @@ enum STATEMENT_KIND
 {
     StatementKind_Invalid,
     
-    StatementKind_Block,
+    StatementKind_ImportDecl,
+    StatementKind_VarDecl,
+    StatementKind_ConstDecl,
+    StatementKind_UsingDecl,
+    
+    StatementKind_Scope,
     StatementKind_If,
     StatementKind_While,
     StatementKind_Break,
@@ -251,29 +206,64 @@ enum STATEMENT_KIND
     STATEMENT_KIND_COUNT
 };
 
+typedef struct Code_Note
+{
+    String name;
+    Text_Interval text;
+} Code_Note;
+
+typedef struct Import_Declaration
+{
+    File_ID file_id;
+    Identifier alias;
+} Import_Declaration;
+
+typedef struct Variable_Declaration
+{
+    Array(Code_Note) code_note;
+    Array(Identifier) names;
+    Array(Expression*) types;
+    Array(Expression*) values;
+    bool is_using;
+    bool is_uninitialized;
+    
+    bool is_exported;
+} Variable_Declaration;
+
+typedef struct Constant_Declaration
+{
+    Array(Code_Note) code_note;
+    Array(Identifier) names;
+    Array(Expression*) types;
+    Array(Expression*) values;
+    
+    bool is_exported;
+} Constant_Declaration;
+
+typedef struct Using_Declaration
+{
+    Array(Expression*) expressions;
+} Using_Declaration;
+
 typedef struct If_Statement
 {
     Expression* condition;
-    Block true_block;
-    Block false_block;
+    Scope true_scope;
+    Scope false_scope;
+    
     bool is_const;
 } If_Statement;
 
 typedef struct While_Statement
 {
     Expression* condition;
-    Block block;
+    Scope scope;
 } While_Statement;
 
 typedef struct Return_Statement
 {
     Array(Named_Expression) values;
 } Return_Statement;
-
-typedef struct Defer_Statement
-{
-    Block block;
-} Defer_Statement;
 
 typedef struct Assignment_Statement
 {
@@ -289,11 +279,16 @@ typedef struct Statement
     
     union
     {
-        Block block_stmnt;
+        Scope scope;
+        
+        Import_Declaration import_decl;
+        Variable_Declaration var_decl;
+        Constant_Declaration const_decl;
+        Using_Declaration using_decl;
+        
         If_Statement if_stmnt;
         While_Statement while_stmnt;
         Return_Statement return_stmnt;
-        Defer_Statement defer_stmnt;
         Assignment_Statement assignment_stmnt;
         Expression* expression_stmnt;
     }; 

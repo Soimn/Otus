@@ -69,9 +69,6 @@ typedef struct Memory_Block_Free_Entry
     U32 size;
 } Memory_Block_Free_Entry;
 
-#define MEMORY_ARENA_MIN_ALLOCATION_SIZE sizeof(Memory_Block_Free_Entry) + (ALIGNOF(Memory_Block_Free_Entry) - 1)
-STATIC_ASSERT(MEMORY_ARENA_MIN_ALLOCATION_SIZE >= BYTES(16));
-
 typedef struct Memory_Block
 {
     struct Memory_Block* next;
@@ -92,9 +89,7 @@ typedef struct Memory_Allocator
 {
     Memory_Block* first_block;
     Memory_Block* current_block;
-    U32 block_count;
     U32 page_size;
-    U32 block_size; // NOTE(soimn): page_size - sizeof(Memory_Block)
     Mutex mutex;
 } Memory_Allocator;
 
@@ -103,27 +98,22 @@ typedef struct Memory_Allocator
 Memory_Block*
 MemoryAllocator_AllocateBlock(Memory_Allocator* allocator)
 {
-    TryLockMutex(allocator->mutex);
+    if (allocator->page_size == 0) allocator->page_size = GetPageSize();
     
-    if (allocator->page_size == 0)
-    {
-        allocator->block_size = allocator->page_size - sizeof(Memory_Block);
-    }
+    LockMutex(allocator->mutex);
     
-    // TODO(soimn): replace this with a page fetch
-    void* memory = Malloc(allocator->page_size + ALIGNOF(Memory_Block));
+    void* page = AllocatePage();
     
-    Memory_Block* new_block = Align(memory, ALIGNOF(Memory_Block));
+    Memory_Block* new_block = Align(page, ALIGNOF(Memory_Block));
     new_block->next   = 0;
-    new_block->memory = memory;
-    new_block->offset = AlignOffset(memory, ALIGNOF(Memory_Block)) + sizeof(Memory_Block);
-    new_block->space  = allocator->block_size;
+    new_block->memory = page;
+    new_block->offset = AlignOffset(page, ALIGNOF(Memory_Block)) + sizeof(Memory_Block);
+    new_block->space  = allocator->page_size - sizeof(Memory_Block);
     
     if (allocator->current_block) allocator->current_block->next = new_block;
     else                          allocator->first_block         = new_block;
     
     allocator->current_block = new_block;
-    allocator->block_count  += 1;
     
     UnlockMutex(allocator->mutex);
     
@@ -133,7 +123,7 @@ MemoryAllocator_AllocateBlock(Memory_Allocator* allocator)
 void
 MemoryAllocator_FreeBlock(Memory_Allocator* allocator, Memory_Block* block)
 {
-    TryLockMutex(allocator->mutex);
+    LockMutex(allocator->mutex);
     
     Memory_Block* prev_scan = 0;
     Memory_Block* scan      = allocator->first_block;
@@ -152,7 +142,7 @@ MemoryAllocator_FreeBlock(Memory_Allocator* allocator, Memory_Block* block)
     if (prev_scan) prev_scan->next = scan->next;
     else allocator->first_block    = scan->next;
     
-    Free(block->memory);
+    FreePage(block->memory);
     
     UnlockMutex(allocator->mutex);
 }
@@ -162,8 +152,27 @@ MemoryAllocator_FreeBlock(Memory_Allocator* allocator, Memory_Block* block)
 void
 MemoryArena_FreeSize(Memory_Arena* arena, void* ptr, U32 size)
 {
-    if (size >= MEMORY_ARENA_MIN_ALLOCATION_SIZE)
+    if (size >= sizeof(Memory_Block_Free_Entry) + (ALIGNOF(Memory_Block_Free_Entry) - 1))
     {
+#ifdef GREMLIN_DEBUG
+        Memory_Block* scan = arena->first_block;
+        while (scan)
+        {
+            if ((U8*)ptr > (U8*)scan->memory + sizeof(Memory_Block) &&
+                (U8*)ptr < (U8*)scan->memory + scan->offset)
+            {
+                break;
+            }
+            
+            else scan = scan->next;
+        }
+        
+        // NOTE(soimn): Sanity check to ensure that the memory of 'ptr' is actually owned by this arena and that 
+        //              is does not overlap with memory reserved for Memory_Block information
+        ASSERT(scan != 0);
+#endif
+        
+        
         Memory_Block_Free_Entry* free_entry = Align(ptr, ALIGNOF(Memory_Block_Free_Entry));
         free_entry->offset = AlignOffset(ptr, ALIGNOF(Memory_Block_Free_Entry));
         free_entry->size   = size - free_entry->offset;
@@ -173,19 +182,20 @@ MemoryArena_FreeSize(Memory_Arena* arena, void* ptr, U32 size)
 void*
 MemoryArena_AllocSize(Memory_Arena* arena, UMM umm_size, U8 alignment)
 {
-    ASSERT(umm_size + alignment <= arena->allocator->block_size);
+    ASSERT(umm_size != 0 && umm_size + (alignment - 1) <= arena->allocator->page_size);
     ASSERT(IsPowerOf2(alignment) && alignment <= ALIGNOF(U64));
     
     void* result = 0;
     
-    U32 size = (U32)MAX(umm_size, MEMORY_ARENA_MIN_ALLOCATION_SIZE - (alignment - 1));
+    U32 size = (U32)umm_size;
     
     Memory_Block_Free_Entry* prev_scan = 0;
     Memory_Block_Free_Entry* scan      = arena->free_list;
     
     while (scan)
     {
-        if (scan->offset + scan->size >= size + alignment)
+        // TODO(soimn): Should a 'best fit' method be used instead of this 'first fit' one?
+        if (scan->offset + scan->size >= size + (alignment - 1))
         {
             if (prev_scan != 0) prev_scan->next = scan->next;
             else             arena->free_list   = scan->next;
@@ -194,7 +204,7 @@ MemoryArena_AllocSize(Memory_Arena* arena, UMM umm_size, U8 alignment)
             result = Align(base_ptr, alignment);
             
             MemoryArena_FreeSize(arena, (U8*)result + size,
-                                 (scan->offset + scan->size) - AlignOffset(base_ptr, alignment));
+                                 (scan->offset + scan->size) - (AlignOffset(base_ptr, alignment) + size));
             break;
         }
         
@@ -202,12 +212,28 @@ MemoryArena_AllocSize(Memory_Arena* arena, UMM umm_size, U8 alignment)
         scan      = scan->next;
     }
     
-    // NOTE(soimn): If no free entries of an appropriate size were found, allocate a new one
+    // NOTE(soimn): If no free entry of an appropriate size was found, allocate a new chunk from the block
     if (!result)
     {
         if (!arena->current_block || arena->current_block->space < size + alignment)
         {
+            if (arena->current_block)
+            {
+                Memory_Block* curr_block = arena->current_block;
+                
+                U8* offset_ptr = (U8*)curr_block->memory + curr_block->offset;
+                U32 space      = curr_block->space;
+                
+                curr_block->offset += curr_block->space;
+                curr_block->space   = 0;
+                
+                MemoryArena_FreeSize(arena, offset_ptr, space);
+            }
+            
             Memory_Block* new_block = MemoryAllocator_AllocateBlock(arena->allocator);
+            
+            // TODO(soimn): Implement proper handling of failed memory allocations
+            ASSERT(new_block != 0);
             
             if (arena->current_block) arena->current_block->next = new_block;
             else                      arena->first_block         = new_block;

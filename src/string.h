@@ -41,6 +41,21 @@ StringCompare(String s0, String s1)
 }
 
 inline bool
+DoesStringStartWith(String string, String comparand)
+{
+    while (string.size && comparand.size && *string.data == *comparand.data)
+    {
+        ++string.data;
+        --string.size;
+        
+        ++comparand.data;
+        --comparand.size;
+    }
+    
+    return (comparand.size == 0);
+}
+
+inline bool
 StringCStringCompare(String string, const char* cstring)
 {
     while (string.size != 0 && *cstring != 0)
@@ -107,6 +122,30 @@ StringFind(String string, char c, Enum32(FORWARDS_OR_BACKWARDS) direction)
     }
     
     return resulting_index;
+}
+
+inline String
+SubString(String s, UMM offset, IMM length)
+{
+    String result = s;
+    result.data  += offset;
+    result.size   = length;
+    
+    return result;
+}
+
+inline String
+AdvanceString(String s, UMM amount)
+{
+    String result = {0};
+    
+    if (amount < s.size)
+    {
+        result.data = s.data + amount;
+        result.size = s.size - amount;
+    }
+    
+    return result;
 }
 
 bool
@@ -258,6 +297,7 @@ FormatString(Buffer memory, String format_string, Arg_List arg_list)
                     if (c == 'u') value        = ARG_LIST_GET_ARG(arg_list, U32);
                     else if (c == 'U') value   = ARG_LIST_GET_ARG(arg_list, U64);
                     else if (c == 'i') i_value = ARG_LIST_GET_ARG(arg_list, I32);
+                    else i_value               = ARG_LIST_GET_ARG(arg_list, I64);
                     
                     if (i_value < 0)
                     {

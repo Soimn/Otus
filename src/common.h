@@ -1,3 +1,16 @@
+/// Compilation switches
+//////////////////////////////////////////
+
+// #define GREMLIN_DEBUG          // Enables slow sanity checks
+// #define GREMLIN_DISABLE_ASSERT // Disables all assertions
+
+/// Settings
+//////////////////////////////////////////
+
+#ifndef GREMLIN_MUTEX_TIMEOUT_MS
+#define GREMLIN_MUTEX_TIMEOUT_MS 16
+#endif
+
 /// Foregin headers
 //////////////////////////////////////////
 
@@ -125,8 +138,17 @@ typedef B8 bool;
 #define NULL_IDENTIFIER 0
 #define BLANK_IDENTIFIER 1
 
+#define GREMLIN_FILE_EXT "gr"
+
+#define HIDDEN(E) E
+
 /// Common types
 //////////////////////////////////////////
+
+typedef U8 tri;
+#define TRI_NIL   0
+#define TRI_FALSE 1
+#define TRI_TRUE  2
 
 typedef struct Buffer
 {
@@ -140,6 +162,9 @@ typedef UMM Identifier;
 typedef UMM String_Literal;
 typedef U32 Character;
 
+typedef U32 File_ID;
+typedef U64 Scope_ID;
+
 typedef struct Number
 {
     union
@@ -151,10 +176,6 @@ typedef struct Number
     U8 min_fit_bits;
     bool is_f64;
 } Number;
-
-typedef U32 File_ID;
-typedef U32 Scope_ID;
-typedef U64 Scope_Index;
 
 typedef struct Text_Pos
 {
@@ -194,34 +215,26 @@ enum FORWARDS_OR_BACKWARDS
 #define ARG_LIST_START va_start
 #define ARG_LIST_GET_ARG va_arg
 
+#ifdef GREMLIN_PLATFORM_WINDOWS
+#define ATOMIC_INC32(dest_ptr) InterlockedIncrement((volatile LONG*)(dest_ptr))
+#define ATOMIC_INC64(dest_ptr) InterlockedIncrement64((volatile LONG64*)(dest_ptr))
+#define ATOMIC_CMPXCHG32(dest_ptr, val, cmp) InterlockedCompareExchange((dest_ptr), (val), (cmp))
+#else
+#error "Missing directives for this platform"
+#endif
+
 typedef struct Mutex
 {
-    U32 _;
+    U64 platform_handle;
 } Mutex;
 
-void
-TryLockMutex(Mutex mutex)
-{
-    NOT_IMPLEMENTED;
-}
+void InitMutex(Mutex* mutex);
+void LockMutex(Mutex mutex);
+void UnlockMutex(Mutex mutex);
 
-void
-UnlockMutex(Mutex mutex)
-{
-    NOT_IMPLEMENTED;
-}
-
-void*
-Malloc(UMM size)
-{
-    return malloc(size);
-}
-
-void
-Free(void* ptr)
-{
-    free(ptr);
-}
+U32 GetPageSize(void);
+void* AllocatePage(void);
+void FreePage(void* page_ptr);
 
 void
 PrintCString(const char* cstring)
@@ -243,6 +256,19 @@ PrintChar(char c)
 {
     putchar(c);
 }
+
+typedef struct File_Handle
+{
+    U64 platform_handle;
+    U32 file_size;
+} File_Handle;
+
+struct Memory_Arena;
+
+bool OpenFileForReading(String path, File_Handle* handle);
+bool DoesDirectoryExist(String path);
+bool LoadFileContents(File_Handle* handle, String* contents); // TODO(soimn): Fill string with 0 after content
+void CloseFileHandle(File_Handle* handle);
 
 /// Common utility functions
 //////////////////////////////////////////
