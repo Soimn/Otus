@@ -36,24 +36,30 @@ PushExpression(Parser_State state, Enum32(EXPRESSION_KIND) kind)
     
     switch (kind)
     {
-        case ExprKind_TypeLiteral:
         case ExprKind_Call:
-        expression->call_expr.args          = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->call_expr.args             = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        break;
+        
+        case ExprKind_TypeLiteral:
+        expression->type_lit_expr.args         = ARRAY_INIT(arena, Named_Expression, default_capacity);
         break;
         
         case ExprKind_Proc:
-        expression->proc_expr.args          = ARRAY_INIT(arena, Named_Expression, default_capacity);
-        expression->proc_expr.return_values = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->proc_expr.args             = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->proc_expr.return_values    = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        break;
+        
+        case ExprKind_ProcGroup:
+        expression->proc_group_expr.procedures = ARRAY_INIT(arena, Expression,       default_capacity);
         break;
         
         case ExprKind_Struct:
-        expression->struct_expr.args        = ARRAY_INIT(arena, Named_Expression, default_capacity);
-        expression->struct_expr.members     = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->struct_expr.args           = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->struct_expr.members        = ARRAY_INIT(arena, Named_Expression, default_capacity);
         break;
         
         case ExprKind_Enum:
-        expression->enum_expr.args          = ARRAY_INIT(arena, Named_Expression, default_capacity);
-        expression->enum_expr.members       = ARRAY_INIT(arena, Named_Expression, default_capacity);
+        expression->enum_expr.members          = ARRAY_INIT(arena, Named_Expression, default_capacity);
         break;
     }
     
@@ -69,6 +75,19 @@ PushIdentifier(Parser_State state, String string)
     
     LockMutex(workspace->string_mutex);
     
+    if (BucketArray_ElementCount(&workspace->identifier_storage) == 0)
+    {
+        String* null_entry = BucketArray_Append(&workspace->identifier_storage);
+        null_entry->data   = 0;
+        null_entry->size   = 0;
+        
+        String* blank_entry = BucketArray_Append(&workspace->identifier_storage);
+        blank_entry->data   = MemoryArena_AllocSize(&workspace->string_arena, 1, ALIGNOF(U8));
+        blank_entry->size   = 1;
+        
+        *blank_entry->data = '_';
+    }
+    
     for (Bucket_Array_Iterator it = BucketArray_Iterate(&workspace->identifier_storage);
          it.current != 0;
          BucketArrayIterator_Advance(&it))
@@ -80,7 +99,7 @@ PushIdentifier(Parser_State state, String string)
         }
     }
     
-    if (identifier == NULL_IDENTIFIER)
+    if (identifier == NULL_IDENTIFIER && string.size != 0)
     {
         identifier = BucketArray_ElementCount(&workspace->identifier_storage);
         
@@ -744,20 +763,23 @@ bool ParseBlock(Parser_State state, Block* block, bool allow_single_statement, b
 
 enum COMPILER_DIRECTIVE_KIND
 {
-    Directive_BoundsCheck = 0x0001,
-    Directive_Run         = 0x0002,
-    Directive_Type        = 0x0004,
-    Directive_Distinct    = 0x0008,
-    Directive_Strict      = 0x0010,
-    Directive_Packed      = 0x0020,
-    Directive_Align       = 0x0040,
-    Directive_Inline      = 0x0080,
-    Directive_Foreign     = 0x0100,
-    Directive_NoDiscard   = 0x0200,
-    Directive_Deprecated  = 0x0400,
-    Directive_Char        = 0x0800,
-    Directive_If          = 0x1000,
-    Directive_ScopeExport = 0x2000,
+    Directive_BoundsCheck = 0x00001,
+    Directive_Run         = 0x00002,
+    Directive_Type        = 0x00004,
+    Directive_Distinct    = 0x00008,
+    Directive_Strict      = 0x00010,
+    Directive_Packed      = 0x00020,
+    Directive_Union       = 0x00040,
+    Directive_Size        = 0x00080,
+    Directive_BitField    = 0x00100,
+    Directive_Align       = 0x00200,
+    Directive_Inline      = 0x00400,
+    Directive_Foreign     = 0x00800,
+    Directive_NoDiscard   = 0x01000,
+    Directive_Deprecated  = 0x02000,
+    Directive_Char        = 0x04000,
+    Directive_If          = 0x08000,
+    Directive_ScopeExport = 0x10000,
     
     COMPILER_DIRECTIVE_KIND_COUNT
 };
@@ -772,6 +794,7 @@ typedef struct Compiler_Directive_Info
         bool is_set;
         
         Expression* align_expression;
+        Expression* size_expression;
         Expression* foreign_library;
         Expression* deprecation_notice;
         
@@ -869,6 +892,13 @@ ParseCompilerDirective(Parser_State state, Compiler_Directive_Info* info, bool c
             SkipPastToken(state.lexer, peek);
         }
         
+        else if (StringConstStringCompare(peek.string, CONST_STRING("union")))
+        {
+            info->kind   = Directive_Union;
+            
+            SkipPastToken(state.lexer, peek);
+        }
+        
         else if (StringConstStringCompare(peek.string, CONST_STRING("align")))
         {
             info->kind = Directive_Align;
@@ -879,6 +909,25 @@ ParseCompilerDirective(Parser_State state, Compiler_Directive_Info* info, bool c
             {
                 encountered_errors = true;
             }
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("size")))
+        {
+            info->kind = Directive_Size;
+            
+            SkipPastToken(state.lexer, peek);
+            
+            if (!ParseExpression(state, &info->size_expression, false))
+            {
+                encountered_errors = true;
+            }
+        }
+        
+        else if (StringConstStringCompare(peek.string, CONST_STRING("bit_field")))
+        {
+            info->kind = Directive_BitField;
+            
+            SkipPastToken(state.lexer, peek);
         }
         
         else if (StringConstStringCompare(peek.string, CONST_STRING("inline")))
@@ -1087,7 +1136,9 @@ ParseNamedExpressionList(Parser_State state, Array(Named_Expression)* result)
     {
         Named_Expression* expr = Array_Append(result);
         
-        Token token = GetToken(state.lexer);
+        
+        Token token        = GetToken(state.lexer);
+        Text_Pos start_pos = token.text.position;
         
         if (token.kind == Token_Keyword && token.keyword == Keyword_Using)
         {
@@ -1112,7 +1163,9 @@ ParseNamedExpressionList(Parser_State state, Array(Named_Expression)* result)
             }
         }
         
-        if (token.kind == Token_Identifier)
+        Token peek = PeekNextToken(state.lexer, token);
+        
+        if (token.kind == Token_Identifier && (peek.kind == Token_Colon || peek.kind == Token_Equals))
         {
             expr->name = PushIdentifier(state, token.string);
             
@@ -1123,37 +1176,60 @@ ParseNamedExpressionList(Parser_State state, Array(Named_Expression)* result)
         else expr->name = NULL_IDENTIFIER;
         
         
+        bool inferred_type = false;
         if (token.kind == Token_Colon)
         {
             SkipPastToken(state.lexer, token);
+            token = GetToken(state.lexer);
             
-            if (!ParseLogicalOrExpression(state, &expr->type))
+            if (token.kind != Token_Equals)
             {
-                encountered_errors = true;
+                if (!ParseLogicalOrExpression(state, &expr->type))
+                {
+                    encountered_errors = true;
+                }
+                
+                token = GetToken(state.lexer);
             }
             
-            token = GetToken(state.lexer);
+            else inferred_type = true;
         }
         
         if (!encountered_errors && (token.kind == Token_Equals || expr->name == NULL_IDENTIFIER))
         {
             if (token.kind == Token_Equals) SkipPastToken(state.lexer, token);
             
-            if (!ParseLogicalOrExpression(state, &expr->value))
+            if (ParseLogicalOrExpression(state, &expr->value))
             {
-                encountered_errors = true;
+                if (inferred_type) expr->type = expr->value;
+                
+                token = GetToken(state.lexer);
             }
             
-            token = GetToken(state.lexer);
+            else encountered_errors = true;
         }
         
-        if (token.kind == Token_Comma)
+        if (!encountered_errors)
         {
-            SkipPastToken(state.lexer, token);
-            continue;
+            if (token.kind == Token_Comma)
+            {
+                SkipPastToken(state.lexer, token);
+                token = GetToken(state.lexer);
+                
+                expr->text = TextIntervalFromEndpoints(start_pos,
+                                                       token.text.position);
+                
+                continue;
+            }
+            
+            else
+            {
+                expr->text = TextIntervalFromEndpoints(start_pos, 
+                                                       token.text.position);
+                
+                break;
+            }
         }
-        
-        else break;
         
     } while (!encountered_errors);
     
@@ -1305,48 +1381,6 @@ ParsePostfixExpression(Parser_State state, Expression** result)
             }
         }
         
-        else if (token.kind == Token_OpenBrace)
-        {
-            Expression* type = *result;
-            
-            *result = PushExpression(state, ExprKind_TypeLiteral);
-            (*result)->call_expr.pointer = type;
-            
-            Text_Pos start_of_arg_list = token.text.position;
-            
-            SkipPastToken(state.lexer, token);
-            token = GetToken(state.lexer);
-            
-            if (token.kind != Token_CloseBrace)
-            {
-                if (!ParseNamedExpressionList(state, &(*result)->call_expr.args))
-                {
-                    encountered_errors = true;
-                }
-            }
-            
-            if (!encountered_errors)
-            {
-                token = GetToken(state.lexer);
-                if (token.kind == Token_CloseBracket)
-                {
-                    SkipPastToken(state.lexer, token);
-                    
-                    (*result)->text = TextIntervalMerge(type->text, token.text);
-                }
-                
-                else
-                {
-                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_arg_list,
-                                                                              token.text.position);
-                    
-                    ParserReport(state, ReportSeverity_Error, report_interval, 
-                                 "Missing matching closing brace after argument list");
-                    encountered_errors = true;
-                }
-            }
-        }
-        
         else if (token.kind == Token_Hat)
         {
             Expression* operand = *result;
@@ -1460,7 +1494,9 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                     Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
                                                                               token.text.position);
                     
-                    ParserReport(state, ReportSeverity_Error, report_interval, "Invalid use of compiler directive. The '%S' directive cannot be used in an expression context", name_token.string);
+                    ParserReport(state, ReportSeverity_Error, report_interval,
+                                 "Invalid use of compiler directive. The '%S' directive cannot be used in an expression context",
+                                 name_token.string);
                     
                     encountered_errors = true;
                 }
@@ -1494,147 +1530,106 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                 SkipPastToken(state.lexer, token);
                 token = GetToken(state.lexer);
                 
-                *result = PushExpression(state, ExprKind_Proc);
-                
-                if (token.kind == Token_OpenParen)
+                if (token.kind == Token_OpenBrace)
                 {
-                    Text_Pos start_of_arguments = token.text.position;
+                    *result = PushExpression(state, ExprKind_ProcGroup);
                     
                     SkipPastToken(state.lexer, token);
-                    token = GetToken(state.lexer);
                     
-                    if (token.kind != Token_CloseParen)
-                    {
-                        if (!ParseNamedExpressionList(state, &(*result)->proc_expr.args))
-                        {
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    if (!encountered_errors)
+                    if (ParseExpressionList(state, &(*result)->proc_group_expr.procedures))
                     {
                         token = GetToken(state.lexer);
-                        if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
+                        
+                        if (token.kind == Token_CloseBrace)
+                        {
+                            SkipPastToken(state.lexer, token);
+                            token = GetToken(state.lexer);
+                            
+                            (*result)->text = TextIntervalFromEndpoints(start_of_procedure_header,
+                                                                        token.text.position);
+                        }
+                        
                         else
                         {
-                            Text_Interval report_interval = TextIntervalFromEndpoints(start_of_arguments, 
+                            Text_Interval report_interval = TextIntervalFromEndpoints(start_of_procedure_header,
                                                                                       token.text.position);
-                            
                             ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "Missing matching closing parenthesis after procedure argument list");
+                                         "Missing closing brace after expression list in proc group");
                             
                             encountered_errors = true;
-                        }
-                    }
-                }
-                
-                token = GetToken(state.lexer);
-                Token peek = PeekNextToken(state.lexer, token);
-                
-                if (!encountered_errors && token.kind == Token_Minus && peek.kind == Token_Greater)
-                {
-                    SkipPastToken(state.lexer, peek);
-                    token = GetToken(state.lexer);
-                    
-                    Text_Pos start_of_return_values = token.text.position;
-                    
-                    bool is_contained = false;
-                    if (token.kind == Token_OpenParen)
-                    {
-                        is_contained = true;
-                        SkipPastToken(state.lexer, token);
-                    }
-                    
-                    if (ParseNamedExpressionList(state, &(*result)->proc_expr.return_values))
-                    {
-                        token = GetToken(state.lexer);
-                        
-                        if (is_contained)
-                        {
-                            if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
-                            else
-                            {
-                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_return_values, 
-                                                                                          token.text.position);
-                                
-                                ParserReport(state, ReportSeverity_Error, report_interval,
-                                             "Missing matching closing parenthesis after procedure return value list");
-                                
-                                encountered_errors = true;
-                            }
-                        }
-                        
-                        else
-                        {
-                            if ((*result)->proc_expr.return_values.size != 1)
-                            {
-                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_return_values, 
-                                                                                          token.text.position);
-                                
-                                ParserReport(state, ReportSeverity_Error, report_interval,
-                                             "Multiple procedure return values have to be enclosed in parentheses");
-                                
-                                encountered_errors = true;
-                            }
                         }
                     }
                     
                     else encountered_errors = true;
                 }
                 
-                Flag32(COMPILER_DIRECTIVE_KIND) encountered_proc_directives = 0;
-                
-                while (!encountered_errors)
+                else
                 {
-                    token = GetToken(state.lexer);
+                    *result = PushExpression(state, ExprKind_Proc);
                     
-                    if (token.kind == Token_Hash)
+                    if (token.kind == Token_OpenParen)
                     {
-                        Compiler_Directive_Info info = {0};
+                        Text_Pos start_of_arguments = token.text.position;
                         
-                        Text_Pos start_of_directive = token.text.position;
-                        Token name_token = PeekNextToken(state.lexer, token);
+                        SkipPastToken(state.lexer, token);
+                        token = GetToken(state.lexer);
                         
-                        if (ParseCompilerDirective(state, &info, true))
+                        if (token.kind != Token_CloseParen)
                         {
-                            if ((info.kind & encountered_proc_directives) == 0)
+                            if (!ParseNamedExpressionList(state, &(*result)->proc_expr.args))
                             {
-                                encountered_proc_directives |= info.kind;
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        if (!encountered_errors)
+                        {
+                            token = GetToken(state.lexer);
+                            if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
+                            else
+                            {
+                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_arguments, 
+                                                                                          token.text.position);
                                 
-                                if (info.kind == Directive_BoundsCheck) PARSER_SET_FLAG(ExprFlag_BoundsCheck,
-                                                                                        info.is_set);
+                                ParserReport(state, ReportSeverity_Error, report_interval,
+                                             "Missing matching closing parenthesis after procedure argument list");
                                 
-                                else if (info.kind == Directive_Deprecated)
-                                {
-                                    (*result)->proc_expr.is_deprecated      = true;
-                                    (*result)->proc_expr.deprecation_notice = info.deprecation_notice;
-                                }
-                                
-                                else if (info.kind == Directive_NoDiscard)
-                                {
-                                    (*result)->proc_expr.no_discard = true;
-                                }
-                                
-                                else if (info.kind == Directive_Foreign)
-                                {
-                                    (*result)->proc_expr.is_foreign       = true;
-                                    (*result)->proc_expr.foreign_library = info.foreign_library;
-                                }
-                                
-                                else if (info.kind == Directive_Inline)
-                                {
-                                    (*result)->proc_expr.is_inlined = info.is_set;
-                                }
-                                
+                                encountered_errors = true;
+                            }
+                        }
+                    }
+                    
+                    token = GetToken(state.lexer);
+                    Token peek = PeekNextToken(state.lexer, token);
+                    
+                    if (!encountered_errors && token.kind == Token_Minus && peek.kind == Token_Greater)
+                    {
+                        SkipPastToken(state.lexer, peek);
+                        token = GetToken(state.lexer);
+                        
+                        Text_Pos start_of_return_values = token.text.position;
+                        
+                        bool is_contained = false;
+                        if (token.kind == Token_OpenParen)
+                        {
+                            is_contained = true;
+                            SkipPastToken(state.lexer, token);
+                        }
+                        
+                        if (ParseNamedExpressionList(state, &(*result)->proc_expr.return_values))
+                        {
+                            token = GetToken(state.lexer);
+                            
+                            if (is_contained)
+                            {
+                                if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
                                 else
                                 {
-                                    token = GetToken(state.lexer);
-                                    
-                                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive, 
+                                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_return_values, 
                                                                                               token.text.position);
                                     
                                     ParserReport(state, ReportSeverity_Error, report_interval,
-                                                 "Invalid use of compiler directive. The '%S' directive cannot be used to tag a procedure", name_token.string);
+                                                 "Missing matching closing parenthesis after procedure return value list");
                                     
                                     encountered_errors = true;
                                 }
@@ -1642,37 +1637,112 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                             
                             else
                             {
-                                token = GetToken(state.lexer);
-                                
-                                Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
-                                                                                          token.text.position);
-                                
-                                ParserReport(state, ReportSeverity_Error, report_interval,
-                                             "Duplicate use of the '%S' directive", name_token.string);
-                                
-                                encountered_errors = true;
+                                if ((*result)->proc_expr.return_values.size != 1)
+                                {
+                                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_return_values, 
+                                                                                              token.text.position);
+                                    
+                                    ParserReport(state, ReportSeverity_Error, report_interval,
+                                                 "Multiple procedure return values have to be enclosed in parentheses");
+                                    
+                                    encountered_errors = true;
+                                }
                             }
                         }
                         
                         else encountered_errors = true;
                     }
-                }
-                
-                token = GetToken(state.lexer);
-                (*result)->text = TextIntervalFromEndpoints(start_of_procedure_header, token.text.position);
-                
-                if (!encountered_errors)
-                {
-                    token = GetToken(state.lexer);
                     
-                    if (token.kind == Token_OpenBrace)
+                    Flag32(COMPILER_DIRECTIVE_KIND) encountered_proc_directives = 0;
+                    
+                    while (!encountered_errors)
                     {
-                        (*result)->proc_expr.has_body = true;
-                        ParserInitScope(state, &(*result)->proc_expr.scope);
+                        token = GetToken(state.lexer);
                         
-                        if (!ParseBlock(state, &(*result)->proc_expr.scope.block, false, false))
+                        if (token.kind == Token_Hash)
                         {
-                            encountered_errors = true;
+                            Compiler_Directive_Info info = {0};
+                            
+                            Text_Pos start_of_directive = token.text.position;
+                            Token name_token = PeekNextToken(state.lexer, token);
+                            
+                            if (ParseCompilerDirective(state, &info, true))
+                            {
+                                if ((info.kind & encountered_proc_directives) == 0)
+                                {
+                                    encountered_proc_directives |= info.kind;
+                                    
+                                    if (info.kind == Directive_BoundsCheck) PARSER_SET_FLAG(ExprFlag_BoundsCheck,
+                                                                                            info.is_set);
+                                    
+                                    else if (info.kind == Directive_Deprecated)
+                                    {
+                                        (*result)->proc_expr.deprecation_notice = info.deprecation_notice;
+                                    }
+                                    
+                                    else if (info.kind == Directive_NoDiscard)
+                                    {
+                                        (*result)->proc_expr.no_discard = true;
+                                    }
+                                    
+                                    else if (info.kind == Directive_Foreign)
+                                    {
+                                        (*result)->proc_expr.foreign_library = info.foreign_library;
+                                    }
+                                    
+                                    else if (info.kind == Directive_Inline)
+                                    {
+                                        (*result)->proc_expr.is_inlined = (info.is_set ? TRI_TRUE : TRI_FALSE);
+                                    }
+                                    
+                                    else
+                                    {
+                                        token = GetToken(state.lexer);
+                                        
+                                        Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive, 
+                                                                                                  token.text.position);
+                                        
+                                        ParserReport(state, ReportSeverity_Error, report_interval,
+                                                     "Invalid use of compiler directive. The '%S' directive cannot be used to tag a procedure", name_token.string);
+                                        
+                                        encountered_errors = true;
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    token = GetToken(state.lexer);
+                                    
+                                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_directive,
+                                                                                              token.text.position);
+                                    
+                                    ParserReport(state, ReportSeverity_Error, report_interval,
+                                                 "Duplicate use of the '%S' directive", name_token.string);
+                                    
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else encountered_errors = true;
+                        }
+                    }
+                    
+                    token = GetToken(state.lexer);
+                    (*result)->text = TextIntervalFromEndpoints(start_of_procedure_header, token.text.position);
+                    
+                    if (!encountered_errors)
+                    {
+                        token = GetToken(state.lexer);
+                        
+                        if (token.kind == Token_OpenBrace)
+                        {
+                            (*result)->proc_expr.has_body = true;
+                            ParserInitScope(state, &(*result)->proc_expr.scope);
+                            
+                            if (!ParseBlock(state, &(*result)->proc_expr.scope.block, false, false))
+                            {
+                                encountered_errors = true;
+                            }
                         }
                     }
                 }
@@ -1743,12 +1813,17 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                                 
                                 else if (info.kind == Directive_Packed)
                                 {
-                                    (*result)->struct_expr.is_packed = info.is_set;
+                                    (*result)->struct_expr.is_packed = (info.is_set ? TRI_TRUE : TRI_FALSE);
                                 }
                                 
                                 else if (info.kind == Directive_Strict)
                                 {
-                                    (*result)->struct_expr.is_strict = info.is_set;
+                                    (*result)->struct_expr.is_strict = (info.is_set ? TRI_TRUE : TRI_FALSE);
+                                }
+                                
+                                else if (info.kind == Directive_Union)
+                                {
+                                    (*result)->struct_expr.is_union = true;
                                 }
                                 
                                 else
@@ -1844,38 +1919,7 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                 SkipPastToken(state.lexer, token);
                 token = GetToken(state.lexer);
                 
-                if (token.kind == Token_OpenParen)
-                {
-                    Text_Pos start_of_arguments = token.text.position;
-                    
-                    SkipPastToken(state.lexer, token);
-                    token = GetToken(state.lexer);
-                    
-                    if (token.kind != Token_CloseParen)
-                    {
-                        if (!ParseNamedExpressionList(state, &(*result)->enum_expr.args))
-                        {
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    if (!encountered_errors)
-                    {
-                        token = GetToken(state.lexer);
-                        
-                        if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
-                        else
-                        {
-                            Text_Interval report_interval = TextIntervalFromEndpoints(start_of_arguments, 
-                                                                                      token.text.position);
-                            
-                            ParserReport(state, ReportSeverity_Error, report_interval,
-                                         "Missing closing parenthesis after enum type argument list");
-                            
-                            encountered_errors = true;
-                        }
-                    }
-                }
+                NOT_IMPLEMENTED;
                 
                 Flag32(COMPILER_DIRECTIVE_KIND) encountered_enum_directives = 0;
                 
@@ -1898,7 +1942,17 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                                 
                                 if (info.kind == Directive_Strict)
                                 {
-                                    (*result)->enum_expr.is_strict = info.is_set;
+                                    (*result)->enum_expr.is_strict = (info.is_set ? TRI_TRUE : TRI_FALSE);
+                                }
+                                
+                                else if (info.kind == Directive_Size)
+                                {
+                                    (*result)->enum_expr.size = info.size_expression;
+                                }
+                                
+                                else if (info.kind == Directive_BitField)
+                                {
+                                    (*result)->enum_expr.is_bit_field = true;
                                 }
                                 
                                 else
@@ -1909,7 +1963,8 @@ ParsePrimaryExpression(Parser_State state, Expression** result)
                                                                                               token.text.position);
                                     
                                     ParserReport(state, ReportSeverity_Error, report_interval,
-                                                 "Invalid use of compiler directive. The '%S' directive cannot be used to tag an enumeration", name_token.string);
+                                                 "Invalid use of compiler directive. The '%S' directive cannot be used to tag an enumeration",
+                                                 name_token.string);
                                     
                                     encountered_errors = true;
                                 }
@@ -2342,12 +2397,73 @@ ParsePrefixExpression(Parser_State state, Expression** result)
 }
 
 bool
+ParseTypeLiteralExpression(Parser_State state, Expression** result)
+{
+    bool encountered_errors = false;
+    
+    Token token = GetToken(state.lexer);
+    Text_Pos start_of_type_lit = token.text.position;
+    
+    if (ParsePrefixExpression(state, result))
+    {
+        token = GetToken(state.lexer);
+        
+        if (token.kind == Token_OpenBrace)
+        {
+            Expression* type = *result;
+            
+            *result = PushExpression(state, ExprKind_TypeLiteral);
+            (*result)->type_lit_expr.type = type;
+            
+            
+            SkipPastToken(state.lexer, token);
+            token = GetToken(state.lexer);
+            
+            if (token.kind != Token_CloseBrace)
+            {
+                if (!ParseNamedExpressionList(state, &(*result)->type_lit_expr.args))
+                {
+                    encountered_errors = true;
+                }
+            }
+            
+            if (!encountered_errors)
+            {
+                token = GetToken(state.lexer);
+                if (token.kind == Token_CloseBrace)
+                {
+                    SkipPastToken(state.lexer, token);
+                    token = GetToken(state.lexer);
+                    
+                    (*result)->text = TextIntervalFromEndpoints(start_of_type_lit,
+                                                                token.text.position);
+                }
+                
+                else
+                {
+                    Text_Interval report_interval = TextIntervalFromEndpoints(start_of_type_lit,
+                                                                              token.text.position);
+                    
+                    ParserReport(state, ReportSeverity_Error, report_interval, 
+                                 "Missing matching closing brace after argument list");
+                    encountered_errors = true;
+                }
+            }
+        }
+    }
+    
+    else encountered_errors = true;
+    
+    return !encountered_errors;
+}
+
+bool
 ParseInfixAndPostfixCallExpression(Parser_State state, Expression** result)
 {
     bool encountered_errors = false;
     
     Text_Interval start_of_expression = GetToken(state.lexer).text;
-    if (ParsePrefixExpression(state, result))
+    if (ParseTypeLiteralExpression(state, result))
     {
         do
         {
@@ -2425,7 +2541,7 @@ ParseInfixAndPostfixCallExpression(Parser_State state, Expression** result)
                         {
                             SkipPastToken(state.lexer, token);
                             
-                            if (ParsePrefixExpression(state, &second_arg->value))
+                            if (ParseTypeLiteralExpression(state, &second_arg->value))
                             {
                                 (*result)->text = TextIntervalMerge(start_of_expression, second_arg->value->text);
                             }
@@ -3558,7 +3674,6 @@ ParseStatement(Parser_State state, Statement* statement)
                                 {
                                     statement->kind = StatementKind_Expression;
                                     
-                                    // NOTE(soimn): expression_list stores pointers to the expressions
                                     statement->expression_stmnt = Array_ElementAt(&expression_list, 0);
                                     Array_RemoveAllAndFreeHeader(&expression_list);
                                 }

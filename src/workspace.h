@@ -75,7 +75,11 @@ typedef struct Build_Options
     Enum32(REPORT_SEVERITY) min_report_severity;
     Flag32(REPORT_STYLE) report_style[REPORT_SEVERITY_COUNT][COMPILATION_STAGE_COUNT];
     Flag32(EXPRESSION_FLAG) default_expression_flags;
-    bool export_by_default;
+    bool export_by_default; // NOTE(soimn): Export all global names by default
+    bool inline_by_default; // NOTE(soimn): Inline all procedures by default
+    bool strict_by_default; // NOTE(soimn): Structs and enums are strict by default
+    bool packed_by_default; // NOTE(soimn): Structs are packed by default
+    bool no_discard_by_default; // NOTE(soimn): All procedures are no_discard by default
     
     String default_mounting_point_path;
     Array(Mounting_Point) mounting_points;

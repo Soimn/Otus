@@ -5,8 +5,8 @@ Lesser goals:
   - Adopt a syntax similar to Jai in case of the language dying and Jai taking over as the language of choice
     for my personal projects
 
-  - Easy to parse (no/few ambiguities, negliable lookahead, consistent syntax) in order to help developers and tools 
-    understand and reason about the code
+  - Easy to parse (no/few ambiguities, negliable lookahead, consistent syntax) in order to help developers and
+    tools understand and reason about the code
 
   - Provide a powerfull toolset (metaprogramming and language constructs) with minimal use of keywords, obscure 
     syntax or other abominations
@@ -32,22 +32,20 @@ Philosophy:
   - Coding style should _not_ be dictated by a tool or language
 
 Problems:
-  - When should string literals be checked?
-
   - How should types be inferred?
 
   - How should unicode strings and characters be represented in memory, or rather,
     how should UTF-8 strings and characters be expressed and manipulated?
 
 Solved problems:
-  P: If Pascal style pointer notation is adopted, how should the parser differentiate between taking a pointer to a 
-     variable and a pointer type? Should they be equivalent?
+  P: If Pascal style pointer notation is adopted, how should the parser differentiate between taking a pointer to
+     a variable and a pointer type? Should they be equivalent?
   S: Whether an expression is evaluated as a type or as an ordinary expression is infered by context.
      The type evaluation context can be forced by using the #type directive.
 
   P: Should alleviating the semicolon after struct, enum and proc declarations be allowed as an 
      "exception to the rule"?
-  S: After much thought it seemed like the benefit of keeping the syntax consistent in this case falls below the
+  S: After much thought it seemed like the benefit of keeping the syntax consistent, in this case, falls below the
      aesthetic value of not speewing semicolons everywhere.
 
 Ideas:
@@ -57,9 +55,9 @@ Ideas:
     for text editors to solve?
 
   - Use arrays for SIMD like operations and support element-wise arithmetic
-    (e.g. #assert([2]{1, 3} == [2]int{0, 1} + [2]{1, 2}))
+    (e.g. #assert([2]int{1, 3} == [2]int{0, 1} + [2]int{1, 2}))
 
-  - Provide of specifying specific pointer sizes (e.g. force a pointer to be 64-bit on all platforms). Maybe 
+  - Provide a way of specifying specific pointer sizes (e.g. force a pointer to be 64-bit on all platforms). Maybe 
     extend this to all core data types? I8 - I64 and U8 - U64 could defined in terms of this.
 
 Observations from using C to build the compiler:
@@ -81,14 +79,49 @@ Keywords:
   - proc
   - struct
   - enum
-  - int
-  - uint
-  - bool
-  - float
-  - typeid
-  - I8, I16, I32, I64
-  - U8, U16, U32, U64
-  - F32, F64
+  - true
+  - false
+  - nil
+
+Builtin types:
+  - int        // A 64-bit signed integer
+  - uint       // A 64-bit unsigned integer
+  - bool       // An 8-bit value that can either be false (0) or true (any value that is not 0)
+  - float      // A 64-bit IEEE-754 floating point value
+
+  - I8, I16, I32, I64 // Explicitly sized signed integer
+  - U8, U16, U32, U64 // Explicitly sized unsigned integer
+  - F32               // 32-bit IEEE-754 float
+  - F64               // 64-bit IEEE-754 float
+
+  - byte   // An 8-bit value
+  - word   // A 64-bit value for 64-bit systems, else 32-bit
+  - rawptr // A word sized integer pointing to a specific address in memory
+  - typeid // A 32-bit value representing a specific type
+  - any    // A typeid and a rawptr to the underlying data
+
+Casting rules:
+  - Aliased types can be both implicitly and explicitly casted to eachother
+  - Distinct types cannot be casted to eachother
+  - All pointers can be explicitly casted to any pointer type
+  - rawptr can be explicitly, and implicitly, casted to any pointer type
+  - A more specific type can be casted to a less specific type, both explicitly and implicitly. e.g:
+    * I8, I16, I32 and I64 can all be casted to int
+    * U8, U16, U32 and U64 can all be casted to uint
+    * F32 and F64 can be casted to float
+  - Signed integer types can be explicitly casted to unsigned, and vice versa
+  - Any integer type can be explicitly casted to floating point, and vice versa
+  - byte can be explicitly casted to any integer type
+  - word can be explicitly casted to any integer type
+  - typeid can be explicitly casted to any integer type
+  - any can be casted to typeid and any pointer type
+
+Casting behaviour:
+  - The resulting value of an integer casted to a smaller width will be equal to the N least significant bits of 
+    the integer, where N is the width of the target type
+  - The result of a floating point value casted to an integer will be equal to the floored value (if positive, 
+    ceiled if negative) if the integer is large enough to represent the value, otherwise the result will be equal 
+    to nil
 
 Builtin functions:
   - cast
@@ -107,10 +140,12 @@ Compiler directives:
   - type
   - distinct
   - foreign
-  - foreign_library
   - run
   - if
   - char
+  - size
+  - bit_field
+  - union
   - strict
   - loose
   - packed
@@ -118,94 +153,11 @@ Compiler directives:
   - no_discard
   - deprecated
   - align
-  - import
   - scope_export
   - scope_file
 
-Grammar (BNF):
 
-<identifier> ::= (([_]+[A-Za-z0-9])|[A-Za-z])[A-Za-z0-9]*
-<number>     ::= (0[xh][A-Fa-f0-9]+)|([0-9]+(.[0-9]+)?)
-<string>     ::= "((\\\\)+|(\\")|[^"])*"
-<blank>      ::= "_"
-<note>       ::= "@" <identifier> ["(" [<expression> {"," <expression>}] ")"]
+Important information:
+A compilation unit consists of import-, variable- and constant declarations. 
 
-<compilation_unit> ::= {<import_directive> | <statement>}
-
-<compiler_directives> ::= <import_directive> | <scope_directives>
-<import_directive> ::= "#" "import" <string> [<identifier> | <blank>]
-<scope_directives> ::= ("#" "scope_export") | ("#" "scope_file")
-<expression_level_directives> ::= ("#" "foreign_library" <identifier>) | ("#" "inline" <primary_expression>)            |
-                                  ("#" "no_inline" <primary_expression>) | ("#" "no_bounds_check" <primary_expression>) |
-                                  ("#" "bounds_check" <primary_expression>) | ("#" "char" <string>)                     |
-                                  ("#" "type" <unary_expression>) | ("#" "run" <primary_expression>)                    |
-                                  ("#" "distinct" <primary_expression>)
-
-<const_if_directive> ::= "#" "if" <expression> <statement> ["else" <statement>]
-<assert_directive>   ::= "#" "assert" <expression>
-<statement_level_directives> ::= ("#" "no_bounds_check") | ("#" "bounds_check")
-<procedure_directives> ::= ("#" "inline") | ("#" "no_inline") | ("#" "foreign" <identifier>) | ("#" "no_discard") | ("#" "deprecated" <string>)
-<structure_directives> ::= ("#" "strict") | ("#" "loose") | ("#" "packed") | ("#" "padded") | ("#" "align" <expression>) |
-                           ("#" "union")
-<enumeration_directives> ::= ("#" "strict") | ("#" "loose")
-
-
-
-<declaration>          ::= <variable_declaration> | <constant_declaration> | <using_declaration>
-<variable_declaration> ::= (<identifier> | <blank>) {"," (<identifier> | <blank>)} ":" (([<type>] "=" (<expression> | ("-" "-" "-"))) | (<type>)) ";"
-<constant_declaration> ::= <identifier> ":" [<type>] ":" (<procedure> | <structure> | <enumeration> |
-                                                          (<expression> ";"))
-<using_declaration>    ::= "using" (<variable_declaration> | <constant_declaration> | <member_expression>) ";"
-
-<procedure>              ::= <proc_type> {<procedure_directives> | <statement_directives>} <statement_block>
-<procedure_args>         ::= ["using"] <procedure_arg_name> {"," <procedure_arg_name>} ":" (([<type>] "=" <expression>) | (<type>))
-<procedure_arg_name>     ::= ["$" | ("$" "$")] (<identifier> | <blank>)
-<procedure_return_value> ::= <type> | "(" [<identifier> ":"] <type> {[<identifier> ":"] <type>} ")"
-<structure>              ::= "struct" ["(" [<structre_arg> {"," structure_arg}] ")"] {<structure_directives>} "{" [<structure_member> {"," <structure_member>}]"}"
-<structure_args>         ::= ["$" | ("$" "$")] <identifier> ":" <type>
-<structure_member>       ::= ["using"] (<identifier> | <blank>) ":" <type>
-<enumeration>            ::= "enum" ["(" [<type>] ")"] {<enumeration_directives>} "{" [<identifier> ["=" <expression>] {"," <identifier ["=" <expression>]>}"}"
-
-
-<statement> ::= <statement_level_directive> <statement>                                           |
-                <statement_block>                                                                 |
-                <declaration> <note>                                                              |
-                <assert_directive>                                                                |
-                <const_if_directive>                                                              |
-                "if" <expression> <statement> ["else" <statement>]                                |
-                "while" <expression> <statement>                                                  |
-                "break" ";"                                                                       |
-                "continue" ";"                                                                    |
-                "return" [<identifier> "="] <expression>{"," [<identifier> "="] <expression>} ";" |
-                <assignment_statement>                                                            |
-                <expression> ";"                                                                  |
-                ";"
-
-<statement_block> ::= "{" {<statement>} "}"
-<assignment_statement> ::= <unary_expression> ["+" | "-" | "*" | "/" | "%" | "&&" | "||" | "&" | "|" | "<<" | ">>"]"=" <expression> ";"
-
-
-<type> ::= ("^" | ("[" "]") | ("[" <expression> "]") | ("[" "." "." "]")) <type> |
-           <proc_type>                                                           |
-           <structure>                                                           |
-           <enumeration>                                                         |
-           "typeof" "(" <type> ")"                                               |
-           ["$"] <identifier>
-
-<proc_type> ::= "proc" ["(" [<procedure_args> {"," <procedure_arg>}] ")"] ["-" ">" <procedure_return_value>]
-
-
-<expression>             ::= <logical_or_expression>
-<logical_or_expression>  ::= <logical_and_expression> {"|" "|" <logical_and_expression>}
-<logical_and_expression> ::= <comparative_expression> {"&" "&" <comparative_expression>}
-<comparative_expression> ::= <add_expression> [(("=" | "!" | "<" | ">")"=" | "<" ">") <add_expression>]
-<add_expression>         ::= <mult_expression> {("+" | "-" | "|") <mult_expression>}
-<mult_expression>        ::= <infix_call_expression> {("*" | "/" | "%" | "&" | "<<" | ">>") <infix_call_expression>}
-<infix_call_expression>  ::= <unary_expression> {"'" <identifier> [<call_expression>] ["'" <unary_expression>]}
-<unary_expression>       ::= ("+" | "-" | "^" | (<identifier> [<call_expression>] "'")) <unary_expression> |
-                             <member_expression>
-<member_expression>      ::= <primary_expression> {"." <primary_expression>}
-<primary_expression>     ::= <expression_level_directives> | (<identifier> <postfix_expression>) | <number> | (<string> <postfix_expression>) |
-                             (<procedure> <postfix_expression>) | <type> ["{"[[<identifier> "="] <expression> {"," [<identifier> "="] <expression>}]"}"]
-<postfix_expression>     ::= {("[" ([<expression>] ":" [<expression>]) | <expression> "]") | <call_expression>
-<call_expression>        ::= "(" [[<identifier> "="] <expression> {"," [<identifier> "="] <expression>}] ")"
+Import declarations signal the parser to append a file for compilation and imports the exported entities of that file. Import declarations can only appear at global scope and will only import what is exported from the target file. The compiler directives: "scope_export" and "scope_file", control which entities are exported. These directives control the state of a boolean

@@ -70,6 +70,11 @@ typedef B8 bool;
 #define false 0
 #define true 1
 
+typedef U8 tri;
+#define TRI_NIL   0
+#define TRI_FALSE 1
+#define TRI_TRUE  2
+
 /// Utility macros
 //////////////////////////////////////////
 
@@ -144,11 +149,6 @@ typedef B8 bool;
 
 /// Common types
 //////////////////////////////////////////
-
-typedef U8 tri;
-#define TRI_NIL   0
-#define TRI_FALSE 1
-#define TRI_TRUE  2
 
 typedef struct Buffer
 {

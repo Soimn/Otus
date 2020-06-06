@@ -61,11 +61,12 @@ enum EXPRESSION_KIND
     ExprKind_Subscript,          // expr[expr]
     ExprKind_Slice,              // expr[expr:expr]
     ExprKind_TypeLiteral,        // expr{expr, expr, ...}
-    ExprKind_Call,
-    ExprKind_Struct,
-    ExprKind_Enum,
-    ExprKind_Proc,
-    ExprKind_Run,
+    ExprKind_Call,               // expr()
+    ExprKind_Proc,               // proc (...) -> ... {...}
+    ExprKind_ProcGroup,          // proc {...}
+    ExprKind_Struct,             // struct (...) {...}
+    ExprKind_Enum,               // enum (...) {...}
+    ExprKind_Run,                // #run expr
     
     /// Primary
     ExprKind_Identifier,
@@ -86,6 +87,7 @@ enum EXPRESSION_FLAG
 
 typedef struct Named_Expression
 {
+    Text_Interval text;
     Identifier name;
     bool is_const;
     bool is_baked;
@@ -119,20 +121,28 @@ typedef struct Call_Expression
     tri forced_inline;
 } Call_Expression;
 
+typedef struct Type_Literal_Expression
+{
+    struct Expression* type;
+    Array(Named_Expression) args;
+} Type_Literal_Expression;
+
 typedef struct Struct_Expression
 {
     Array(Named_Expression) args;
     Array(Named_Expression) members;
     struct Expression* alignment;
-    bool is_strict;
-    bool is_packed;
+    tri is_strict;
+    tri is_packed;
+    bool is_union;
 } Struct_Expression;
 
 typedef struct Enum_Expression
 {
-    Array(Named_Expression) args;
     Array(Named_Expression) members;
-    bool is_strict;
+    struct Expression* size;
+    bool is_bit_field;
+    tri is_strict;
 } Enum_Expression;
 
 typedef struct Proc_Expression
@@ -141,14 +151,16 @@ typedef struct Proc_Expression
     Array(Named_Expression) return_values;
     struct Expression* foreign_library;
     struct Expression* deprecation_notice;
-    bool is_deprecated;
-    bool is_inlined;
+    tri is_inlined;
     bool no_discard;
-    bool is_foreign;
     bool has_body;
     Scope scope;
-    HIDDEN(bool) is_polymorphic;
 } Proc_Expression;
+
+typedef struct Proc_Group_Expression
+{
+    Array(Expression) procedures;
+} Proc_Group_Expression;
 
 typedef struct Expression
 {
@@ -162,8 +174,10 @@ typedef struct Expression
         Unary_Expression unary_expr;
         Array_Expression array_expr;
         Call_Expression call_expr;
+        Type_Literal_Expression type_lit_expr;
         
         Proc_Expression proc_expr;
+        Proc_Group_Expression proc_group_expr;
         Struct_Expression struct_expr;
         Enum_Expression enum_expr;
         
