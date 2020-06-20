@@ -1,5 +1,4 @@
-Main goal: The goal of this programming language is to provide an alternative to C that is simple and supports 
-           modern metaprogramming features
+Main goal: The goal of this programming language is to provide an alternative to C that is "simple but powerful"
 
 Lesser goals:
   - Adopt a syntax similar to Jai in case of the language dying and Jai taking over as the language of choice
@@ -29,24 +28,46 @@ Philosophy:
   - Being able to easily read and reason about a piece of code is more important than being able to write code 
     quickly
 
-  - Coding style should _not_ be dictated by a tool or language
+Problems: (P: problem, S: solution, ?: possible solution)
+  P: How should importing work in the language, and should cyclic imports be allowed?
+  S: Cyclic imports will be allowed, as importing a file will only declare a dependancy on that file. Importing a 
+     directory is also possible, as that will import all source files in that directory and all sub directories.
+     All import paths are relative to the current file unless a specific mounting point is specified. Mounting
+     points are defined in the build options, and are path snippets used as prefixes to any import path with
+     the accompanying mounting point label as a prefix.
 
-Problems:
-  - How should types be inferred?
+  P: How should procedure overloading work?
+  S: Overloading should be explicit, since the programmer complexity over explicit overloading is negligible and
+     should be more familiar to programmers coming from other languages
 
-  - How should unicode strings and characters be represented in memory, or rather,
-    how should UTF-8 strings and characters be expressed and manipulated?
+  P: In what order should global variables and constants be initialized?
+  S: Globals and constants are initialized after their dependencies, respecting source order when possible, 
+     alphabetical otherwise
 
-Solved problems:
-  P: If Pascal style pointer notation is adopted, how should the parser differentiate between taking a pointer to
-     a variable and a pointer type? Should they be equivalent?
-  S: Whether an expression is evaluated as a type or as an ordinary expression is infered by context.
-     The type evaluation context can be forced by using the #type directive.
+  P: How far should metaprogramming be taken in this language?
+  ?: Jai-esque polymorphism, run directives, body_text, modify and mutable compilation
 
-  P: Should alleviating the semicolon after struct, enum and proc declarations be allowed as an 
-     "exception to the rule"?
-  S: After much thought it seemed like the benefit of keeping the syntax consistent, in this case, falls below the
-     aesthetic value of not speewing semicolons everywhere.
+  P: How should unicode strings and characters be represented in memory, or rather,
+     how should UTF-8 strings and characters be expressed and manipulated?
+
+  P: How should float to int conversions be handled, where the floating point number is larger than the largest 
+     integer type representable on a system?
+  ?: However LLVM does it?
+
+  P: What should determine linking names, and should they be consistent?
+  ?: Name of the procedure followed by the type name of each argument, unless specified otherwise
+
+  P: What could the language provide to handle name collisions?
+  ?: Namespacing imports and file vs. export scope
+  S: Import statements which are able to selectively import declarations and namespace them
+
+  P: How should attributes to procedures, structs and other constructs be marked up?
+  ?: By compiler directives before the declaration
+  S: @attrtibute_name(args) or @[attribute_name_0(args), attribute_name_1(args), ...] for multiple
+
+  P: Should macros be added to the language?
+
+  P: Should the subscript operator work on pointers?
 
 Ideas:
   - Comments cause a lot of problems when outdated, is there a better way to "comment" code than the current 
@@ -57,14 +78,13 @@ Ideas:
   - Use arrays for SIMD like operations and support element-wise arithmetic
     (e.g. #assert([2]int{1, 3} == [2]int{0, 1} + [2]int{1, 2}))
 
-  - Provide a way of specifying specific pointer sizes (e.g. force a pointer to be 64-bit on all platforms). Maybe 
-    extend this to all core data types? I8 - I64 and U8 - U64 could defined in terms of this.
-
 Observations from using C to build the compiler:
   - Default function arguments and function overloading are well worth their mental overhead. They allow for 
     hiding details which are unimportant in the current context, and they allow for greater flexibility when used 
     in tandem with a well defined common API (e.g. switching storage data structures from a hash map to a bucket 
     array des not require the usage code to change if both containers overload a common set of API functions).
+
+  - Operator overloading is overrated, a procedure call is much clearer
 
 Keywords:
   - return
@@ -72,16 +92,15 @@ Keywords:
   - using
   - if
   - else
-  - while
   - break
   - continue
-  - for // Will be added in the future
+  - for
   - proc
   - struct
+  - union
   - enum
   - true
   - false
-  - nil
 
 Builtin types:
   - int        // A 64-bit signed integer
@@ -91,41 +110,37 @@ Builtin types:
 
   - I8, I16, I32, I64 // Explicitly sized signed integer
   - U8, U16, U32, U64 // Explicitly sized unsigned integer
+  - B8, B16, B32, B64 // Explicitly sized boolean
   - F32               // 32-bit IEEE-754 float
   - F64               // 64-bit IEEE-754 float
 
-  - byte   // An 8-bit value
-  - word   // A 64-bit value for 64-bit systems, else 32-bit
   - rawptr // A word sized integer pointing to a specific address in memory
   - typeid // A 32-bit value representing a specific type
   - any    // A typeid and a rawptr to the underlying data
 
 Casting rules:
-  - Aliased types can be both implicitly and explicitly casted to eachother
-  - Distinct types cannot be casted to eachother
-  - All pointers can be explicitly casted to any pointer type
-  - rawptr can be explicitly, and implicitly, casted to any pointer type
-  - A more specific type can be casted to a less specific type, both explicitly and implicitly. e.g:
-    * I8, I16, I32 and I64 can all be casted to int
-    * U8, U16, U32 and U64 can all be casted to uint
-    * F32 and F64 can be casted to float
+  - Aliased types can be both implicitly and explicitly converted to the base type or another alias of said type
+  - Distinct types cannot be casted
+  - All pointers can be explicitly converted to any pointer type
+  - rawptr can be explicitly, and implicitly, converted to any pointer type
+  - Fixed width integer, bool and floating point types can be converted to int, bool and float respectively, both 
+    explicitly and implicitly
   - Signed integer types can be explicitly casted to unsigned, and vice versa
   - Any integer type can be explicitly casted to floating point, and vice versa
-  - byte can be explicitly casted to any integer type
-  - word can be explicitly casted to any integer type
-  - typeid can be explicitly casted to any integer type
-  - any can be casted to typeid and any pointer type
+  - Any boolean type can be explicitly casted to any integer type, and vice versa
+  - Any boolean type can be explicitly casted to any floating point type, and vice versa
+  - typeid can be explicitly casted to any integer type, and vice versa
+  - any can be casted to typeid and any pointer type, both explicitly and implicitly
 
 Casting behaviour:
   - The resulting value of an integer casted to a smaller width will be equal to the N least significant bits of 
     the integer, where N is the width of the target type
-  - The result of a floating point value casted to an integer will be equal to the floored value (if positive, 
-    ceiled if negative) if the integer is large enough to represent the value, otherwise the result will be equal 
-    to nil
+//  - The result of a floating point value casted to an integer will be equal to the N least significant bits of 
+//    the truncated value of the floating point value
+  - The result of an integer value casted to floating point will be equal to the integer value represented as a
+    IEEE-754 binary floating point value
 
 Builtin functions:
-  - cast
-  - transmute
   - sizeof
   - alignof
   - offsetof
@@ -133,31 +148,125 @@ Builtin functions:
   - assert
 
 Compiler directives:
-  - bounds_check
-  - no_bounds_check
-  - inline
-  - no_inline
-  - type
-  - distinct
-  - foreign
-  - run
-  - if
-  - char
-  - size
-  - bit_field
-  - union
-  - strict
-  - loose
-  - packed
-  - padded
-  - no_discard
-  - deprecated
-  - align
+// only global
   - scope_export
   - scope_file
 
+// statement level
+  - if
+  - bounds_check
+  - no_bounds_check
+  - overflow_check
+  - no_overflow_check
+  - assert
 
-Important information:
-A compilation unit consists of import-, variable- and constant declarations. 
+// expression level
+  - run
+  - type
+  - distinct
+  - codepoint
+  - inline
+  - no_inline
 
-Import declarations signal the parser to append a file for compilation and imports the exported entities of that file. Import declarations can only appear at global scope and will only import what is exported from the target file. The compiler directives: "scope_export" and "scope_file", control which entities are exported. These directives control the state of a boolean
+Attributes:
+// Proc
+  - inline
+  - no_inline
+  - foreign
+  - no_discard
+  - deprecated
+
+Control structures:
+ - if
+ - else
+ - for
+
+Allowed at global scope:
+  - scope_export, scope_file and if directives
+  - import and using import
+  - declarations
+
+Declarations:
+  - procedure declaration
+  - struct declaration
+  - union declaration
+  - enum declaration
+  - import declaration
+  - variable declaration
+  - constant declaration
+
+Statements:
+  - all declarations except import
+  - if
+  - else
+  - for
+  - break
+  - continue
+  - assignment
+  - block
+  - expression
+
+Expressions:
+  - literals
+  - operations (add, sub, call, deref)
+  - types
+
+TODO:
+ - provide implicit procedure overloading
+ - provide a terser casting syntax
+ - remove *fix procedure calling
+ - separate the concept of procedure, struct and enum declarations from constants
+ - remove nil (it causes too much confusion, checking for 0 is a lot clearer)
+ - revert back to C style pointer syntax
+ - #run directives should not be allowed in global scope
+
+// Using and import
+import "file.os"; // imports all exported declarations of file.os under file.*
+using s;          // imports all members of s into the current namespace
+import "file_name.os" as File; // imports all exported declarations of file.os under File.*
+using import "file_name.os" as File; // imports all exported declarations of file.os under File.* & "using File";
+
+// for loops
+for (i := 0; i < 10; i += 1) { ... }
+
+for (i, j := 0, 1; i < 10; i, j += 1) { ... }
+
+i := 0;
+for (i < 10; i += 1) { ... }
+for (i < 10) { ... }
+
+for (i := 0; i < 10; i += 1)
+{
+    loop_j: for (true)
+    {
+        for (k := 0; k < 10; k += 1)
+        {
+            if (k == 3 && j == 5) continue loop_j;
+            else if (i == 2 && j == 5) break loop_j;
+            else                       break;
+        }
+    }
+}
+
+label_name: (for | if | else | {})
+
+// struct- and other literals
+
+// <already_existing_type> {args}
+// type is not necessary when inside another type literal
+int{2};
+[?]int{1, 2, 3, 4, 5};
+[3]int{0, 1, 2};
+[]int{pointer, length};
+[..]int{pointer, length, capacity}
+
+// illegal: struct { x: int, y: int} {1, 2};
+// type does not already "exist"
+
+Struct :: struct { x: int, S: s };
+S :: struct { y: int, z: int };
+
+Struct{1, {2, 3}};
+// illegal: {1, {2, 3}};
+Struct{1, S{2 ,3}};
+// illegal: {1, S{2, 3}};
