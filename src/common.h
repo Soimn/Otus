@@ -1,38 +1,14 @@
 /// Compilation switches
 //////////////////////////////////////////
 
-// #define GREMLIN_DEBUG          // Enables slow sanity checks
-// #define GREMLIN_DISABLE_ASSERT // Disables all assertions
-
-/// Settings
-//////////////////////////////////////////
-
-#ifndef GREMLIN_MUTEX_TIMEOUT_MS
-#define GREMLIN_MUTEX_TIMEOUT_MS 16
-#endif
+// OTUS_DEBUG_MODE     - enable additional validation checking
+// OTUS_DISABLE_ASSERT - disable runtime assertions
 
 /// Foregin headers
 //////////////////////////////////////////
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
-#include <float.h>
-#include <math.h>
-
-#ifdef _WIN32
-
-#define NOMINMAX
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#undef WIN32_LEAN_AND_MEAN
-#undef NOMINMAX
-
-#undef near
-#undef far
-
-#else
-#endif
+#include <stdarg.h>
 
 /// Types
 //////////////////////////////////////////
@@ -70,13 +46,29 @@ typedef B8 bool;
 #define false 0
 #define true 1
 
-typedef U8 tri;
-#define TRI_NIL   0
-#define TRI_FALSE 1
-#define TRI_TRUE  2
+typedef struct Buffer
+{
+    U8* data;
+    UMM size;
+} Buffer;
+
+typedef Buffer String;
+
+/// IDs and indeces
+//////////////////////////////////////////
+typedef U32 Package_ID;
+typedef U32 File_ID;
+typedef U32 Symbol_Table_ID;
+typedef U64 Workspace_ID;
+typedef U32 Type_ID;
+typedef U32 String_ID;
+
+typedef I32 Scope_Index;
 
 /// Utility macros
 //////////////////////////////////////////
+
+#define global static
 
 #define CONCAT_(x, y) x##y
 #define CONCAT(x, y) CONCAT_(x, y)
@@ -92,28 +84,20 @@ typedef U8 tri;
 #define MEGABYTES(X) (KILOBYTES(X) * 1024ULL)
 #define GIGABYTES(X) (MEGABYTES(X) * 1024ULL)
 
-#define global static
-#define internal static
-#define local_persist static
-
-#ifndef GREMLIN_DISABLE_ASSERT
+#ifndef OTUS_DISABLE_ASSERT
 #define ASSERT(EX) if (EX); else *(volatile int*)0 = 0
-#define STATIC_ASSERT(EX) static_assert((EX), "Assertion failed: " #EX)
 #else
 #define ASSERT(EX)
-#define STATIC_ASSERT(EX)
 #endif
 
 #define INVALID_CODE_PATH ASSERT(!"INVALID_CODE_PATH")
 #define INVALID_DEFAULT_CASE default: ASSERT(!"INVALID_DEFAULT_CASE")
 #define NOT_IMPLEMENTED ASSERT(!"NOT_IMPLEMENTED")
 
-#define OFFSETOF(T, E) (UMM)&((T*) 0)->E
+#define OFFSETOF(T, E) (UMM)&((T*)0)->E
 #define ALIGNOF(T) (U8)OFFSETOF(struct { char c; T type; }, type)
 
 #define ARRAY_COUNT(EX) (sizeof(EX) / sizeof((EX)[0]))
-
-#define CONST_STRING(str) (str), sizeof((str)[0]) - 1
 
 #define U8_MAX  ((U8)0xFF)
 #define U16_MAX ((U16)0xFFFF)
@@ -140,141 +124,27 @@ typedef U8 tri;
 #define Flag32(NAME) U32
 #define Flag64(NAME) U64
 
-#define NULL_IDENTIFIER 0
-#define BLANK_IDENTIFIER 1
-
-#define GREMLIN_FILE_EXT "gr"
-
-#define HIDDEN(E) E
-
-/// Common types
-//////////////////////////////////////////
-
-typedef struct Buffer
-{
-    U8* data;
-    UMM size;
-} Buffer;
-
-typedef Buffer String;
-
-typedef UMM Identifier;
-typedef UMM String_Literal;
-typedef U32 Character;
-
-typedef U32 File_ID;
-typedef U64 Scope_ID;
-
-typedef struct Number
-{
-    union
-    {
-        U64 u64;
-        F64 f64;
-    };
-    
-    U8 min_fit_bits;
-    bool is_f64;
-} Number;
-
-typedef struct Text_Pos
-{
-    File_ID file_id;
-    UMM offset_to_line;
-    UMM line;
-    UMM column;
-} Text_Pos;
-
-typedef struct Text_Interval
-{
-    Text_Pos position;
-    UMM size;
-} Text_Interval;
-
-enum FORWARDS_OR_BACKWARDS
-{
-    BACKWARDS = 0,
-    FORWARDS  = 1,
-};
-
 /// Foreign
 //////////////////////////////////////////
 
-#define F32_MIN FLT_MIN // 1.4012984643e-45
-#define F32_MAX FLT_MAX // 3.4028234664e+38
-
-#define F64_MIN DBL_MIN
-#define F64_MAX DBL_MAX
-
-#define F32_EPSILON FLT_EPSILON
-#define F64_EPSILON DBL_EPSILON
-
-#define IS_INF(n) isinf(n)
+void* System_AllocateMemory(UMM size);
+void System_FreeMemory(void* memory);
 
 #define Arg_List va_list
 #define ARG_LIST_START va_start
 #define ARG_LIST_GET_ARG va_arg
 
-#ifdef GREMLIN_PLATFORM_WINDOWS
-#define ATOMIC_INC32(dest_ptr) InterlockedIncrement((volatile LONG*)(dest_ptr))
-#define ATOMIC_INC64(dest_ptr) InterlockedIncrement64((volatile LONG64*)(dest_ptr))
-#define ATOMIC_CMPXCHG32(dest_ptr, val, cmp) InterlockedCompareExchange((dest_ptr), (val), (cmp))
+void PrintCString(const char* cstring);
+void PrintChar(char c);
+void Print(const char* message, ...);
+
+#ifdef _WIN32
+
+#include "windows_layer.h"
+
+#define EXPORT __declspec(dllexport)
+#define IMPORT __declspec(dllimport)
+
 #else
-#error "Missing directives for this platform"
+#error "unsupported platform"
 #endif
-
-typedef struct Mutex
-{
-    U64 platform_handle;
-} Mutex;
-
-void InitMutex(Mutex* mutex);
-void LockMutex(Mutex mutex);
-void UnlockMutex(Mutex mutex);
-
-U32 GetPageSize(void);
-void* AllocatePage(void);
-void FreePage(void* page_ptr);
-
-void
-PrintCString(const char* cstring)
-{
-    puts(cstring);
-}
-
-void
-PrintString(String string)
-{
-    for (U32 i = 0; i < string.size; ++i)
-    {
-        putchar(string.data[i]);
-    }
-}
-
-void
-PrintChar(char c)
-{
-    putchar(c);
-}
-
-typedef struct File_Handle
-{
-    U64 platform_handle;
-    U32 file_size;
-} File_Handle;
-
-struct Memory_Arena;
-
-bool OpenFileForReading(String path, File_Handle* handle);
-bool DoesDirectoryExist(String path);
-bool LoadFileContents(File_Handle* handle, String* contents); // TODO(soimn): Fill string with 0 after content
-void CloseFileHandle(File_Handle* handle);
-
-/// Common utility functions
-//////////////////////////////////////////
-
-bool
-IsPowerOf2(U64 n)
-{
-    return (n == ((~n + 1) & n));
-}

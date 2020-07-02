@@ -1,13 +1,6 @@
-STATIC_ASSERT(ALIGNOF(U64) == 8);
-STATIC_ASSERT(ALIGNOF(U32) == 4);
-STATIC_ASSERT(ALIGNOF(U16) == 2);
-STATIC_ASSERT(ALIGNOF(U8)  == 1);
-
 inline void*
 Align(void* ptr, U8 alignment)
 {
-    STATIC_ASSERT(sizeof(UMM) == sizeof(void*));
-    
     UMM overshot     = (UMM)ptr + (alignment - 1);
     UMM rounded_down = overshot & ~(alignment - 1);
     return (void*)rounded_down;
@@ -16,423 +9,245 @@ Align(void* ptr, U8 alignment)
 inline U8
 AlignOffset(void* ptr, U8 alignment)
 {
-    STATIC_ASSERT(sizeof(UMM) == sizeof(void*));
+    UMM overshot     = (UMM)ptr + (alignment - 1);
+    UMM rounded_down = overshot & ~(alignment - 1);
     
-    UMM overshot = (UMM)ptr + (alignment - 1);
-    UMM aligned  = overshot & ~(alignment - 1);
-    
-    return (U8)(aligned - (UMM)ptr);
-}
-
-inline void
-Copy(void* src, void* dst, UMM size)
-{
-    U8* b_src = (U8*)src;
-    U8* b_dst = (U8*)dst;
-    
-    if (b_src < b_dst)
-    {
-        for (UMM i = size; i > 0; --i)
-        {
-            b_dst[i - 1] = b_src[i - 1];
-        }
-    }
-    
-    else if (b_src > b_dst)
-    {
-        for (UMM i = 0; i < size; ++i)
-        {
-            b_dst[i] = b_src[i];
-        }
-    }
+    return (U8)(overshot - rounded_down);
 }
 
 inline void
 Zero(void* ptr, UMM size)
 {
-    U8* b_ptr = (U8*)ptr;
-    
     for (UMM i = 0; i < size; ++i)
     {
-        b_ptr[i] = 0;
+        *((U8*)ptr + i) = 0;
     }
 }
 
-#define ZeroStruct(S) Zero((S), sizeof((S)[0]))
+#define ZeroStruct(ptr) Zero(ptr, sizeof(ptr[0]))
 
-//////////////////////////////////////////
-
-typedef struct Memory_Block_Free_Entry
+inline void
+Copy(void* src, void* dst, UMM size)
 {
-    struct Memory_Block_Free_Entry* next;
-    U8 offset;
-    U32 size;
-} Memory_Block_Free_Entry;
+    U8* bsrc = src;
+    U8* bdst = dst;
+    
+    if (bsrc < bdst)
+    {
+        for (UMM i = 0; i < size; ++i)
+        {
+            bdst[size - i] = bsrc[size - i];
+        }
+    }
+    
+    else
+    {
+        for (UMM i = 0; i < size; ++i)
+        {
+            bdst[i] = bsrc[i];
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
 
 typedef struct Memory_Block
 {
     struct Memory_Block* next;
-    U8* memory;
-    U32 offset;
-    U32 space;
+    U16 offset;
+    U16 space;
 } Memory_Block;
 
-typedef struct Memory_Arena
-{
-    Memory_Block_Free_Entry* free_list;
-    Memory_Block* first_block;
-    Memory_Block* current_block;
-    struct Memory_Allocator* allocator;
-} Memory_Arena;
+#define OTUS_MEMORY_ALLOCATOR_PAGE_SIZE KILOBYTES(4)
+#define OTUS_MEMORY_BLOCK_SIZE OTUS_MEMORY_ALLOCATOR_PAGE_SIZE - (sizeof(U64) + sizeof(Memory_Block))
 
 typedef struct Memory_Allocator
 {
-    Memory_Block* first_block;
-    Memory_Block* current_block;
-    U32 page_size;
-    Mutex mutex;
+    void* first_page;
+    void* current_page;
 } Memory_Allocator;
 
-//////////////////////////////////////////
-
 Memory_Block*
-MemoryAllocator_AllocateBlock(Memory_Allocator* allocator)
+Allocator_AllocateBlock(Memory_Allocator* allocator)
 {
-    if (allocator->page_size == 0) allocator->page_size = GetPageSize();
+    void* page = System_AllocateMemory(OTUS_MEMORY_ALLOCATOR_PAGE_SIZE);
+    ASSERT(page != 0); // TODO(soimn): Handle Out of Memory errors more graciously than an assert
     
-    LockMutex(allocator->mutex);
+    *(void**)page = 0;
     
-    void* page = AllocatePage();
+    if (allocator->first_page) *(void**)allocator->current_page = page;
+    else allocator->first_page                                  = page;
     
-    Memory_Block* new_block = Align(page, ALIGNOF(Memory_Block));
-    new_block->next   = 0;
-    new_block->memory = page;
-    new_block->offset = AlignOffset(page, ALIGNOF(Memory_Block)) + sizeof(Memory_Block);
-    new_block->space  = allocator->page_size - sizeof(Memory_Block);
+    allocator->current_page = page;
     
-    if (allocator->current_block) allocator->current_block->next = new_block;
-    else                          allocator->first_block         = new_block;
+    Memory_Block* block = (Memory_Block*)((U8*)page + sizeof(U64));
+    block->next   = 0;
+    block->offset = sizeof(Memory_Block);
+    block->space  = OTUS_MEMORY_BLOCK_SIZE;
     
-    allocator->current_block = new_block;
-    
-    UnlockMutex(allocator->mutex);
-    
-    return new_block;
+    return block;
 }
 
 void
-MemoryAllocator_FreeBlock(Memory_Allocator* allocator, Memory_Block* block)
+Allocator_FreeBlock(Memory_Allocator* allocator, Memory_Block* block)
 {
-    LockMutex(allocator->mutex);
+    void* page = (U8*)block - sizeof(U64);
     
-    Memory_Block* prev_scan = 0;
-    Memory_Block* scan      = allocator->first_block;
-    while (scan)
+    void* prev_page = allocator->first_page;
+    while (prev_page && prev_page != page && *(void**)prev_page != page)
     {
-        if (scan == block) break;
-        else
-        {
-            prev_scan = scan;
-            scan      = scan->next;
-        }
+        prev_page = *(void**)prev_page;
     }
     
-    ASSERT(scan != 0);
+    ASSERT(prev_page != 0);
     
-    if (prev_scan) prev_scan->next = scan->next;
-    else allocator->first_block    = scan->next;
+    *(void**)prev_page = *(void**)page;
     
-    FreePage(block->memory);
+    if (page == allocator->first_page) allocator->first_page     = *(void**)page;
+    if (page == allocator->current_page) allocator->current_page = prev_page;
     
-    UnlockMutex(allocator->mutex);
+    System_FreeMemory(page);
 }
 
-//////////////////////////////////////////
+void
+Allocator_FreeAll(Memory_Allocator* allocator)
+{
+    void* current_page = allocator->first_page;
+    while (current_page != 0)
+    {
+        void* next_page = *(void**)current_page;
+        
+        System_FreeMemory(current_page);
+        current_page = next_page;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+
+typedef struct Memory_Arena_Free_Entry
+{
+    struct Memory_Arena_Free_Entry* next;
+    U16 size;
+    U8 offset;
+} Memory_Arena_Free_Entry;
+
+typedef struct Memory_Arena
+{
+    Memory_Allocator* allocator;
+    Memory_Arena_Free_Entry* first_free;
+    Memory_Block* first_block;
+    Memory_Block* current_block;
+} Memory_Arena;
 
 void
-MemoryArena_FreeSize(Memory_Arena* arena, void* ptr, U32 size)
+Arena_FreeSize(Memory_Arena* arena, void* ptr, UMM size)
 {
-    if (size >= sizeof(Memory_Block_Free_Entry) + (ALIGNOF(Memory_Block_Free_Entry) - 1))
+    ASSERT(size != 0);
+    ASSERT(((UMM)ptr - ((UMM)ptr & ~(ALIGNOF(Memory_Block) - 1))) + size <= OTUS_MEMORY_BLOCK_SIZE);
+    
+    if (size >= sizeof(Memory_Arena_Free_Entry) + (ALIGNOF(Memory_Arena_Free_Entry) - 1))
     {
-#ifdef GREMLIN_DEBUG
+        // NOTE(soimn): Make sure the memory is owned by the allocator
+#ifdef OTUS_DEBUG_MODE
         Memory_Block* scan = arena->first_block;
-        while (scan)
+        while (scan != 0)
         {
-            if ((U8*)ptr > (U8*)scan->memory + sizeof(Memory_Block) &&
-                (U8*)ptr < (U8*)scan->memory + scan->offset)
+            if (ptr >= (U8*)scan + sizeof(Memory_Block) && ptr < (U8*)scan + scan->offset)
             {
                 break;
             }
             
-            else scan = scan->next;
+            else scan = *(void**)scan;
         }
         
-        // NOTE(soimn): Sanity check to ensure that the memory of 'ptr' is actually owned by this arena and that 
-        //              is does not overlap with memory reserved for Memory_Block information
         ASSERT(scan != 0);
 #endif
         
-        
-        Memory_Block_Free_Entry* free_entry = Align(ptr, ALIGNOF(Memory_Block_Free_Entry));
-        free_entry->offset = AlignOffset(ptr, ALIGNOF(Memory_Block_Free_Entry));
-        free_entry->size   = size - free_entry->offset;
+        Memory_Arena_Free_Entry* new_entry = Align(ptr, ALIGNOF(Memory_Arena_Free_Entry));
+        new_entry->next   = 0;
+        new_entry->offset = AlignOffset(ptr, ALIGNOF(Memory_Arena_Free_Entry));
+        new_entry->size   = (U16)size - new_entry->offset;
     }
 }
 
 void*
-MemoryArena_AllocSize(Memory_Arena* arena, UMM umm_size, U8 alignment)
+Arena_AllocateSize(Memory_Arena* arena, UMM size, U8 alignment)
 {
-    ASSERT(umm_size != 0 && umm_size + (alignment - 1) <= arena->allocator->page_size);
-    ASSERT(IsPowerOf2(alignment) && alignment <= ALIGNOF(U64));
+    ASSERT(alignment == 1 || alignment == 2 || alignment == 4 || alignment == 8);
+    ASSERT(size != 0 && size + (alignment - 1) < OTUS_MEMORY_BLOCK_SIZE);
     
     void* result = 0;
     
-    U32 size = (U32)umm_size;
-    
-    Memory_Block_Free_Entry* prev_scan = 0;
-    Memory_Block_Free_Entry* scan      = arena->free_list;
-    
-    while (scan)
+    if (arena->first_free)
     {
-        // TODO(soimn): Should a 'best fit' method be used instead of this 'first fit' one?
-        if (scan->offset + scan->size >= size + (alignment - 1))
+        Memory_Arena_Free_Entry* scan = arena->first_free;
+        while (scan != 0)
         {
-            if (prev_scan != 0) prev_scan->next = scan->next;
-            else             arena->free_list   = scan->next;
-            
-            void* base_ptr = (U8*)scan - scan->offset;
-            result = Align(base_ptr, alignment);
-            
-            MemoryArena_FreeSize(arena, (U8*)result + size,
-                                 (scan->offset + scan->size) - (AlignOffset(base_ptr, alignment) + size));
-            break;
+            if (scan->offset + scan->size >= size + (alignment - 1))
+            {
+                result = Align((U8*)scan - scan->offset, alignment);
+                
+                Arena_FreeSize(arena, (U8*)result + size, (U16)(scan->size - (size + ((U8*)result - (U8*)scan))));
+            }
         }
-        
-        prev_scan = scan;
-        scan      = scan->next;
     }
     
-    // NOTE(soimn): If no free entry of an appropriate size was found, allocate a new chunk from the block
-    if (!result)
+    if (result == 0)
     {
-        if (!arena->current_block || arena->current_block->space < size + alignment)
+        if (arena->first_block == 0 || arena->current_block->space < (U16)(size + (alignment - 1)))
         {
-            if (arena->current_block)
+            if (arena->first_block)
             {
-                Memory_Block* curr_block = arena->current_block;
-                
-                U8* offset_ptr = (U8*)curr_block->memory + curr_block->offset;
-                U32 space      = curr_block->space;
-                
-                curr_block->offset += curr_block->space;
-                curr_block->space   = 0;
-                
-                MemoryArena_FreeSize(arena, offset_ptr, space);
+                Arena_FreeSize(arena, (U8*)arena->current_block + arena->current_block->offset,
+                               arena->current_block->space);
             }
             
-            Memory_Block* new_block = MemoryAllocator_AllocateBlock(arena->allocator);
+            Memory_Block* new_block = Allocator_AllocateBlock(arena->allocator);
             
-            // TODO(soimn): Implement proper handling of failed memory allocations
-            ASSERT(new_block != 0);
-            
-            if (arena->current_block) arena->current_block->next = new_block;
-            else                      arena->first_block         = new_block;
+            if (arena->first_block == 0) arena->first_block = new_block;
+            else arena->current_block->next                 = new_block;
             
             arena->current_block = new_block;
         }
         
-        void* base_ptr = arena->current_block->memory + arena->current_block->offset;
-        result                        = Align(base_ptr, alignment);
-        arena->current_block->offset += AlignOffset(base_ptr, alignment) + size;
+        result = Align((U8*)arena->current_block + arena->current_block->offset, alignment);
+        
+        arena->current_block->offset += AlignOffset(result, alignment);
+        arena->current_block->space  -= AlignOffset(result, alignment);
     }
     
     return result;
 }
 
-void
-MemoryArena_FreeAll(Memory_Arena* arena)
-{
-    Memory_Block* scan = arena->first_block;
-    while (scan)
-    {
-        Memory_Block* scan_next = scan->next;
-        MemoryAllocator_FreeBlock(arena->allocator, scan);
-        scan = scan_next;
-    }
-    
-    arena->first_block   = 0;
-    arena->current_block = 0;
-    arena->free_list     = 0;
-}
-
-//////////////////////////////////////////
-
-
-/// Storage data structures
-
-// NOTE(soimn): This is segmented into an array and an array header to maintain memory compatibility with native 
-//              arrays in Gremlin
-typedef struct Array
-{
-    void* data;
-    U32 size;
-    U32 capacity;
-} Array;
-
-#define Array(T) Array
-#define ARRAY_INIT(arena, T, cap) Array_Init((arena), sizeof(T), (cap))
-
-typedef struct Array_Header
-{
-    Memory_Arena* arena;
-    U32 element_size;
-} Array_Header;
-
-inline Array
-Array_Init(Memory_Arena* arena, UMM element_size, UMM capacity)
-{
-    ASSERT(element_size < U32_MAX);
-    ASSERT(capacity     < U32_MAX);
-    
-    STATIC_ASSERT(sizeof(Array_Header) % 8 == 0);
-    void* memory = MemoryArena_AllocSize(arena, sizeof(Array_Header) + element_size * capacity, ALIGNOF(U64));
-    
-    Array_Header* header = memory;
-    header->arena        = arena;
-    header->element_size = (U32)element_size;
-    
-    Array array = {
-        .data     = (U8*)memory + sizeof(Array_Header),
-        .size     = 0,
-        .capacity = (U32)capacity
-    };
-    
-    return array;
-}
-
-void
-Array_Reserve(Array* array, UMM capacity)
-{
-    ASSERT(capacity < U32_MAX);
-    
-    if (array->capacity < capacity)
-    {
-        Array_Header* header = (Array_Header*)((U8*)array->data - sizeof(Array_Header));
-        
-        void* new_memory = MemoryArena_AllocSize(header->arena,
-                                                 sizeof(Array_Header) + header->element_size * capacity,
-                                                 ALIGNOF(U64));
-        
-        Array_Header* new_header = new_memory;
-        new_header->arena        = header->arena;
-        new_header->element_size = header->element_size;
-        
-        Copy(array->data, (U8*)new_memory + sizeof(Array_Header), array->size * header->element_size);
-        
-        array->data     = (U8*)new_memory + sizeof(Array_Header);
-        array->capacity = (U32)capacity;
-    }
-}
-
-void*
-Array_Append(Array* array)
-{
-    if (array->size == array->capacity)
-    {
-        Array_Reserve(array, array->capacity * 2 + 1);
-    }
-    
-    Array_Header* header = (Array_Header*)((U8*)array->data - sizeof(Array_Header));
-    
-    void* result = (U8*)array->data + array->size * header->element_size;
-    array->size += 1;
-    
-    return result;
-}
-
-void*
-Array_ElementAt(Array* array, UMM index)
-{
-    ASSERT(index < array->size);
-    
-    Array_Header* header = (Array_Header*)((U8*)array->data - sizeof(Array_Header));
-    
-    void* result = (U8*)array->data + index * header->element_size;
-    
-    return result;
-}
-
-void
-Array_UnorderedRemove(Array* array, UMM index)
-{
-    Array_Header* header = (Array_Header*)((U8*)array->data - sizeof(Array_Header));
-    
-    Copy(Array_ElementAt(array, array->size - 1), Array_ElementAt(array, index), header->element_size);
-    
-    array->size -= 1;
-}
-
-void
-Array_OrderedRemove(Array* array, UMM index)
-{
-    Array_Header* header = (Array_Header*)((U8*)array->data - sizeof(Array_Header));
-    
-    Copy(Array_ElementAt(array, index + 1), Array_ElementAt(array, index),
-         (array->size - (index + 1)) * header->element_size);
-    
-    array->size -= 1;
-}
-
-void
-Array_RemoveAll(Array* array)
-{
-    Array_Header* header = (Array_Header*)((U8*)array->data - sizeof(Array_Header));
-    
-    MemoryArena_FreeSize(header->arena, array->data, array->capacity * header->element_size);
-}
-
-void
-Array_RemoveAllAndFreeHeader(Array* array)
-{
-    Array_RemoveAll(array);
-    
-    Array_Header* header = (Array_Header*)((U8*)array->data - sizeof(Array_Header));
-    MemoryArena_FreeSize(header->arena, header, sizeof(Array_Header));
-    
-    array->data     = 0;
-    array->size     = 0;
-    array->capacity = 0;
-}
-
-//////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
 
 typedef struct Bucket_Array
 {
     Memory_Arena* arena;
+    void* first_free;
     void* first_bucket;
     void* current_bucket;
-    U32 current_bucket_size;
-    U32 element_size;
-    U32 bucket_size;
-    U32 bucket_count;
+    U16 current_bucket_size;
+    U16 bucket_size;
+    U16 element_size;
+    U16 bucket_count;
 } Bucket_Array;
 
-#define Bucket_Array(T) Bucket_Array
-#define BUCKET_ARRAY_INIT(arena, T, bucket_size) BucketArray_Init((arena), sizeof(T), (bucket_size))
+#define Bucket_Array(E) Bucket_Array
+#define BUCKET_ARRAY_INIT(arena, T, bucket_size) BucketArrayInit((arena), sizeof((T*)[0]), (bucket_size))
 
-inline Bucket_Array
-BucketArray_Init(Memory_Arena* arena, UMM element_size, UMM bucket_size)
+Bucket_Array
+BucketArrayInit(Memory_Arena* arena, UMM element_size, UMM bucket_size)
 {
-    ASSERT(element_size < U32_MAX);
-    ASSERT(bucket_size  < U32_MAX);
+    ASSERT(arena != 0);
+    ASSERT(element_size != 0 && (F32)element_size * (F32)bucket_size <= OTUS_MEMORY_BLOCK_SIZE);
     
     Bucket_Array array = {
-        .arena          = arena,
-        .first_bucket   = 0,
-        .current_bucket = 0,
-        .element_size   = (U32)element_size,
-        .bucket_size    = (U32)bucket_size,
-        .bucket_count   = 0
+        .bucket_size  = (U16)bucket_size,
+        .element_size = (U16)MAX(sizeof(U64), element_size)
     };
     
     return array;
@@ -441,166 +256,215 @@ BucketArray_Init(Memory_Arena* arena, UMM element_size, UMM bucket_size)
 void*
 BucketArray_Append(Bucket_Array* array)
 {
-    if (array->current_bucket_size == array->bucket_size)
+    void* result = 0;
+    
+    if (array->first_free)
     {
-        UMM memory_size = sizeof(U64) + array->bucket_size * array->element_size;
-        void* memory    = MemoryArena_AllocSize(array->arena, memory_size, ALIGNOF(U64));
-        Zero(memory, memory_size);
+        result = array->first_free;
         
-        if (array->current_bucket) *(void**)array->current_bucket = memory;
-        else                                  array->first_bucket = memory;
-        
-        array->current_bucket = memory;
-        array->bucket_count  += 1;
+        array->first_free = *(void**)array->first_free;
     }
     
-    void* result = (U8*)array->current_bucket + sizeof(U64) + array->current_bucket_size * array->element_size;
-    array->current_bucket_size += 1;
-    
-    return result;
-}
-
-U32
-BucketArray_ElementCount(Bucket_Array* array)
-{
-    return array->bucket_count * array->bucket_size + array->current_bucket_size;
-}
-
-void*
-BucketArray_ElementAt(Bucket_Array* array, UMM index)
-{
-    ASSERT(index < BucketArray_ElementCount(array));
-    
-    U32 bucket_index  = (U32)index / array->bucket_size;
-    U32 bucket_offset = (U32)index % array->bucket_size;
-    
-    void* bucket = array->first_bucket;
-    for (U32 i = 0; i < bucket_index; ++i) bucket = *(void**)bucket;
-    
-    void* result = (U8*)bucket + sizeof(U64) + bucket_offset * array->element_size;
+    else
+    {
+        if (array->bucket_count == 0 || array->current_bucket_size == array->bucket_size)
+        {
+            void* new_bucket = Arena_AllocateSize(array->arena,
+                                                  sizeof(U64) + array->element_size * array->bucket_size,
+                                                  ALIGNOF(U64));
+            
+            if (array->bucket_count == 0) array->first_bucket = new_bucket;
+            else *(void**)array->current_bucket               = new_bucket;
+            
+            array->current_bucket      = new_bucket;
+            array->current_bucket_size = 0;
+            array->bucket_count       += 1;
+        }
+        
+        result = (U8*)array->current_bucket + sizeof(U64) + array->element_size * array->current_bucket_size;
+        
+        array->bucket_size += 1;
+    }
     
     return result;
 }
 
 void
-BucketArray_UnorderedRemove(Bucket_Array* array, UMM index)
+BucketArray_Free(Bucket_Array* array, void* ptr)
 {
-    ASSERT(index < BucketArray_ElementCount(array));
-    
-    Copy(BucketArray_ElementAt(array, BucketArray_ElementCount(array) - 1), BucketArray_ElementAt(array, index),
-         array->element_size);
-    
-    array->current_bucket_size -= 1;
-    
-    if (array->current_bucket_size == 0)
+#ifdef OTUS_DEBUG_MODE
+    void* scan = array->first_bucket;
+    while (scan != 0)
     {
-        void* prev_scan = 0;
-        void* scan      = array->first_bucket;
-        while (scan != array->current_bucket)
+        if (ptr >= (U8*)scan + sizeof(U64) &&
+            ptr < (U8*)scan + sizeof(U64) array->element_size * array->bucket_size)
         {
-            prev_scan = scan;
-            scan      = *(void**)scan;
+            break;
         }
         
-        if (prev_scan != 0)
-        {
-            *(void**)prev_scan = 0;
-            array->current_bucket = prev_scan;
-        }
-        
-        else
-        {
-            array->first_bucket   = 0;
-            array->current_bucket = 0;
-        }
-        
-        array->bucket_count -= 1;
-        array->current_bucket_size = array->bucket_size;
-        
-        MemoryArena_FreeSize(array->arena, scan, sizeof(U64) + array->bucket_size * array->element_size);
+        else scan = *(void**)scan;
     }
+    
+    ASSERT(scan != 0);
+#endif
+    
+    *(void**)ptr      = array->first_free;
+    array->first_free = ptr;
 }
 
 void
 BucketArray_FreeAll(Bucket_Array* array)
 {
-    void* scan = array->first_bucket;
-    while (scan)
+    void* bucket = array->first_bucket;
+    while (bucket != 0)
     {
-        void* scan_next = *(void**)scan;
+        void* next_bucket = *(void**)bucket;
         
-        MemoryArena_FreeSize(array->arena, scan, sizeof(U64) + array->bucket_size * array->element_size);
-        
-        scan = scan_next;
+        Arena_FreeSize(array->arena, bucket, sizeof(U64) + array->element_size * array->bucket_size);
+        bucket = next_bucket;
     }
     
     array->first_bucket        = 0;
     array->current_bucket      = 0;
-    array->current_bucket_size = 0;
+    array->first_free          = 0;
     array->bucket_count        = 0;
+    array->current_bucket_size = 0;
+}
+
+U32
+BucketArray_ElementCount(Bucket_Array* array)
+{
+    return array->bucket_size * (array->bucket_count - 1) + array->current_bucket_size;
+}
+
+void*
+BucketArray_ElementAt(Bucket_Array* array, U32 index)
+{
+    U16 bucket_index  = (U16)(index % array->bucket_size);
+    U16 bucket_offset = (U16)(index / array->bucket_size); 
+    
+    void* bucket = array->first_bucket;
+    for (U16 i = 0; i < bucket_index; ++i) bucket = *(void**)bucket;
+    
+    return (U8*)bucket + sizeof(U64) + array->element_size * bucket_offset;
 }
 
 typedef struct Bucket_Array_Iterator
 {
-    void* current_bucket;
-    
-    UMM current_index;
     void* current;
+    U32 current_index;
     
-    U32 last_bucket_size;
-    U32 element_size;
-    U32 bucket_size;
-    U32 remaining_bucket_count;
+    void* current_bucket;
+    U16 last_bucket_size;
+    U16 element_size;
+    U16 bucket_size;
 } Bucket_Array_Iterator;
 
-inline Bucket_Array_Iterator
+Bucket_Array_Iterator
 BucketArray_Iterate(Bucket_Array* array)
 {
-    Bucket_Array_Iterator iterator = {
-        .current_bucket         = array->first_bucket,
-        .last_bucket_size       = array->current_bucket_size,
-        .element_size           = array->element_size,
-        .bucket_size            = array->bucket_size,
-        .remaining_bucket_count = array->bucket_count
-    };
+    Bucket_Array_Iterator iterator = {0};
     
-    iterator.current_index = 0;
-    iterator.current       = 0;
-    
-    if (array->first_bucket)
+    if (array->first_bucket != 0)
     {
-        iterator.current = BucketArray_ElementAt(array, 0);
+        iterator.current_bucket   = array->first_bucket;
+        iterator.current          = (U8*)array->first_bucket + sizeof(U64);
+        iterator.element_size     = array->element_size;
+        iterator.bucket_size      = array->bucket_size;
+        iterator.last_bucket_size = array->current_bucket_size;
     }
     
     return iterator;
 }
 
-inline void
+void
 BucketArrayIterator_Advance(Bucket_Array_Iterator* iterator)
 {
-    // NOTE(soimn): If iterator->current is 0 Advance was called with in invalid iterator
-    ASSERT(iterator->current != 0);
+    iterator->current        = 0;
+    iterator->current_index += 1;
     
-    iterator->current = 0;
+    U16 bucket_index = (U16)(iterator->current_index % iterator->bucket_size);
     
-    ++iterator->current_index;
-    
-    UMM bucket_offset = iterator->current_index % iterator->bucket_size;
-    
-    if (bucket_offset == 0)
+    if (*(void**)iterator->current_bucket == 0 &&
+        bucket_index < iterator->last_bucket_size)
     {
-        iterator->remaining_bucket_count = iterator->remaining_bucket_count - 1;
-        iterator->current_bucket = *(void**)iterator->current_bucket;
+        if (bucket_index == 0)
+        {
+            iterator->current_bucket = *(void**)iterator->current_bucket;
+        }
+        
+        iterator->current = (U8*)iterator->current_bucket + sizeof(U64) + iterator->element_size * bucket_index;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+
+typedef struct Array
+{
+    Memory_Arena* arena;
+    void* data;
+    UMM size;
+    UMM capacity;
+} Array;
+
+#define Array(T) Array
+#define ARRAY_INIT(arena, T, inital_capacity) Array_Init((arena), sizeof((T*)[0]), (initial_capacity))
+
+Array
+Array_Init(Memory_Arena* arena, UMM element_size, UMM initial_capacity)
+{
+    void* memory = Arena_AllocateSize(arena, sizeof(U64) + element_size * initial_capacity, ALIGNOF(U64));
+    *(U64*)memory = element_size;
+    
+    Array array = {
+        .arena = arena,
+        .data  = (U64*)memory + 1,
+        .capacity = initial_capacity
+    };
+    
+    return array;
+}
+
+void*
+Array_Append(Array* array)
+{
+    UMM element_size = *((U64*)array->data - 1);
+    
+    if (array->size == array->capacity)
+    {
+        array->capacity += MAX(1, array->capacity / 2);
+        
+        UMM size_in_bytes = sizeof(U64) + element_size * array->size;
+        UMM cap_in_bytes  = sizeof(U64) + element_size * array->capacity;
+        
+        void* new_memory = Arena_AllocateSize(array->arena, cap_in_bytes, ALIGNOF(U64));
+        
+        Copy((U64*)array->data - 1, new_memory, size_in_bytes);
+        
+        Zero((U8*)new_memory + size_in_bytes, (array->capacity - array->size) * element_size);
+        
+        Arena_FreeSize(array->arena, (U64*)array - 1, size_in_bytes);
     }
     
-    if (iterator->remaining_bucket_count == 0 ||
-        iterator->remaining_bucket_count == 1 && bucket_offset >= iterator->last_bucket_size)
-    {
-        iterator->current = 0;
-    }
+    void* result = (U8*)array->data + element_size * array->size;
+    array->size += 1;
     
-    else
-    {
-        iterator->current = (U8*)iterator->current_bucket + sizeof(U64) + bucket_offset * iterator->element_size;
-    }
+    return result;
+}
+
+void
+Array_Destroy(Array* array)
+{
+    UMM element_size = *((U64*)array->data - 1);
+    Arena_FreeSize(array->arena, (U64*)array->data - 1, sizeof(U64) + array->capacity * element_size);
+}
+
+void*
+Array_ElementAt(Array* array, UMM index)
+{
+    ASSERT(array->size > index);
+    
+    UMM element_size = *((U64*)array->data - 1);
+    return (U8*)array->data + index * element_size;
 }

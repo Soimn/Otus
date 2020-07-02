@@ -1,290 +1,259 @@
-typedef struct Block
+enum SYMBOL_KIND
 {
-    Text_Interval text;
-    
-    Array(Statement) statements;
-    Array(Expression) expressions;
-    
-    HIDDEN(bool) export_by_default;
-} Block;
-
-typedef struct Scope
-{
-    Block block;
-    
-    HIDDEN(Array(Symbol)) symbols;
-    HIDDEN(Scope_ID) scope_id;
-} Scope;
-
-typedef struct Scope_Chain
-{
-    struct Scope_Chain* next;
-    Scope* scope;
-} Scope_Chain;
-
-enum EXPRESSION_KIND
-{
-    ExprKind_Invalid,
-    
-    /// Binary
-    ExprKind_Add,                // +
-    ExprKind_Sub,                // -
-    ExprKind_Mul,                // *
-    ExprKind_Div,                // /
-    ExprKind_Mod,                // %
-    ExprKind_And,                // &&
-    ExprKind_Or,                 // ||
-    ExprKind_BitAnd,             // &
-    ExprKind_BitOr,              // |
-    ExprKind_BitShiftLeft,       // <<
-    ExprKind_BitShiftRight,      // >>
-    ExprKind_CmpEqual,           // ==
-    ExprKind_CmpNotEqual,        // !=
-    ExprKind_CmpGreater,         // >
-    ExprKind_CmpLess,            // <
-    ExprKind_CmpGreaterOrEqual,  // >=
-    ExprKind_CmpLessOrEqual,     // <=
-    ExprKind_Member,             // Member name access (e.g. entity.health)
-    
-    /// Unary
-    ExprKind_Not,                // !expr
-    ExprKind_BitNot,             // ~expr
-    ExprKind_Neg,                // -expr
-    ExprKind_Reference,          // ^expr
-    ExprKind_Dereference,        // expr^
-    ExprKind_SliceType,          // []expr
-    ExprKind_ArrayType,          // [expr]expr
-    ExprKind_DynamicArrayType,   // [..]expr
-    ExprKind_Polymorphic,        // $expr
-    
-    /// Special
-    ExprKind_Subscript,          // expr[expr]
-    ExprKind_Slice,              // expr[expr:expr]
-    ExprKind_TypeLiteral,        // expr{expr, expr, ...}
-    ExprKind_Call,               // expr()
-    ExprKind_Proc,               // proc (...) -> ... {...}
-    ExprKind_ProcGroup,          // proc {...}
-    ExprKind_Struct,             // struct (...) {...}
-    ExprKind_Enum,               // enum (...) {...}
-    ExprKind_Run,                // #run expr
-    
-    /// Primary
-    ExprKind_Identifier,
-    ExprKind_Number,
-    ExprKind_String,
-    ExprKind_Character,
-    ExprKind_Trilean,
-    
-    EXPRESSION_KIND_COUNT
+    Symbol_Variable,
+    Symbol_Constant,
+    Symbol_Proc,
+    Symbol_Enum,
+    Symbol_Package,
+    // TODO(soimn): Symbol_Label,
 };
 
-enum EXPRESSION_FLAG
+typedef struct Symbol
 {
-    ExprFlag_BoundsCheck      = 0x01,
-    ExprFlag_TypeEvalContext  = 0x02,
-    ExprFlag_DistinctType     = 0x10,
-};
-
-typedef struct Named_Expression
-{
-    Text_Interval text;
-    Identifier name;
-    bool is_const;
-    bool is_baked;
-    bool is_using;
-    struct Expression* type;
-    struct Expression* value;
-} Named_Expression;
-
-typedef struct Binary_Expression
-{
-    struct Expression* left;
-    struct Expression* right;
-} Binary_Expression;
-
-typedef struct Unary_Expression
-{
-    struct Expression* operand;
-} Unary_Expression;
-
-typedef struct Array_Expression
-{
-    struct Expression* pointer;
-    struct Expression* start;
-    struct Expression* length;
-} Array_Expression;
-
-typedef struct Call_Expression
-{
-    struct Expression* pointer;
-    Array(Named_Expression) args;
-    tri forced_inline;
-} Call_Expression;
-
-typedef struct Type_Literal_Expression
-{
-    struct Expression* type;
-    Array(Named_Expression) args;
-} Type_Literal_Expression;
-
-typedef struct Struct_Expression
-{
-    Array(Named_Expression) args;
-    Array(Named_Expression) members;
-    struct Expression* alignment;
-    tri is_strict;
-    tri is_packed;
-    bool is_union;
-} Struct_Expression;
-
-typedef struct Enum_Expression
-{
-    Array(Named_Expression) members;
-    struct Expression* size;
-    bool is_bit_field;
-    tri is_strict;
-} Enum_Expression;
-
-typedef struct Proc_Expression
-{
-    Array(Named_Expression) args;
-    Array(Named_Expression) return_values;
-    struct Expression* foreign_library;
-    struct Expression* deprecation_notice;
-    tri is_inlined;
-    bool no_discard;
-    bool has_body;
-    Scope scope;
-} Proc_Expression;
-
-typedef struct Proc_Group_Expression
-{
-    Array(Expression) procedures;
-} Proc_Group_Expression;
-
-typedef struct Expression
-{
-    Enum32(EXPRESSION_KIND) kind;
-    Flag32(EXPRESSION_FLAG) flags;
+    Enum32(SYMBOL_KIND) kind;
+    String_ID name;
+    Type_ID type;
     Text_Interval text;
     
     union
     {
-        Binary_Expression binary_expr;
-        Unary_Expression unary_expr;
-        Array_Expression array_expr;
-        Call_Expression call_expr;
-        Type_Literal_Expression type_lit_expr;
+        Scope_Index using_index;
+        Package_ID package;
+    } import_info;
+    
+    bool is_using;
+} Symbol;
+
+typedef struct Symbol_Table
+{
+    Bucket_Array(Symbol) symbols;
+} Symbol_Table;
+
+typedef struct Scope
+{
+    Array(Statement) statements;
+    Symbol_Table_ID symbol_table; // NOTE(soimn): This is hidden from the metaprogram
+} Scope;
+
+enum EXPRESSION_KIND
+{
+    Expression_Invalid = 0,
+    
+    // Binary
+    Expression_Add,
+    Expression_Sub,
+    Expression_Mul,
+    Expression_Div,
+    Expression_Mod,
+    Expression_And,
+    Expression_or,
+    Expression_BitAnd,
+    Expression_BitOr,
+    Expression_BitXor,
+    Expression_BitLShift,
+    Expression_BitRShift,
+    Expression_CmpEqual,
+    Expression_CmpNotEqual,
+    Expression_CmpLess,
+    Expression_CmpGreater,
+    Expression_CmpLessOrEqual,
+    Expression_CmpGreaterOrEqual,
+    Expression_Member,
+    Expression_PolymorphicAlias,
+    
+    // Prefix unary
+    Expression_Neg,
+    Expression_BitNot,
+    Expression_Reference,
+    Expression_Dereference,
+    Expression_SliceType,
+    Expression_ArrayType,
+    Expression_DynamicArrayType,
+    Expression_PolymorphicName,
+    
+    // Postfix unary
+    Expression_Subscript,
+    Expression_Slice,
+    Expression_Call,
+    
+    // Types
+    Expression_ProcPointer,
+    Expression_Struct,
+    Expression_Union,
+    Expression_Enum,
+    
+    // Special
+    Expression_Proc,
+    Expression_Run,
+    
+    // Literals
+    Expression_Identifier,
+    Expression_Number,
+    Expression_Boolean,
+    Expression_String,
+    Expression_Character,
+    Expression_Codepoint,
+    Expression_StructLiteral,
+};
+
+typedef struct Named_Value
+{
+    String name;
+    struct Expression* value;
+} Named_Value;
+
+typedef struct Procedure_Parameter
+{
+    String name;
+    struct Expression* type;
+    struct Expression* value;
+    bool is_const;
+    bool is_baked;
+} Procedure_Parameter;
+
+typedef struct Procedure
+{
+    Array(Procedure_Parameter) parameters;
+    Array(Named_Value) return_values;
+    Scope body;
+} Procedure;
+
+typedef struct Structure
+{
+    Array(Named_Value) parameters;
+    Array(Named_Value) members;
+    bool is_union;
+} Structure;
+
+typedef struct Enumeration
+{
+    struct Expression* member_type;
+    Array(Named_Value) members;
+} Enumeration;
+
+typedef struct Expression
+{
+    Enum32(EXPRESSION_KIND) kind;
+    Text_Interval text;
+    bool is_type;
+    
+    union
+    {
+        struct
+        {
+            struct Expression* left;
+            struct Expression* right;
+        };
         
-        Proc_Expression proc_expr;
-        Proc_Group_Expression proc_group_expr;
-        Struct_Expression struct_expr;
-        Enum_Expression enum_expr;
+        struct Expression* operand;
         
-        struct Expression* run_expr;
+        struct
+        {
+            struct Expression* size;
+            struct Expression* elem_type;
+        } array_type;
         
-        Identifier identifier;
-        String_Literal string;
-        Character character;
+        struct
+        {
+            struct Expression* array;
+            struct Expression* index;
+        } subscript;
+        
+        struct
+        {
+            struct Expression* array;
+            struct Expression* start;
+            struct Expression* length;
+        } slice;
+        
+        struct
+        {
+            struct Expression* pointer;
+            Array(Named_Value) parameters;
+        } call_or_type;
+        
+        Procedure procedure;
+        Structure structure;
+        Enumeration enumeration;
+        
+        String string;
         Number number;
-        tri trilean;
+        char character;
+        U32 codepoint;
     };
 } Expression;
 
+typedef struct Attribute_Parameter
+{
+    union
+    {
+        Number number;
+        String string;
+    };
+    
+    bool is_number;
+} Attribute_Parameter;
 
+typedef struct Attribute
+{
+    String name;
+    Array(Attribute_Parameter) parameters;
+} Attribute;
 
+enum DECLARATION_KIND
+{
+    Declaration_Var,
+    Declaration_Const,
+    Declaration_Proc,
+    Declaration_Enum,
+    Declaration_Struct,
+    Declaration_Union
+};
 
-
-
-
+typedef struct Declaration
+{
+    Enum32(DECLARATION_KIND) kind;
+    Text_Interval text;
+    
+    Array(Attribute) attributes;
+    Array(String) names;
+    Array(Expression) types;
+    
+    union
+    {
+        struct
+        {
+            Array(Expression) values;
+            bool is_unitialized;
+        } var;
+        
+        struct
+        {
+            Array(Expression) values;
+        } constant;
+        
+        Procedure procedure;
+        Structure structure;
+        Enumeration enumeration;
+    };
+} Declaration;
 
 enum STATEMENT_KIND
 {
-    StatementKind_Invalid,
-    
-    StatementKind_ImportDecl,
-    StatementKind_VarDecl,
-    StatementKind_ConstDecl,
-    StatementKind_UsingDecl,
-    
-    StatementKind_Scope,
-    StatementKind_If,
-    StatementKind_While,
-    StatementKind_Break,
-    StatementKind_Continue,
-    StatementKind_Return,
-    StatementKind_Defer,
-    StatementKind_Assignment,
-    StatementKind_Expression,
-    
-    STATEMENT_KIND_COUNT
+    Statement_Import,
+    Statement_Load,
+    Statement_ConstAssert,
+    Statement_ConstIf,
+    Statement_Scope,
+    Statement_Declaration,
+    Statement_If,
+    Statement_For,
+    Statement_Defer,
+    Statement_Using,
+    Statement_Return,
+    Statement_Assignment,
+    Statement_Expression,
 };
-
-typedef struct Code_Note
-{
-    String name;
-    Text_Interval text;
-} Code_Note;
-
-typedef struct Import_Declaration
-{
-    File_ID file_id;
-    Identifier alias;
-} Import_Declaration;
-
-typedef struct Variable_Declaration
-{
-    Array(Code_Note) code_note;
-    Array(Identifier) names;
-    Array(Expression*) types;
-    Array(Expression*) values;
-    bool is_using;
-    bool is_uninitialized;
-    
-    bool is_exported;
-} Variable_Declaration;
-
-typedef struct Constant_Declaration
-{
-    Array(Code_Note) code_note;
-    Array(Identifier) names;
-    Array(Expression*) types;
-    Array(Expression*) values;
-    
-    bool is_exported;
-} Constant_Declaration;
-
-typedef struct Using_Declaration
-{
-    Array(Expression*) expressions;
-} Using_Declaration;
-
-typedef struct If_Statement
-{
-    Expression* condition;
-    Scope true_scope;
-    Scope false_scope;
-    
-    bool is_const;
-} If_Statement;
-
-typedef struct While_Statement
-{
-    Expression* condition;
-    Scope scope;
-} While_Statement;
-
-typedef struct Return_Statement
-{
-    Array(Named_Expression) values;
-} Return_Statement;
-
-typedef struct Assignment_Statement
-{
-    Enum32(EXPRESSION_KIND) kind;
-    Array(Expression*) left;
-    Array(Expression*) right;
-} Assignment_Statement;
 
 typedef struct Statement
 {
@@ -293,17 +262,64 @@ typedef struct Statement
     
     union
     {
+        struct
+        {
+            Package_ID package_id;
+            String alias;
+        } import;
+        
+        struct
+        {
+            File_ID file_id;
+        } load;
+        
+        struct
+        {
+            Expression* expression;
+            Expression* message;
+            Array(Expression) parameters;
+        } const_assert;
+        
+        struct
+        {
+            Expression* condition;
+            Array(Statement) true_body;
+            Array(Statement) false_body;
+        } const_if;
+        
         Scope scope;
+        Declaration declaration;
         
-        Import_Declaration import_decl;
-        Variable_Declaration var_decl;
-        Constant_Declaration const_decl;
-        Using_Declaration using_decl;
+        struct
+        {
+            Expression* condition;
+            Scope true_body;
+            Scope false_body;
+        } if_statment;
         
-        If_Statement if_stmnt;
-        While_Statement while_stmnt;
-        Return_Statement return_stmnt;
-        Assignment_Statement assignment_stmnt;
-        Expression* expression_stmnt;
-    }; 
+        struct
+        {
+            String label;
+            Declaration* declaration;
+            Expression* condition;
+            struct Statement* statement;
+            Scope body;
+        } for_loop;
+        
+        struct Statement* defer_statement;
+        
+        struct
+        {
+            Array(Named_Value) values;
+        } return_statement;
+        
+        struct
+        {
+            Enum32(EXPRESSION_KIND) operator;
+            Expression* left;
+            Expression* right;
+        } assignment;
+        
+        Expression* expression;
+    };
 } Statement;
