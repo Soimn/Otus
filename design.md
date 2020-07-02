@@ -30,7 +30,7 @@ Philosophy:
 
 Problems: (P: problem, S: solution, ?: possible solution)
   P: How should importing work in the language, and should cyclic imports be allowed?
-  S: Cyclic imports will be allowed, as importing a file will only declare a dependancy on that file. Importing a 
+  ?: Cyclic imports will be allowed, as importing a file will only declare a dependancy on that file. Importing a 
      directory is also possible, as that will import all source files in that directory and all sub directories.
      All import paths are relative to the current file unless a specific mounting point is specified. Mounting
      points are defined in the build options, and are path snippets used as prefixes to any import path with
@@ -44,19 +44,6 @@ Problems: (P: problem, S: solution, ?: possible solution)
   S: Globals and constants are initialized after their dependencies, respecting source order when possible, 
      alphabetical otherwise
 
-  P: How far should metaprogramming be taken in this language?
-  ?: Jai-esque polymorphism, run directives, body_text, modify and mutable compilation
-
-  P: How should unicode strings and characters be represented in memory, or rather,
-     how should UTF-8 strings and characters be expressed and manipulated?
-
-  P: How should float to int conversions be handled, where the floating point number is larger than the largest 
-     integer type representable on a system?
-  ?: However LLVM does it?
-
-  P: What should determine linking names, and should they be consistent?
-  ?: Name of the procedure followed by the type name of each argument, unless specified otherwise
-
   P: What could the language provide to handle name collisions?
   ?: Namespacing imports and file vs. export scope
   S: Import statements which are able to selectively import declarations and namespace them
@@ -69,6 +56,20 @@ Problems: (P: problem, S: solution, ?: possible solution)
 
   P: Should the subscript operator work on pointers?
 
+  P: How far should metaprogramming be taken in this language?
+  ?: Jai-esque polymorphism, run directives, body_text, modify and mutable compilation
+
+  P: How should unicode strings and characters be represented in memory, or rather,
+     how should UTF-8 strings and characters be expressed and manipulated?
+
+  P: How should float to int conversions be handled, where the floating point number is larger than the largest 
+     integer type representable on a system?
+  ?: However LLVM does it?
+
+  P: What should determine linking names, and should they be consistent?
+  ?: Name of the procedure followed by the type name of each argument, unless specified otherwise
+  S: "package_name.mangled_procedure_name" if not overridden
+
 Ideas:
   - Comments cause a lot of problems when outdated, is there a better way to "comment" code than the current 
     standard of leaving text that is ignored by the compiler? Should the compiler try to solve this? Should it 
@@ -77,6 +78,8 @@ Ideas:
 
   - Use arrays for SIMD like operations and support element-wise arithmetic
     (e.g. #assert([2]int{1, 3} == [2]int{0, 1} + [2]int{1, 2}))
+
+  - When the allocator pointer on a dynamic array is null, the array exists but cannot be freed
 
 Observations from using C to build the compiler:
   - Default function arguments and function overloading are well worth their mental overhead. They allow for 
@@ -163,10 +166,7 @@ Compiler directives:
 // expression level
   - run
   - type
-  - distinct
   - codepoint
-  - inline
-  - no_inline
 
 Attributes:
 // Proc
@@ -175,6 +175,7 @@ Attributes:
   - foreign
   - no_discard
   - deprecated
+  - distinct
 
 Control structures:
  - if
@@ -182,8 +183,9 @@ Control structures:
  - for
 
 Allowed at global scope:
+  - import
+  - load
   - scope_export, scope_file and if directives
-  - import and using import
   - declarations
 
 Declarations:
@@ -191,17 +193,19 @@ Declarations:
   - struct declaration
   - union declaration
   - enum declaration
-  - import declaration
   - variable declaration
   - constant declaration
 
 Statements:
-  - all declarations except import
+  - declaration
   - if
   - else
   - for
   - break
   - continue
+  - defer
+  - return
+  - using
   - assignment
   - block
   - expression
@@ -219,12 +223,7 @@ TODO:
  - remove nil (it causes too much confusion, checking for 0 is a lot clearer)
  - revert back to C style pointer syntax
  - #run directives should not be allowed in global scope
-
-// Using and import
-import "file.os"; // imports all exported declarations of file.os under file.*
-using s;          // imports all members of s into the current namespace
-import "file_name.os" as File; // imports all exported declarations of file.os under File.*
-using import "file_name.os" as File; // imports all exported declarations of file.os under File.* & "using File";
+ - Add ternary
 
 // for loops
 for (i := 0; i < 10; i += 1) { ... }
@@ -270,3 +269,54 @@ Struct{1, {2, 3}};
 // illegal: {1, {2, 3}};
 Struct{1, S{2 ,3}};
 // illegal: {1, S{2, 3}};
+
+
+
+Libraries draft
+
+import         - imports a package under a different namespace
+foreign import - imports a foreign lirbary
+load           - loads a source file or directory adds it to the loader's namespace
+
+import "file.os" as name;
+
+load "file.os";
+load "dir";
+
+foreign import "ucrt.lib";
+foreign import "ucrt.lib" as URCT;
+
+File types
+  - name.os - Otus source file
+
+A package file begins with a package declaration and can contain source code, load files and import other packages
+
+Importing a directory will import a file with the same name within that directory
+Loading a directory will load all files within that directory
+
+Example package
+// math.os
+package Math;
+
+load "vector.os";
+load "algebra";
+
+import "SuperMathPackage" as SMP;
+
+Cos :: proc(n : float) -> float { ... }
+Sin :: proc(n : float) -> float { ... }
+Tan :: proc(n : float) -> float { ... }
+
+// Main program
+import "math.os";
+
+main :: proc
+{
+    Math.Cos(50.0);
+
+    using Math;
+    Cos(50.0);
+
+    cosine :: Cos;
+    cosine(50.0);
+}

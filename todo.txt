@@ -1,2 +1,0 @@
-* source code location
-* update design.md
