@@ -40,6 +40,7 @@ enum TOKEN_KIND
     Token_Slash,
     Token_Percentage,
     Token_Hat,
+    Token_Equals,
     Token_Greater,
     Token_Less,
     Token_Tilde,
@@ -50,6 +51,7 @@ enum TOKEN_KIND
     Token_Comma,
     Token_Colon,
     Token_Semicolon,
+    Token_QuestionMark,
     
     Token_OpenParen,
     Token_CloseParen,
@@ -67,6 +69,8 @@ enum TOKEN_KIND
 
 enum KEYWORD_KIND
 {
+    Keyword_Package,
+    
     Keyword_Load,
     Keyword_Import,
     Keyword_As,
@@ -93,6 +97,8 @@ enum KEYWORD_KIND
 };
 
 const char* KeywordStrings[KEYWORD_COUNT] = {
+    [Keyword_Package]  = "package",
+    
     [Keyword_Load]     = "load",
     [Keyword_Import]   = "import",
     [Keyword_As]       = "as",
@@ -126,11 +132,14 @@ typedef struct Token
         String string;
         Number number;
         Enum32(KEYWORD_KIND) keyword;
+        U32 codepoint;
     };
 } Token;
 
 typedef struct Lexer
 {
+    Memory_Arena* arena;
+    
     struct
     {
         Token token;
@@ -138,8 +147,18 @@ typedef struct Lexer
     } cache;
     
     Text_Pos position;
-    String input;
+    U8* file_start;
 } Lexer;
+
+bool
+ResolveUnicodeString(Lexer* lexer, String raw, String* string)
+{
+    bool encountered_errors = false;
+    
+    NOT_IMPLEMENTED;
+    
+    return !encountered_errors;
+}
 
 Token
 GetToken(Lexer* lexer)
@@ -155,7 +174,7 @@ GetToken(Lexer* lexer)
             
             for (;;)
             {
-                U8* scan = lexer->input.data + lexer->position.offset_to_line + lexer->position.column;
+                U8* scan = lexer->file_start + lexer->position.offset_to_line + lexer->position.column;
                 
                 if (*scan == 0) break;
                 
@@ -206,7 +225,7 @@ GetToken(Lexer* lexer)
         
         if (token.kind != Token_Error)
         {
-            U8* start = lexer->input.data + lexer->position.offset_to_line + lexer->position.column;
+            U8* start = lexer->file_start + lexer->position.offset_to_line + lexer->position.column;
             U8* peek  = start + 1;
             
             switch (peek[-1])
@@ -222,6 +241,7 @@ GetToken(Lexer* lexer)
                 case '/': token.kind = Token_Slash;        break;
                 case '%': token.kind = Token_Percentage;   break;
                 case '^': token.kind = Token_Hat;          break;
+                case '=': token.kind = Token_Equals;       break;
                 case '>': token.kind = Token_Greater;      break;
                 case '<': token.kind = Token_Less;         break;
                 case '~': token.kind = Token_Tilde;        break;
@@ -231,6 +251,7 @@ GetToken(Lexer* lexer)
                 case ',': token.kind = Token_Comma;        break;
                 case ':': token.kind = Token_Colon;        break;
                 case ';': token.kind = Token_Semicolon;    break;
+                case '?': token.kind = Token_QuestionMark; break;
                 case '(': token.kind = Token_OpenParen;    break;
                 case ')': token.kind = Token_CloseParen;   break;
                 case '{': token.kind = Token_OpenBrace;    break;
@@ -274,7 +295,7 @@ GetToken(Lexer* lexer)
                     {
                         token.kind = Token_String;
                         
-                        token.string.data = (U8*)peek;
+                        String raw_string = { .data = (U8*)peek };
                         
                         while (peek[0] != 0 && peek[0] != '"')
                         {
@@ -283,14 +304,19 @@ GetToken(Lexer* lexer)
                         
                         if (peek[0] != '"')
                         {
-                            //// ERROR: Unterminated string
+                            //// ERROR: Unterminated string literal
                             token.kind = Token_Error;
                         }
                         
                         else
                         {
-                            token.string.size = (U8*)peek - token.string.data;
+                            raw_string.size = (U8*)peek - token.string.data;
                             ++peek;
+                            
+                            if (!ResolveUnicodeString(lexer, raw_string, &token.string))
+                            {
+                                token.kind = Token_Error;
+                            }
                         }
                     }
                     
@@ -298,7 +324,7 @@ GetToken(Lexer* lexer)
                     {
                         token.kind = Token_Char;
                         
-                        token.string.data = (U8*)peek;
+                        String raw_string = { .data = (U8*)peek };
                         
                         while (peek[0] != 0 && peek[0] != '\'')
                         {
@@ -313,8 +339,69 @@ GetToken(Lexer* lexer)
                         
                         else
                         {
-                            token.string.size = (U8*)peek - token.string.data;
+                            raw_string.size = (U8*)peek - token.string.data;
                             ++peek;
+                            
+                            String resolved_string;
+                            if (ResolveUnicodeString(lexer, raw_string, &resolved_string))
+                            {
+                                if (resolved_string.data != 0)
+                                {
+                                    U8* bytes = resolved_string.data;
+                                    
+                                    token.codepoint = 0;
+                                    if ((bytes[0] & 0xF0) == 0xF0)
+                                    {
+                                        token.codepoint |= ((U32)bytes[0] & 0x07) << 18;
+                                        token.codepoint |= ((U32)bytes[1] & 0x3F) << 12;
+                                        token.codepoint |= ((U32)bytes[2] & 0x3F) << 6;
+                                        token.codepoint |= ((U32)bytes[3] & 0x3F) << 0;
+                                        
+                                        resolved_string.size -= 4;
+                                    }
+                                    
+                                    else if ((bytes[0] & 0xE0) == 0xE0)
+                                    {
+                                        token.codepoint |= ((U32)bytes[0] & 0x0F) << 12;
+                                        token.codepoint |= ((U32)bytes[1] & 0x3F) << 6;
+                                        token.codepoint |= ((U32)bytes[2] & 0x3F) << 0;
+                                        
+                                        resolved_string.size -= 3;
+                                    }
+                                    
+                                    else if ((bytes[0] & 0xC0) == 0xC0)
+                                    {
+                                        token.codepoint |= ((U32)bytes[0] & 0x1F) << 6;
+                                        token.codepoint |= ((U32)bytes[1] & 0x3F) << 0;
+                                        
+                                        resolved_string.size -= 2;
+                                    }
+                                    
+                                    else
+                                    {
+                                        token.codepoint |= ((U32)bytes[0] & 0x7F);
+                                        
+                                        resolved_string.size -= 1;
+                                    }
+                                    
+                                    if (resolved_string.size != 0)
+                                    {
+                                        //// ERROR: Character literal contains more than one codepoint
+                                        token.kind = Token_Error;
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    //// ERROR: Empty character literal
+                                    token.kind = Token_Error;
+                                }
+                            }
+                            
+                            else
+                            {
+                                token.kind = Token_Error;
+                            }
                         }
                     }
                     

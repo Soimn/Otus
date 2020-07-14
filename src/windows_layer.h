@@ -23,13 +23,28 @@ System_FreeMemory(void* memory)
 }
 
 void
-Print(const char* message, ...)
+PrintCString(const char* cstring)
 {
-    HANDLE std_handle = GetStdHandle((DWORD)-11);
+    String string = {0};
+    string.data = (U8*)cstring;
     
-    CONSOLE_SCREEN_BUFFER_INFO console_info;
-    GetConsoleScreenBufferInfo(std_handle, &console_info);
+    for (char* charp = (char*)cstring; *charp; ++charp) ++string.size;
     
+    PrintString(string);
+}
+
+void
+PrintString(String string)
+{
+    ASSERT(string.size <= U32_MAX);
+    
+    HANDLE stdout_handle = GetStdHandle((DWORD)-11);
+    WriteConsole(stdout_handle, string.data, (U32)string.size, 0, 0);
+}
+
+void
+PrintToBuffer(Bucket_Array(char)* buffer, const char* message, ...)
+{
     Arg_List arg_list;
     ARG_LIST_START(arg_list, message);
     
@@ -39,31 +54,39 @@ Print(const char* message, ...)
         {
             ++scan;
             
-            if (*scan == '%') WriteConsole(std_handle, scan, 1, 0, 0);
+            if (*scan == '%')
+            {
+                char* c = BucketArray_Append(buffer);
+                *c = '%';
+            }
             
             else if (*scan == 's')
             {
                 char* cstring = ARG_LIST_GET_ARG(arg_list, char*);
                 
-                U32 length = 0;
-                for (; *cstring; ++cstring) ++length;
-                
-                WriteConsole(std_handle, cstring, length, 0, 0);
+                for (; *cstring; ++cstring)
+                {
+                    char* c = BucketArray_Append(buffer);
+                    *c = *cstring;
+                }
             }
             
             else if (*scan == 'S')
             {
                 String string = ARG_LIST_GET_ARG(arg_list, String);
                 
-                ASSERT(string.size <= U32_MAX);
-                WriteConsole(std_handle, string.data, (U32)string.size, 0, 0);
+                for (UMM i = 0; i < string.size; ++i)
+                {
+                    char* c = BucketArray_Append(buffer);
+                    *c = string.data[i];
+                }
             }
             
             else if (*scan == 'c')
             {
-                char c = ARG_LIST_GET_ARG(arg_list, char);
+                char* c = BucketArray_Append(buffer);
+                *c = ARG_LIST_GET_ARG(arg_list, char);
                 
-                WriteConsole(std_handle, &c, 1, 0, 0);
             }
             
             else if (*scan == 'u' || *scan == 'U' ||
@@ -81,8 +104,8 @@ Print(const char* message, ...)
                     {
                         i32 = -i32;
                         
-                        char minus = '-';
-                        WriteConsole(std_handle, &minus, 1, 0, 0);
+                        char* c = BucketArray_Append(buffer);
+                        *c = '-';
                     }
                     
                     number = (U64)i32;
@@ -95,8 +118,8 @@ Print(const char* message, ...)
                     {
                         i64 = -i64;
                         
-                        char minus = '-';
-                        WriteConsole(std_handle, &minus, 1, 0, 0);
+                        char* c = BucketArray_Append(buffer);
+                        *c = '-';
                     }
                     
                     number = (U64)i64;
@@ -107,8 +130,8 @@ Print(const char* message, ...)
                 
                 for (;;)
                 {
-                    char digit = '0' + (U8)((number / largest_place) % 10);
-                    WriteConsole(std_handle, &digit, 1, 0, 0);
+                    char* c = BucketArray_Append(buffer);
+                    *c= '0' + (U8)((number / largest_place) % 10);
                     
                     largest_place /= 10;
                     
@@ -121,19 +144,46 @@ Print(const char* message, ...)
                 NOT_IMPLEMENTED;
             }
             
-            else if (*scan == 'C')
-            {
-                NOT_IMPLEMENTED;
-            }
-            
             else INVALID_CODE_PATH;
         }
         
         else
         {
-            WriteConsole(std_handle, scan, 1, 0, 0);
+            char* c = BucketArray_Append(buffer);
+            *c = *scan;
         }
     }
+}
+
+bool
+ReadEntireFile(Memory_Allocator* allocator, String path, String* content)
+{
+    bool encountered_errors = false;
     
-    SetConsoleTextAttribute(std_handle, console_info.wAttributes);
+    // TODO(soimn): Load, translate and null terminate file contents
+    NOT_IMPLEMENTED;
+    
+    return encountered_errors;
+}
+
+Mutex
+Mutex_Init()
+{
+    Mutex mutex = {0};
+    
+    NOT_IMPLEMENTED;
+    
+    return mutex;
+}
+
+void
+Mutex_Lock(Mutex mutex)
+{
+    NOT_IMPLEMENTED;
+}
+
+void
+Mutex_Unlock(Mutex mutex)
+{
+    NOT_IMPLEMENTED;
 }

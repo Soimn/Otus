@@ -54,6 +54,31 @@ typedef struct Buffer
 
 typedef Buffer String;
 
+#define U8_MAX  ((U8)0xFF)
+#define U16_MAX ((U16)0xFFFF)
+#define U32_MAX ((U32)0xFFFFFFFF)
+#define U64_MAX ((U64)0xFFFFFFFFFFFFFFFF)
+
+#define I8_MAX  ((I8)(U8_MAX >> 1))
+#define I16_MAX ((I16)(U16_MAX >> 1))
+#define I32_MAX ((I32)(U32_MAX >> 1))
+#define I64_MAX ((I64)(U64_MAX >> 1))
+
+#define I8_MIN  ((I8) 1 << 7)
+#define I16_MIN ((I16)1 << 15)
+#define I32_MIN ((I32)1 << 31)
+#define I64_MIN ((I64)1 << 63)
+
+#define Enum8(NAME)  U8
+#define Enum16(NAME) U16
+#define Enum32(NAME) U32
+#define Enum64(NAME) U64
+
+#define Flag8(NAME)  U8
+#define Flag16(NAME) U16
+#define Flag32(NAME) U32
+#define Flag64(NAME) U64
+
 /// IDs and indeces
 //////////////////////////////////////////
 typedef U32 Package_ID;
@@ -64,6 +89,29 @@ typedef U32 Type_ID;
 typedef U32 String_ID;
 
 typedef I32 Scope_Index;
+
+/// Compiler Options
+//////////////////////////////////////////
+
+enum OPTIMIZATION_LEVEL
+{
+    OptLevel_None,      // No optimizations
+    OptLevel_Debug,     // Add debug info
+    OptLevel_FastDebug, // Optimize for speed and add debug info
+    OptLevel_Fast,      // Optimize for speed, fast compile time
+    OptLevel_Fastest,   // Optimize for speed, slow compile time
+    OptLevel_Small,     // Optimize for size
+};
+
+typedef struct Workspace_Options
+{
+    Enum32(OPTIMIZATION_LEVEL) opt_level;
+} Workspace_Options;
+
+typedef struct Binary_Options
+{
+    bool build_dll;
+} Binary_Options;
 
 /// Utility macros
 //////////////////////////////////////////
@@ -99,30 +147,7 @@ typedef I32 Scope_Index;
 
 #define ARRAY_COUNT(EX) (sizeof(EX) / sizeof((EX)[0]))
 
-#define U8_MAX  ((U8)0xFF)
-#define U16_MAX ((U16)0xFFFF)
-#define U32_MAX ((U32)0xFFFFFFFF)
-#define U64_MAX ((U64)0xFFFFFFFFFFFFFFFF)
-
-#define I8_MAX  ((I8)(U8_MAX >> 1))
-#define I16_MAX ((I16)(U16_MAX >> 1))
-#define I32_MAX ((I32)(U32_MAX >> 1))
-#define I64_MAX ((I64)(U64_MAX >> 1))
-
-#define I8_MIN  ((I8) 1 << 7)
-#define I16_MIN ((I16)1 << 15)
-#define I32_MIN ((I32)1 << 31)
-#define I64_MIN ((I64)1 << 63)
-
-#define Enum8(NAME)  U8
-#define Enum16(NAME) U16
-#define Enum32(NAME) U32
-#define Enum64(NAME) U64
-
-#define Flag8(NAME)  U8
-#define Flag16(NAME) U16
-#define Flag32(NAME) U32
-#define Flag64(NAME) U64
+#define HIDDEN(EX) EX
 
 /// Foreign
 //////////////////////////////////////////
@@ -135,12 +160,20 @@ void System_FreeMemory(void* memory);
 #define ARG_LIST_GET_ARG va_arg
 
 void PrintCString(const char* cstring);
-void PrintChar(char c);
-void Print(const char* message, ...);
+void PrintString(String string);
+
+struct Bucket_Array;
+void PrintToBuffer(struct Bucket_Array* buffer, const char* message, ...);
+
+struct Memory_Allocator;
+bool ReadEntireFile(struct Memory_Allocator* allocator, String path, String* content);
+
+typedef U64 Mutex;
+Mutex Mutex_Init();
+void Mutex_Lock(Mutex mutex);
+void Mutex_Unlock(Mutex mutex);
 
 #ifdef _WIN32
-
-#include "windows_layer.h"
 
 #define EXPORT __declspec(dllexport)
 #define IMPORT __declspec(dllimport)

@@ -320,3 +320,104 @@ main :: proc
     cosine :: Cos;
     cosine(50.0);
 }
+
+
+/// Casting syntax
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+x := (int)0.1;
+
+x := (int)(0.1); // X
+
+x := cast(int)0.1;
+
+x := cast(int, 0.1); // X
+
+x := cast(0.1, int);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+x := (UMM)((F32)((UMM)flt + (UMM)flt / 2) / 4 + 0.5);
+
+x := (UMM)((F32)((UMM)(flt) + (UMM)(flt) / 2) / 4 + 0.5);
+
+x := cast(UMM)(cast(F32)(cast(UMM)flt + cast(UMM)flt / 2) / 4 + 0.5);
+
+x := cast(UMM, cast(F32, (cast(UMM, flt) + cast(UMM, flt) / 2) / 4 + 0.5));
+
+x := cast(cast((cast(flt, UMM) + cast(flt, UMM) / 2) / 4 + 0.5, F32), UMM);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+aligned := ((UMM)ptr + (alignment - 1)) & ~(alignment - 1);
+
+aligned := ((UMM)(ptr) + (alignment - 1)) & ~(alignment - 1);
+
+aligned := (cast(UMM)ptr + (alignment - 1)) & ~(alignment - 1);
+
+aligned := (cast(UMM, ptr) + (alignment - 1)) & ~(alignment - 1);
+
+aligned := (cast(ptr, UMM) + (alignment - 1)) & ~(alignment - 1);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+flt := 0.1;
+
+float_bits := *(&U32)&flt;
+
+float_bits := *(&U32)(&flt);
+
+float_bits := reinterpret(U32)flt;
+
+float_bits := reinterpret(U32, flt);
+
+float_bits := reinterpret(flt, U32);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+aligned_memory := (&U8)file_memory + (U8)((~(UMM)file_memory + 1) & 3);
+
+aligned_memory := (&U8)(file_memory) + (U8)((~(UMM)(file_memory) + 1) & 3);
+
+aligned_memory := cast(&U8)file_memory + cast(U8)((~cast(UMM)file_memory + 1) & 3);
+
+aligned_memory := cast(&U8, file_memory) + cast(U8, (~cast(UMM, file_memory) + 1) & 3);
+
+aligned_memory := cast(file_memory, &U8) + cast((~cast(file_memory, UMM) + 1) & 3, U8);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+result := ((U32)bytes[0] << 24) | ((U32)bytes[1] << 16) ...;
+
+result := ((U32)(bytes[0]) << 24) | ((U32)(bytes[1]) << 16) ...;
+
+result := (cast(U32)bytes[0] << 24) | (cast(U32)bytes[1] << 16) ...;
+
+result := (cast(U32, bytes[0]) << 24) | (cast(U32, bytes[1]) << 16) ...;
+
+result := (cast(bytes[0], U32) << 24) | (cast(bytes[1], U32) << 16) ...;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+num_nodes := *((&U32)aligned_memory + 1);
+
+num_nodes := *((&U32)(aligned_memory) + 1);
+
+num_nodes := *(cast(&U32)aligned_memory + 1);
+
+num_nodes := *(cast(&U32, aligned_memory) + 1);
+
+num_nodes := *(cast(aligned_memory, &U32) + 1);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+start_x := (U32)Clamp(0, Min(p0.x, p1.x), (I32)image.width));
+
+start_x := (U32)(Clamp(0, Min(p0.x, p1.x), (I32)(image.width))));
+
+start_x := cast(U32)Clamp(0, Min(p0.x, p1.x), cast(I32)image.width));
+
+start_x := cast(U32, Clamp(0, Min(p0.x, p1.x), cast(I32, image.width))));
+
+start_x := cast(Clamp(0, Min(p0.x, p1.x), cast(image.width, I32))), U32);

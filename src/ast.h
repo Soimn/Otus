@@ -32,7 +32,8 @@ typedef struct Symbol_Table
 typedef struct Scope
 {
     Array(Statement) statements;
-    Symbol_Table_ID symbol_table; // NOTE(soimn): This is hidden from the metaprogram
+    Array(Expression) expressions;
+    HIDDEN(Symbol_Table_ID) symbol_table_id;
 } Scope;
 
 enum EXPRESSION_KIND
@@ -45,8 +46,8 @@ enum EXPRESSION_KIND
     Expression_Mul,
     Expression_Div,
     Expression_Mod,
-    Expression_And,
-    Expression_or,
+    Expression_LogicalAnd,
+    Expression_LogicalOr,
     Expression_BitAnd,
     Expression_BitOr,
     Expression_BitXor,
@@ -64,27 +65,29 @@ enum EXPRESSION_KIND
     // Prefix unary
     Expression_Neg,
     Expression_BitNot,
+    Expression_LogicalNot,
     Expression_Reference,
     Expression_Dereference,
-    Expression_SliceType,
+    Expression_SpanType,
     Expression_ArrayType,
     Expression_DynamicArrayType,
     Expression_PolymorphicName,
     
     // Postfix unary
     Expression_Subscript,
-    Expression_Slice,
+    Expression_Span,
     Expression_Call,
     
     // Types
     Expression_ProcPointer,
     Expression_Struct,
-    Expression_Union,
     Expression_Enum,
     
     // Special
     Expression_Proc,
     Expression_Run,
+    Expression_Ternary,
+    Expression_Cast,
     
     // Literals
     Expression_Identifier,
@@ -141,6 +144,13 @@ typedef struct Expression
     {
         struct
         {
+            struct Expression* condition;
+            struct Expression* true_expr;
+            struct Expression* false_expr;
+        } ternary;
+        
+        struct
+        {
             struct Expression* left;
             struct Expression* right;
         };
@@ -164,13 +174,25 @@ typedef struct Expression
             struct Expression* array;
             struct Expression* start;
             struct Expression* length;
-        } slice;
+        } span;
         
         struct
         {
             struct Expression* pointer;
             Array(Named_Value) parameters;
-        } call_or_type;
+        } call;
+        
+        struct
+        {
+            struct Expression* type;
+            struct Expression* operand;
+        } cast;
+        
+        struct
+        {
+            struct Expression* type;
+            Array(Named_Value) args;
+        } struct_literal;
         
         Procedure procedure;
         Structure structure;
@@ -180,6 +202,7 @@ typedef struct Expression
         Number number;
         char character;
         U32 codepoint;
+        bool boolean;
     };
 } Expression;
 
@@ -205,15 +228,16 @@ enum DECLARATION_KIND
     Declaration_Var,
     Declaration_Const,
     Declaration_Proc,
-    Declaration_Enum,
     Declaration_Struct,
-    Declaration_Union
+    Declaration_Enum,
 };
 
 typedef struct Declaration
 {
     Enum32(DECLARATION_KIND) kind;
     Text_Interval text;
+    
+    bool is_exported;
     
     Array(Attribute) attributes;
     Array(String) names;
@@ -240,10 +264,6 @@ typedef struct Declaration
 
 enum STATEMENT_KIND
 {
-    Statement_Import,
-    Statement_Load,
-    Statement_ConstAssert,
-    Statement_ConstIf,
     Statement_Scope,
     Statement_Declaration,
     Statement_If,
@@ -253,6 +273,11 @@ enum STATEMENT_KIND
     Statement_Return,
     Statement_Assignment,
     Statement_Expression,
+    
+    Statement_Import,
+    Statement_Load,
+    Statement_ConstAssert,
+    Statement_ConstIf,
 };
 
 typedef struct Statement
@@ -266,25 +291,25 @@ typedef struct Statement
         {
             Package_ID package_id;
             String alias;
+            bool is_exported;
         } import;
         
         struct
         {
             File_ID file_id;
+            bool is_exported;
         } load;
         
         struct
         {
-            Expression* expression;
-            Expression* message;
-            Array(Expression) parameters;
+            Expression* condition;
+            String message;
         } const_assert;
         
         struct
         {
             Expression* condition;
-            Array(Statement) true_body;
-            Array(Statement) false_body;
+            Array(Statement) body;
         } const_if;
         
         Scope scope;
@@ -295,7 +320,7 @@ typedef struct Statement
             Expression* condition;
             Scope true_body;
             Scope false_body;
-        } if_statment;
+        } if_statement;
         
         struct
         {
@@ -306,7 +331,8 @@ typedef struct Statement
             Scope body;
         } for_loop;
         
-        struct Statement* defer_statement;
+        Scope defer_statement;
+        Expression* using_expression;
         
         struct
         {
@@ -316,8 +342,8 @@ typedef struct Statement
         struct
         {
             Enum32(EXPRESSION_KIND) operator;
-            Expression* left;
-            Expression* right;
+            Array(String) left;
+            Array(Expression) right;
         } assignment;
         
         Expression* expression;

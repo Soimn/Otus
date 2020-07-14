@@ -5,9 +5,14 @@
 #include "ast.h"
 #include "workspace.h"
 
+#ifdef _WIN32
+#include "windows_layer.h"
+#else
+#error "unsupported platform"
+#endif
+
 IMPORT bool Workspace_Open(Workspace_ID* workspace, Workspace_Options options, String file_path);
 IMPORT void Workspace_Close(Workspace_ID workspace);
-IMPORT bool Workspace_BeginBuild(Workspace_ID workspace, bool intercept);
 IMPORT bool Workspace_InspectNextDeclaration(Workspace_ID workspace, Declaration* declaration);
 IMPORT bool Workspace_ModifyCurrentDeclaration(Workspace_ID workspace, Declaration declaration);
 IMPORT bool Workspace_InjectDeclaration(Workspace_ID workspace, Package_ID package, Declaration declaration);
@@ -56,7 +61,10 @@ main(int argc, const char** argv)
     Workspace_ID workspace;
     Workspace_Open(&workspace, workspace_options, args.file_path);
     
-    Workspace_BeginBuild(workspace, false);
+    for (Declaration decl; Workspace_InspectNextDeclaration(workspace, &decl); )
+    {
+        NOT_IMPLEMENTED;
+    }
     
     if (args.generate_bin)
     {
