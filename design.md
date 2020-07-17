@@ -224,6 +224,7 @@ TODO:
  - revert back to C style pointer syntax
  - #run directives should not be allowed in global scope
  - Add ternary
+ - Decide on &/^ for pointer types (PS: problems with & in call args)
 
 // for loops
 for (i := 0; i < 10; i += 1) { ... }

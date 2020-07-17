@@ -6,7 +6,7 @@ typedef struct Parser_State
 } Parser_State;
 
 bool ParseExpression(Parser_State state, Expression** expr);
-bool ParseDeclaration(Parser_State state);
+bool ParseDeclaration(Parser_State state, Declaration* declaration);
 bool ParseStatement(Parser_State state);
 bool ParseScope(Parser_State state, Scope* scope, bool allow_single_statement);
 
@@ -20,39 +20,6 @@ InitScope(Parser_State state)
     };
     
     return scope;
-}
-
-Procedure
-InitProc(Parser_State state)
-{
-    Procedure proc = {
-        .parameters    = ARRAY_INIT(&state.package->arena, Procedure_Parameter, 3),
-        .return_values = ARRAY_INIT(&state.package->arena, Named_Value, 1),
-        .body         = InitScope(state)
-    };
-    
-    return proc;
-}
-
-Structure
-InitStruct(Parser_State state)
-{
-    Structure structure = {
-        .parameters = ARRAY_INIT(&state.package->arena, Named_Value, 1),
-        .members    = ARRAY_INIT(&state.package->arena, Named_Value, 3)
-    };
-    
-    return structure;
-}
-
-Enumeration
-InitEnum(Parser_State state)
-{
-    Enumeration enumeration = {
-        .members = ARRAY_INIT(&state.package->arena, Named_Value, 3)
-    };
-    
-    return enumeration;
 }
 
 Expression
@@ -69,62 +36,24 @@ InitExpression(Parser_State state,  Enum32(EXPRESSION_KIND) kind)
         break;
         
         case Expression_Proc:
-        expression.procedure = InitProc(state);
+        expression.procedure.parameters    = ARRAY_INIT(&state.package->arena, Procedure_Parameter, 3);
+        expression.procedure.return_values = ARRAY_INIT(&state.package->arena, Named_Value, 1);
+        expression.procedure.body          = InitScope(state);
         break;
         
         case Expression_Struct:
-        expression.structure = InitStruct(state);
+        expression.structure.parameters = ARRAY_INIT(&state.package->arena, Named_Value, 1);
+        expression.structure.members    = ARRAY_INIT(&state.package->arena, Named_Value, 3);
         break;
         
         case Expression_Enum:
-        expression.enumeration = InitEnum(state);
+        expression.enumeration.members = ARRAY_INIT(&state.package->arena, Named_Value, 3);
         break;
         
         INVALID_DEFAULT_CASE;
     }
     
     return expression;
-}
-
-Statement
-InitDeclaration(Parser_State state, Enum32(DECLARATION_KIND) kind)
-{
-    Statement statement = {0};
-    statement.kind = Statement_Declaration;
-    
-    Declaration* declaration = &statement.declaration;
-    declaration->kind = kind;
-    
-    declaration->attributes = ARRAY_INIT(&state.package->arena, Attribute, 0);
-    declaration->names      = ARRAY_INIT(&state.package->arena, String, 1);
-    declaration->types      = ARRAY_INIT(&state.package->arena, Expression, 1);
-    
-    switch (declaration->kind)
-    {
-        case Declaration_Var:
-        declaration->var.values = ARRAY_INIT(&state.package->arena, Expression, 1);
-        break;
-        
-        case Declaration_Const:
-        declaration->constant.values = ARRAY_INIT(&state.package->arena, Expression, 1);
-        break;
-        
-        case Declaration_Proc:
-        declaration->procedure = InitProc(state);
-        break;
-        
-        case Declaration_Struct:
-        declaration->structure = InitStruct(state);
-        break;
-        
-        case Declaration_Enum:
-        declaration->enumeration = InitEnum(state);
-        break;
-        
-        INVALID_DEFAULT_CASE;
-    }
-    
-    return statement;
 }
 
 Statement
@@ -135,12 +64,18 @@ InitStatement(Parser_State state, Enum32(STATEMENT_KIND) kind)
     
     switch (statement.kind)
     {
-        case Statement_ConstIf:
-        statement.const_if.body = ARRAY_INIT(&state.package->arena, Statement, 10);
+        case Statement_Declaration:
+        statement.declaration.attributes = ARRAY_INIT(&state.package->arena, Attribute, 0);
+        statement.declaration.names      = ARRAY_INIT(&state.package->arena, String, 1);
+        statement.declaration.types      = ARRAY_INIT(&state.package->arena, Expression*, 1);
         break;
         
         case Statement_Scope:
         statement.scope = InitScope(state);
+        break;
+        
+        case Statement_ConstIf:
+        statement.const_if.body = ARRAY_INIT(&state.package->arena, Statement, 10);
         break;
         
         case Statement_If:
@@ -150,6 +85,11 @@ InitStatement(Parser_State state, Enum32(STATEMENT_KIND) kind)
         
         case Statement_Return:
         statement.return_statement.values = ARRAY_INIT(&state.package->arena, Named_Value, 2);
+        break;
+        
+        case Statement_Assignment:
+        statement.assignment.left  = ARRAY_INIT(&state.package->arena, String, 2);
+        statement.assignment.right = ARRAY_INIT(&state.package->arena, Expression*, 2);
         break;
         
         INVALID_DEFAULT_CASE;
@@ -168,51 +108,12 @@ AppendExpression(Parser_State state, Enum32(EXPRESSION_KIND) kind)
 }
 
 Statement*
-AppendDeclaration(Parser_State state, Enum32(DECLARATION_KIND) kind)
-{
-    Statement* statement = Array_Append(&state.current_scope->statements);
-    *statement = InitDeclaration(state, kind);
-    
-    return statement;
-}
-
-Statement*
 AppendStatement(Parser_State state, Enum32(STATEMENT_KIND) kind)
 {
     Statement* statement = Array_Append(&state.current_scope->statements);
     *statement = InitStatement(state, kind);
     
     return statement;
-}
-
-bool
-ParseProc(Parser_State state, Procedure* procedure)
-{
-    bool encountered_errors = false;
-    
-    NOT_IMPLEMENTED;
-    
-    return !encountered_errors;
-}
-
-bool
-ParseStruct(Parser_State state, Structure* structure)
-{
-    bool encountered_errors = false;
-    
-    NOT_IMPLEMENTED;
-    
-    return !encountered_errors;
-}
-
-bool
-ParseEnum(Parser_State state, Enumeration* enumeration)
-{
-    bool encountered_errors = false;
-    
-    NOT_IMPLEMENTED;
-    
-    return !encountered_errors;
 }
 
 bool
@@ -496,9 +397,183 @@ ParsePrimaryExpression(Parser_State state, Expression** expr)
                 {
                     *current = AppendExpression(state, Expression_Proc);
                     
-                    if (!ParseProc(state, &(*current)->procedure))
+                    SkipPastToken(state.lexer, token);
+                    token = GetToken(state.lexer);
+                    
+                    if (token.kind == Token_OpenParen)
                     {
-                        encountered_errors = true;
+                        SkipPastToken(state.lexer, token);
+                        
+                        while (!encountered_errors)
+                        {
+                            Procedure_Parameter* parameter = Array_Append(&(*current)->procedure.parameters);
+                            
+                            token = GetToken(state.lexer);
+                            peek  = PeekNextToken(state.lexer, token);
+                            
+                            if (token.kind == Token_Cash)
+                            {
+                                if (peek.kind == Token_Cash)
+                                {
+                                    SkipPastToken(state.lexer, peek);
+                                    parameter->is_baked = true;
+                                }
+                                
+                                else
+                                {
+                                    SkipPastToken(state.lexer, token);
+                                    parameter->is_const = true;
+                                }
+                                
+                                token = GetToken(state.lexer);
+                                peek  = PeekNextToken(state.lexer, token);
+                            }
+                            
+                            if (token.kind != Token_Identifier || peek.kind != Token_Colon)
+                            {
+                                //// ERROR: Missing name of procedure parameter
+                                encountered_errors = true;
+                            }
+                            
+                            else
+                            {
+                                parameter->name = token.string;
+                                
+                                SkipPastToken(state.lexer, peek);
+                                token = GetToken(state.lexer);
+                                
+                                if (token.kind != Token_Equals)
+                                {
+                                    if (!ParseExpression(state, &parameter->type))
+                                    {
+                                        encountered_errors = true;
+                                    }
+                                }
+                                
+                                if (!encountered_errors)
+                                {
+                                    token = GetToken(state.lexer);
+                                    
+                                    if (token.kind == Token_Equals)
+                                    {
+                                        if (!ParseExpression(state, &parameter->value))
+                                        {
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                    
+                                    if (!encountered_errors && parameter->type == 0 && parameter->value == 0)
+                                    {
+                                        //// ERROR: Missing type and/or value of procedure parameter
+                                        encountered_errors = true;
+                                    }
+                                }
+                                
+                                if (!encountered_errors)
+                                {
+                                    token = GetToken(state.lexer);
+                                    
+                                    if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                                    else break;
+                                }
+                            }
+                        }
+                        
+                        if (!encountered_errors)
+                        {
+                            token = GetToken(state.lexer);
+                            
+                            if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
+                            else
+                            {
+                                //// ERROR: Missing matching closing parnethesis after procedure parameters
+                                encountered_errors = true;
+                            }
+                        }
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        token = GetToken(state.lexer);
+                        peek  = PeekNextToken(state.lexer, token);
+                        
+                        if (token.kind == Token_Minus && peek.kind == Token_Greater)
+                        {
+                            SkipPastToken(state.lexer, peek);
+                            token = GetToken(state.lexer);
+                            
+                            bool is_array = false;
+                            if (token.kind == Token_OpenParen)
+                            {
+                                is_array = true;
+                                
+                                SkipPastToken(state.lexer, token);
+                            }
+                            
+                            while (!encountered_errors)
+                            {
+                                Named_Value* return_value = Array_Append(&(*current)->procedure.return_values);
+                                
+                                token = GetToken(state.lexer);
+                                peek  = PeekNextToken(state.lexer, token);
+                                
+                                if (token.kind == Token_Identifier && peek.kind == Token_Comma)
+                                {
+                                    return_value->name = token.string;
+                                    
+                                    SkipPastToken(state.lexer, peek);
+                                }
+                                
+                                if (!ParseExpression(state, &return_value->value)) encountered_errors = true;
+                                else
+                                {
+                                    token = GetToken(state.lexer);
+                                    
+                                    if (token.kind == Token_Comma)
+                                    {
+                                        if (is_array) SkipPastToken(state.lexer, token);
+                                        else
+                                        {
+                                            //// ERROR: Illegal use of comma after return value. Multiple return values
+                                            ////        must be enclosed in parentheses
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                    
+                                    else break;
+                                }
+                            }
+                            
+                            if (is_array && !encountered_errors)
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
+                                else
+                                {
+                                    //// ERROR: Missing matching closing parenthesis after procedure return values list
+                                    encountered_errors = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        token = GetToken(state.lexer);
+                        
+                        if (token.kind != Token_OpenBrace)
+                        {
+                            (*current)->kind = Expression_ProcPointer;
+                        }
+                        
+                        else
+                        {
+                            if (!ParseScope(state, &(*current)->procedure.body, false))
+                            {
+                                encountered_errors = true;
+                            }
+                        }
                     }
                 }
                 
@@ -506,9 +581,137 @@ ParsePrimaryExpression(Parser_State state, Expression** expr)
                 {
                     *current = AppendExpression(state, Expression_Struct);
                     
-                    if (!ParseStruct(state, &(*current)->structure))
+                    (*current)->structure.is_union = (token.keyword == Keyword_Union ? true : false);
+                    
+                    SkipPastToken(state.lexer, token);
+                    token = GetToken(state.lexer);
+                    
+                    if (token.kind == Token_OpenParen)
                     {
-                        encountered_errors = true;
+                        SkipPastToken(state.lexer, token);
+                        token = GetToken(state.lexer);
+                        
+                        if (token.kind != Token_CloseParen)
+                        {
+                            while (!encountered_errors)
+                            {
+                                Named_Value* parameter = Array_Append(&(*current)->structure.parameters);
+                                
+                                token = GetToken(state.lexer);
+                                peek  = PeekNextToken(state.lexer, token);
+                                
+                                if (token.kind != Token_Identifier || peek.kind != Token_Colon)
+                                {
+                                    //// ERROR: Missing name of parameter
+                                    encountered_errors = true;
+                                }
+                                
+                                else
+                                {
+                                    parameter->name = token.string;
+                                    
+                                    SkipPastToken(state.lexer, peek);
+                                    
+                                    if (!ParseExpression(state, &parameter->value)) encountered_errors = true;
+                                    else
+                                    {
+                                        token = GetToken(state.lexer);
+                                        
+                                        if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                                        else break;
+                                    }
+                                }
+                            }
+                            
+                            if (!encountered_errors)
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
+                                else
+                                {
+                                    //// ERROR: Missing matching closing parenthesis after structure parameters
+                                    encountered_errors = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        token = GetToken(state.lexer);
+                        
+                        if (token.kind != Token_OpenBrace)
+                        {
+                            //// ERROR: Missing struct body
+                            encountered_errors = true;
+                        }
+                        
+                        else
+                        {
+                            SkipPastToken(state.lexer, token);
+                            token = GetToken(state.lexer);
+                            
+                            if (token.kind != Token_CloseBrace)
+                            {
+                                while (!encountered_errors)
+                                {
+                                    Named_Value* member = Array_Append(&(*current)->structure.members);
+                                    
+                                    token = GetToken(state.lexer);
+                                    peek  = PeekNextToken(state.lexer, token);
+                                    
+                                    if (token.kind != Token_Identifier || peek.kind != Token_Colon)
+                                    {
+                                        //// ERROR: Missing name of struct member
+                                        encountered_errors = true;
+                                    }
+                                    
+                                    else
+                                    {
+                                        member->name = token.string;
+                                        
+                                        SkipPastToken(state.lexer, peek);
+                                        
+                                        if (!ParseExpression(state, &member->value)) encountered_errors = true;
+                                        else
+                                        {
+                                            token = GetToken(state.lexer);
+                                            
+                                            if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                                            
+                                            else if (token.kind == Token_Semicolon)
+                                            {
+                                                //// ERROR: Invalid use of semicolon in struct body. Struct members are
+                                                ////        delimited by commas
+                                                encountered_errors = true;
+                                            }
+                                            
+                                            else if (token.kind == Token_Equals)
+                                            {
+                                                //// ERROR: Invalid use of equals sign in struct body. Struct members
+                                                ////        cannot be assigned a default value
+                                                encountered_errors = true;
+                                            }
+                                            
+                                            else break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (!encountered_errors)
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                if (token.kind == Token_CloseBrace) SkipPastToken(state.lexer, token);
+                                else
+                                {
+                                    //// ERROR: Missing matching closing brace after struct body
+                                    encountered_errors = true;
+                                }
+                            }
+                        }
                     }
                 }
                 
@@ -516,9 +719,82 @@ ParsePrimaryExpression(Parser_State state, Expression** expr)
                 {
                     *current = AppendExpression(state, Expression_Enum);
                     
-                    if (!ParseEnum(state, &(*current)->enumeration))
+                    SkipPastToken(state.lexer, token);
+                    token = GetToken(state.lexer);
+                    
+                    if (token.kind != Token_OpenBrace)
                     {
-                        encountered_errors = true;
+                        if (!ParseExpression(state, &(*current)->enumeration.member_type))
+                        {
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        token = GetToken(state.lexer);
+                        
+                        if (token.kind == Token_OpenBrace) SkipPastToken(state.lexer, token);
+                        else
+                        {
+                            //// ERROR: Missing body of enum
+                            encountered_errors = true;
+                        }
+                        
+                        token = GetToken(state.lexer);
+                        if (!encountered_errors && token.kind != Token_CloseBrace)
+                        {
+                            while (!encountered_errors)
+                            {
+                                Named_Value* member = Array_Append(&(*current)->enumeration.members);
+                                
+                                token = GetToken(state.lexer);
+                                
+                                if (token.kind != Token_Identifier)
+                                {
+                                    //// ERROR: Missing name of enum member
+                                    encountered_errors = true;
+                                }
+                                
+                                else
+                                {
+                                    member->name = token.string;
+                                    
+                                    SkipPastToken(state.lexer, token);
+                                    token = GetToken(state.lexer);
+                                    
+                                    if (token.kind == Token_Equals)
+                                    {
+                                        SkipPastToken(state.lexer, token);
+                                        
+                                        if (!ParseExpression(state, &member->value))
+                                        {
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                    
+                                    if (!encountered_errors)
+                                    {
+                                        token = GetToken(state.lexer);
+                                        
+                                        if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                                        else break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (!encountered_errors)
+                        {
+                            token = GetToken(state.lexer);
+                            
+                            if (token.kind == Token_CloseBrace) SkipPastToken(state.lexer, token);
+                            else
+                            {
+                                //// ERROR: Missing matching closing brace after enum body
+                                encountered_errors = true;
+                            }
+                        }
                     }
                 }
                 
@@ -1005,11 +1281,344 @@ ParseExpression(Parser_State state, Expression** expr)
 }
 
 bool
-ParseDeclaration(Parser_State state)
+ParseDeclaration(Parser_State state, Declaration* declaration)
 {
     bool encountered_errors = false;
     
-    NOT_IMPLEMENTED;
+    Token token = GetToken(state.lexer);
+    
+    if (token.kind == Token_At)
+    {
+        SkipPastToken(state.lexer, token);
+        token = GetToken(state.lexer);
+        
+        bool is_array = false;
+        if (token.kind == Token_OpenBracket)
+        {
+            is_array = true;
+            
+            SkipPastToken(state.lexer, token);
+        }
+        
+        while (!encountered_errors)
+        {
+            Attribute* attribute = Array_Append(&declaration->attributes);
+            attribute->parameters = ARRAY_INIT(declaration->attributes.arena, Attribute_Parameter, 3);
+            
+            token = GetToken(state.lexer);
+            
+            if (token.kind != Token_Identifier)
+            {
+                //// ERROR: Missing name of attribute
+                encountered_errors = true;
+            }
+            
+            else
+            {
+                attribute->name = token.string;
+                
+                SkipPastToken(state.lexer, token);
+                token = GetToken(state.lexer);
+                
+                if (token.kind == Token_OpenParen)
+                {
+                    SkipPastToken(state.lexer, token);
+                    
+                    while (!encountered_errors)
+                    {
+                        Attribute_Parameter* parameter = Array_Append(&attribute->parameters);
+                        
+                        token = GetToken(state.lexer);
+                        
+                        if (token.kind == Token_Number)
+                        {
+                            parameter->is_number = true;
+                            parameter->is_string = false;
+                            parameter->number    = token.number;
+                            
+                            SkipPastToken(state.lexer, token);
+                        }
+                        
+                        else if (token.kind == Token_String)
+                        {
+                            parameter->is_number = false;
+                            parameter->is_string = true;
+                            parameter->string    = token.string;
+                            
+                            SkipPastToken(state.lexer, token);
+                        }
+                        
+                        else if (token.kind == Token_Keyword && (token.keyword == Keyword_True ||
+                                                                 token.keyword == Keyword_False))
+                        {
+                            parameter->is_number = false;
+                            parameter->is_string = false;
+                            parameter->boolean   = (token.keyword == Keyword_True ? true : false);
+                            
+                            SkipPastToken(state.lexer, token);
+                        }
+                        
+                        else
+                        {
+                            //// ERROR: Missing attribute parameter after comma
+                            encountered_errors = true;
+                        }
+                        
+                        if (!encountered_errors)
+                        {
+                            token = GetToken(state.lexer);
+                            
+                            if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                            else break;
+                        }
+                    }
+                    
+                    token = GetToken(state.lexer);
+                    
+                    if (token.kind == Token_CloseParen) SkipPastToken(state.lexer, token);
+                    else
+                    {
+                        //// ERROR: Missing matching closing parenthesis after attribute arguments
+                        
+                        encountered_errors = true;
+                    }
+                }
+                
+                token = GetToken(state.lexer);
+                
+                if (token.kind != Token_Comma) break;
+                else
+                {
+                    if (is_array) SkipPastToken(state.lexer, token);
+                    else
+                    {
+                        //// ERROR: Expected declaration after single attribute but encountered comma,
+                        ////        use [] for multiple attributes
+                        encountered_errors = true;
+                    }
+                }
+            }
+        }
+        
+        token = GetToken(state.lexer);
+        
+        if (is_array)
+        {
+            if (token.kind == Token_CloseBracket) SkipPastToken(state.lexer, token);
+            else
+            {
+                //// ERROR: Missing matching closing bracket after attribute list
+                encountered_errors = true;
+            }
+        }
+        
+        else if (token.kind == Token_CloseBracket)
+        {
+            //// ERROR: Expected declaration after single attribute but encountered closing bracket,
+            ////        did you forget an open bracket after the @ sign?
+            encountered_errors = true;
+        }
+    }
+    
+    while (!encountered_errors)
+    {
+        token = GetToken(state.lexer);
+        
+        if (token.kind != Token_Identifier)
+        {
+            //// ERROR: Missing name of declaration
+            encountered_errors = true;
+        }
+        
+        else
+        {
+            String* name = Array_Append(&declaration->names);
+            *name = token.string;
+            
+            SkipPastToken(state.lexer, token);
+            token = GetToken(state.lexer);
+            
+            if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+            else break;
+        }
+    }
+    
+    if (!encountered_errors)
+    {
+        token = GetToken(state.lexer);
+        
+        if (token.kind != Token_Colon)
+        {
+            //// ERROR: Invalid use of attributes. Attributes can only be applied to declarations
+            encountered_errors = true;
+        }
+        
+        else
+        {
+            SkipPastToken(state.lexer, token);
+            token = GetToken(state.lexer);
+            
+            if (token.kind != Token_Colon && token.kind != Token_Equals)
+            {
+                while (!encountered_errors)
+                {
+                    Expression** type = Array_Append(&declaration->types);
+                    
+                    if (!ParseExpression(state, type)) encountered_errors = true;
+                    else
+                    {
+                        token = GetToken(state.lexer);
+                        
+                        if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                        else break;
+                    }
+                }
+            }
+            
+            if (!encountered_errors)
+            {
+                token = GetToken(state.lexer);
+                
+                if (token.kind == Token_Colon)
+                {
+                    SkipPastToken(state.lexer, token);
+                    
+                    Expression* tmp_expr;
+                    if (!ParseExpression(state, &tmp_expr)) encountered_errors = true;
+                    else
+                    {
+                        token = GetToken(state.lexer);
+                        
+                        // NOTE(soimn): Proc, struct and enums that are not part of a list are handled separately
+                        if (token.kind != Token_Comma && (tmp_expr->kind == Expression_Proc   ||
+                                                          tmp_expr->kind == Expression_Struct ||
+                                                          tmp_expr->kind == Expression_Enum))
+                        {
+                            if (tmp_expr->kind == Expression_Proc)
+                            {
+                                declaration->kind      = Declaration_Proc;
+                                declaration->procedure = tmp_expr->procedure;
+                            }
+                            
+                            else if (tmp_expr->kind == Expression_Struct)
+                            {
+                                declaration->kind      = Declaration_Struct;
+                                declaration->structure = tmp_expr->structure;
+                            }
+                            
+                            else
+                            {
+                                declaration->kind        = Declaration_Enum;
+                                declaration->enumeration = tmp_expr->enumeration;
+                            }
+                            
+                            // HACK(soimn):
+                            Array_OrderedRemove(&state.current_scope->expressions,
+                                                state.current_scope->expressions.size - 1);
+                            
+                            token = GetToken(state.lexer);
+                            
+                            if (token.kind == Token_Semicolon) SkipPastToken(state.lexer, token);
+                            else
+                            {
+                                // NOTE(soimn): Do nothing. Semicolons are not required after procs, structs and 
+                                //              enums that are not part of a list
+                            }
+                        }
+                        
+                        else
+                        {
+                            declaration->kind            = Declaration_Const;
+                            declaration->constant.values = ARRAY_INIT(declaration->types.arena, Expression*, 2);
+                            
+                            *(Expression**)Array_Append(&declaration->constant.values) = tmp_expr;
+                            
+                            token = GetToken(state.lexer);
+                            
+                            if (token.kind == Token_Comma)
+                            {
+                                SkipPastToken(state.lexer, token);
+                                
+                                while (!encountered_errors)
+                                {
+                                    Expression** expr = Array_Append(&declaration->constant.values);
+                                    
+                                    if (!ParseExpression(state, expr)) encountered_errors = true;
+                                    else
+                                    {
+                                        token = GetToken(state.lexer);
+                                        
+                                        if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                                        else break;
+                                    }
+                                }
+                            }
+                            
+                            if (!encountered_errors)
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                if (token.kind == Token_Semicolon) SkipPastToken(state.lexer, token);
+                                else
+                                {
+                                    //// ERROR: Missing declaration after constant declaration
+                                    encountered_errors = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                else
+                {
+                    declaration->kind       = Declaration_Var;
+                    declaration->var.values = ARRAY_INIT(declaration->types.arena, Expression*, 3);
+                    
+                    token        = GetToken(state.lexer);
+                    Token peek   = PeekNextToken(state.lexer, token);
+                    Token peek_1 = PeekNextToken(state.lexer, peek);
+                    
+                    
+                    if (token.kind == Token_Minus && peek.kind == Token_Minus &&
+                        peek_1.kind == Token_Minus)
+                    {
+                        SkipPastToken(state.lexer, peek_1);
+                        
+                        declaration->var.is_uninitialized = true;
+                    }
+                    
+                    else
+                    {
+                        while (!encountered_errors)
+                        {
+                            Expression** expr = Array_Append(&declaration->var.values);
+                            
+                            if (!ParseExpression(state, expr)) encountered_errors = true;
+                            else
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                                else break;
+                            }
+                        }
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        token = GetToken(state.lexer);
+                        
+                        if (token.kind == Token_Semicolon) SkipPastToken(state.lexer, token);
+                        else
+                        {
+                            //// ERROR: Missing semicolon after variable declaration
+                            encountered_errors = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
     
     return !encountered_errors;
 }
@@ -1253,7 +1862,9 @@ ParseStatement(Parser_State state)
         {
             if (token.kind == Token_At)
             {
-                if (!ParseDeclaration(state))
+                Statement* statement = AppendStatement(state, Statement_Declaration);
+                
+                if (!ParseDeclaration(state, &statement->declaration))
                 {
                     encountered_errors = true;
                 }
@@ -1261,194 +1872,164 @@ ParseStatement(Parser_State state)
             
             else if (token.kind == Token_Identifier)
             {
-                Enum32(STATEMENT_KIND) kind = Statement_Expression;
+                Token peek = PeekNextToken(state.lexer, token);
                 
-                Token peek = GetToken(state.lexer);
-                
-                for (;;)
+                if (peek.kind == Token_Comma)
                 {
-                    if (peek.kind == Token_Identifier)
-                    {
-                        peek = PeekNextToken(state.lexer, peek);
-                        
-                        if (peek.kind == Token_Comma)
-                        {
-                            peek = PeekNextToken(state.lexer, peek);
-                            continue;
-                        }
-                    }
-                    
-                    if (peek.kind == Token_Colon)
-                    {
-                        kind = Statement_Declaration;
-                    }
-                    
-                    else
+                    for (;;)
                     {
                         Token peek_1 = PeekNextToken(state.lexer, peek);
-                        Token peek_2 = PeekNextToken(state.lexer, peek_1);
                         
-                        if (peek.kind == Token_Equals && peek_1.kind != Token_Equals)
+                        if (peek_1.kind != Token_Identifier) break;
+                        else
                         {
-                            // NOTE(soimn): regular assignment
-                            kind = Statement_Assignment;
-                        }
-                        
-                        else if (peek_1.kind == Token_Equals && (peek.kind == Token_Plus       ||
-                                                                 peek.kind == Token_Minus      ||
-                                                                 peek.kind == Token_Asterisk   ||
-                                                                 peek.kind == Token_Slash      ||
-                                                                 peek.kind == Token_Percentage ||
-                                                                 peek.kind == Token_Ampersand  ||
-                                                                 peek.kind == Token_Pipe       ||
-                                                                 peek.kind == Token_Hat))
-                        {
-                            // NOTE(soimn): single token binary operator
-                            kind = Statement_Assignment;
-                        }
-                        
-                        else if (peek_2.kind == Token_Equals && peek_1.kind == peek_2.kind &&
-                                 (peek_1.kind == Token_Ampersand ||
-                                  peek_1.kind == Token_Pipe      ||
-                                  peek_1.kind == Token_Less      ||
-                                  peek_1.kind == Token_Greater))
-                        {
-                            // NOTE(soimn): double token binary operator
-                            kind = Statement_Assignment;
+                            peek = PeekNextToken(state.lexer, peek_1);
+                            
+                            if (peek.kind == Token_Comma) continue;
+                            else break;
                         }
                     }
-                    
-                    break;
                 }
                 
-                if (kind == Statement_Declaration)
+                if (peek.kind == Token_Colon)
                 {
-                    if (!ParseDeclaration(state))
+                    Statement* statement = AppendStatement(state, Statement_Declaration);
+                    
+                    if (!ParseDeclaration(state, &statement->declaration))
                     {
                         encountered_errors = true;
                     }
                 }
                 
-                else if (kind == Statement_Assignment)
+                else
                 {
-                    Statement* statement = AppendStatement(state, Statement_Assignment);
+                    Token peek_1 = PeekNextToken(state.lexer, peek);
+                    Token peek_2 = PeekNextToken(state.lexer, peek_1);
                     
-                    for (;;)
+                    bool is_equals = (peek.kind == Token_Equals && peek_1.kind != Token_Equals);
+                    
+                    bool is_single = (peek.kind == Token_Plus       ||
+                                      peek.kind == Token_Minus      ||
+                                      peek.kind == Token_Asterisk   ||
+                                      peek.kind == Token_Slash      ||
+                                      peek.kind == Token_Percentage ||
+                                      peek.kind == Token_Ampersand  ||
+                                      peek.kind == Token_Pipe       ||
+                                      peek.kind == Token_Hat);
+                    
+                    bool is_double = (peek.kind == peek_1.kind && (peek.kind == Token_Ampersand ||
+                                                                   peek.kind == Token_Pipe      ||
+                                                                   peek.kind == Token_Less      ||
+                                                                   peek.kind == Token_Greater));
+                    
+                    if (is_equals || peek_1.kind == Token_Equals && is_single ||
+                        peek_2.kind == Token_Equals && is_double)
                     {
-                        token = GetToken(state.lexer);
+                        Statement* statement = AppendStatement(state, Statement_Assignment);
                         
-                        if (token.kind == Token_Identifier)
+                        for (;;)
                         {
-                            String* string = Array_Append(&statement->assignment.left);
-                            *string = token.string;
+                            token = GetToken(state.lexer);
+                            
+                            String* identifier = Array_Append(&statement->assignment.left);
+                            *identifier = token.string;
                             
                             SkipPastToken(state.lexer, token);
                             token = GetToken(state.lexer);
                             
-                            if (token.kind == Token_Comma)
-                            {
-                                SkipPastToken(state.lexer, token);
-                                continue;
-                            }
-                        }
-                        
-                        else
-                        {
-                            //// ERROR: Missing identifier after comma in multivariable assignment statement
-                            encountered_errors = true;
-                            break;
-                        }
-                        
-                        peek         = PeekNextToken(state.lexer, token);
-                        Token peek_1 = PeekNextToken(state.lexer, peek);
-                        
-                        if (token.kind == Token_Equals && peek.kind != Token_Equals)
-                        {
-                            statement->assignment.operator = Expression_Invalid;
-                            
-                            SkipPastToken(state.lexer, peek);
-                        }
-                        
-                        else if (peek.kind == Token_Equals)
-                        {
-                            switch (token.kind)
-                            {
-                                case Token_Plus:       statement->assignment.operator = Expression_Add;    break;
-                                case Token_Minus:      statement->assignment.operator = Expression_Sub;    break;
-                                case Token_Asterisk:   statement->assignment.operator = Expression_Mul;    break;
-                                case Token_Slash:      statement->assignment.operator = Expression_Div;    break;
-                                case Token_Percentage: statement->assignment.operator = Expression_Mod;    break;
-                                case Token_Ampersand:  statement->assignment.operator = Expression_BitAnd; break;
-                                case Token_Pipe:       statement->assignment.operator = Expression_BitOr;  break;
-                                case Token_Hat:        statement->assignment.operator = Expression_BitXor; break;
-                                
-                                INVALID_DEFAULT_CASE;
-                            }
-                            
-                            SkipPastToken(state.lexer, peek);
-                        }
-                        
-                        else if (peek_1.kind == Token_Equals && token.kind == peek.kind)
-                        {
-                            switch (token.kind)
-                            {
-                                case Token_Ampersand: statement->assignment.operator = Expression_LogicalAnd; break;
-                                case Token_Pipe:      statement->assignment.operator = Expression_LogicalOr;  break;
-                                case Token_Less:      statement->assignment.operator = Expression_BitRShift;  break;
-                                case Token_Greater:   statement->assignment.operator = Expression_BitLShift;  break;
-                                
-                                INVALID_DEFAULT_CASE;
-                            }
-                            
-                            SkipPastToken(state.lexer, peek_1);
-                        }
-                        
-                        break;
-                    }
-                    
-                    if (!encountered_errors)
-                    {
-                        while (!encountered_errors)
-                        {
-                            Expression* expr = Array_Append(&statement->assignment.right);
-                            if (!ParseExpression(state, &expr)) encountered_errors = true;
-                            else
-                            {
-                                token = GetToken(state.lexer);
-                                
-                                if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
-                                else break;
-                            }
+                            if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                            else break;
                         }
                         
                         if (!encountered_errors)
+                        {
+                            token = GetToken(state.lexer);
+                            peek  = PeekNextToken(state.lexer, token);
+                            
+                            if (token.kind == Token_Equals)
+                            {
+                                statement->assignment.operator = Expression_Invalid;
+                                
+                                SkipPastToken(state.lexer, peek);
+                            }
+                            
+                            else if (peek.kind == Token_Equals)
+                            {
+                                switch (token.kind)
+                                {
+                                    case Token_Plus:       statement->assignment.operator = Expression_Add;    break;
+                                    case Token_Minus:      statement->assignment.operator = Expression_Sub;    break;
+                                    case Token_Asterisk:   statement->assignment.operator = Expression_Mul;    break;
+                                    case Token_Slash:      statement->assignment.operator = Expression_Div;    break;
+                                    case Token_Percentage: statement->assignment.operator = Expression_Mod;    break;
+                                    case Token_Ampersand:  statement->assignment.operator = Expression_BitAnd; break;
+                                    case Token_Pipe:       statement->assignment.operator = Expression_BitOr;  break;
+                                    case Token_Hat:        statement->assignment.operator = Expression_BitXor; break;
+                                    
+                                    INVALID_DEFAULT_CASE;
+                                }
+                                
+                                SkipPastToken(state.lexer, peek);
+                            }
+                            
+                            else
+                            {
+                                switch (token.kind)
+                                {
+                                    case Token_Ampersand: statement->assignment.operator = Expression_LogicalAnd; break;
+                                    case Token_Pipe:      statement->assignment.operator = Expression_LogicalOr;  break;
+                                    case Token_Less:      statement->assignment.operator = Expression_BitRShift;  break;
+                                    case Token_Greater:   statement->assignment.operator = Expression_BitLShift;  break;
+                                    
+                                    INVALID_DEFAULT_CASE;
+                                }
+                                
+                                peek = PeekNextToken(state.lexer, peek);
+                                SkipPastToken(state.lexer, peek);
+                            }
+                            
+                            while (!encountered_errors)
+                            {
+                                Expression** expr = Array_Append(&statement->assignment.right);
+                                if (!ParseExpression(state, expr)) encountered_errors = true;
+                                else
+                                {
+                                    token = GetToken(state.lexer);
+                                    
+                                    if (token.kind == Token_Comma) SkipPastToken(state.lexer, token);
+                                    else break;
+                                }
+                            }
+                            
+                            if (!encountered_errors)
+                            {
+                                token = GetToken(state.lexer);
+                                
+                                if (token.kind == Token_Semicolon) SkipPastToken(state.lexer, token);
+                                else
+                                {
+                                    //// ERROR: Missing terminating semicolon after assignment
+                                    encountered_errors = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    else
+                    {
+                        Statement* statement = AppendStatement(state, Statement_Expression);
+                        
+                        if (!ParseExpression(state, &statement->expression)) encountered_errors = true;
+                        else
                         {
                             token = GetToken(state.lexer);
                             
                             if (token.kind == Token_Semicolon) SkipPastToken(state.lexer, token);
                             else
                             {
-                                //// ERROR: Missing terminating semicolon after assignment
+                                //// ERROR: Missing terminating semicolon after expression
                                 encountered_errors = true;
                             }
-                        }
-                    }
-                }
-                
-                else
-                {
-                    Statement* statement = AppendStatement(state, Statement_Expression);
-                    
-                    if (!ParseExpression(state, &statement->expression)) encountered_errors = true;
-                    else
-                    {
-                        token = GetToken(state.lexer);
-                        
-                        if (token.kind == Token_Semicolon) SkipPastToken(state.lexer, token);
-                        else
-                        {
-                            //// ERROR: Missing terminating semicolon after expression
-                            encountered_errors = true;
                         }
                     }
                 }
@@ -1877,7 +2458,10 @@ ParseFile(Workspace* workspace, Package* package, String path,
             
             else
             {
-                if (!ParseDeclaration(state)) encountered_errors = true;
+                Statement* statement = Array_Append(current_context->statements);
+                *statement = InitStatement(state, Statement_Declaration);
+                
+                if (!ParseDeclaration(state, &statement->declaration)) encountered_errors = true;
             }
         }
     }

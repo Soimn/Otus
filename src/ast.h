@@ -212,9 +212,11 @@ typedef struct Attribute_Parameter
     {
         Number number;
         String string;
+        bool boolean;
     };
     
     bool is_number;
+    bool is_string;
 } Attribute_Parameter;
 
 typedef struct Attribute
@@ -241,19 +243,19 @@ typedef struct Declaration
     
     Array(Attribute) attributes;
     Array(String) names;
-    Array(Expression) types;
+    Array(Expression*) types;
     
     union
     {
         struct
         {
-            Array(Expression) values;
-            bool is_unitialized;
+            Array(Expression*) values;
+            bool is_uninitialized;
         } var;
         
         struct
         {
-            Array(Expression) values;
+            Array(Expression*) values;
         } constant;
         
         Procedure procedure;
@@ -343,7 +345,7 @@ typedef struct Statement
         {
             Enum32(EXPRESSION_KIND) operator;
             Array(String) left;
-            Array(Expression) right;
+            Array(Expression*) right;
         } assignment;
         
         Expression* expression;

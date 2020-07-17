@@ -512,3 +512,22 @@ Array_ElementAt(Array* array, UMM index)
     UMM element_size = *((U64*)array->data - 1);
     return (U8*)array->data + index * element_size;
 }
+
+void
+Array_OrderedRemove(Array* array, UMM index)
+{
+    ASSERT(array->size > index);
+    
+    UMM element_size = *((U64*)array->data - 1);
+    
+    if (index < array->size - 1)
+    {
+        void* dst = (U8*)array->data + index * element_size;
+        void* src = (U8*)array->data + (index + 1) * element_size;
+        UMM size  = ((array->size - 1) - index) * element_size;
+        
+        Copy(src, dst, size);
+    }
+    
+    array->size -= 1;
+}
