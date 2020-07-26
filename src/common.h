@@ -149,6 +149,8 @@ typedef struct Binary_Options
 
 #define HIDDEN(EX) EX
 
+#define CONST_STRING(string) {(U8*)string, sizeof(string) - 1}
+
 /// Foreign
 //////////////////////////////////////////
 

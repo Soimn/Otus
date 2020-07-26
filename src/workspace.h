@@ -24,6 +24,9 @@ typedef struct Package
     String path;
     Bucket_Array(Source_File) loaded_files;
     
+    Bucket_Array(Statement) statements;
+    Bucket_Array(Expression) expressions;
+    
     Bucket_Array(Symbol_Table) symbol_tables;
     Scope* scope;
     
@@ -44,6 +47,7 @@ typedef struct Workspace
     Mutex package_mutex;
     Bucket_Array(Package) packages;
     
+    // NOTE(soimn): Element 0 is the default
     Bucket_Array(Mounting_Point) mounting_points;
     bool export_by_default;
     

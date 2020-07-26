@@ -5,23 +5,31 @@ enum SYMBOL_KIND
     Symbol_Proc,
     Symbol_Enum,
     Symbol_Package,
-    // TODO(soimn): Symbol_Label,
+    // NOTE(soimn): Handle labels in the scope chain
 };
 
 typedef struct Symbol
 {
     Enum32(SYMBOL_KIND) kind;
-    String_ID name;
-    Type_ID type;
     Text_Interval text;
     
     union
     {
-        Scope_Index using_index;
-        Package_ID package;
-    } import_info;
+        struct
+        {
+            String_ID name;
+            Type_ID type;
+            Scope_Index using_index;
+        };
+        
+        struct
+        {
+            Package_ID package;
+            String_ID name;
+            String_ID alias;
+        } import;
+    };
     
-    bool is_using;
 } Symbol;
 
 typedef struct Symbol_Table
@@ -31,14 +39,17 @@ typedef struct Symbol_Table
 
 typedef struct Scope
 {
-    Array(Statement) statements;
-    Array(Expression) expressions;
+    struct Statement* first_statement;
+    struct Statement* last_statement;
     HIDDEN(Symbol_Table_ID) symbol_table_id;
 } Scope;
 
 enum EXPRESSION_KIND
 {
     Expression_Invalid = 0,
+    
+    // Ternary
+    Expression_Ternary,
     
     // Binary
     Expression_Add,
@@ -59,8 +70,6 @@ enum EXPRESSION_KIND
     Expression_CmpGreater,
     Expression_CmpLessOrEqual,
     Expression_CmpGreaterOrEqual,
-    Expression_Member,
-    Expression_PolymorphicAlias,
     
     // Prefix unary
     Expression_Neg,
@@ -68,26 +77,25 @@ enum EXPRESSION_KIND
     Expression_LogicalNot,
     Expression_Reference,
     Expression_Dereference,
-    Expression_SpanType,
-    Expression_ArrayType,
-    Expression_DynamicArrayType,
-    Expression_PolymorphicName,
     
     // Postfix unary
     Expression_Subscript,
-    Expression_Span,
     Expression_Call,
     
-    // Types
+    // Type related
+    Expression_PolymorphicAlias, // binary
+    Expression_PolymorphicName,  // prefix unary
+    Expression_PointerType,      // prefix unary
+    Expression_ArrayType,
     Expression_ProcPointer,
     Expression_Struct,
     Expression_Enum,
     
     // Special
+    Expression_Member,      // binary
     Expression_Proc,
-    Expression_Run,
-    Expression_Ternary,
-    Expression_Cast,
+    Expression_Run,         // unary
+    Expression_ArrayExpand, // prefix unary // IMPORTANT
     
     // Literals
     Expression_Identifier,
@@ -95,50 +103,84 @@ enum EXPRESSION_KIND
     Expression_Boolean,
     Expression_String,
     Expression_Character,
-    Expression_Codepoint,
-    Expression_StructLiteral,
+    Expression_DataLiteral
 };
-
-typedef struct Named_Value
-{
-    String name;
-    struct Expression* value;
-} Named_Value;
 
 typedef struct Procedure_Parameter
 {
-    String name;
     struct Expression* type;
     struct Expression* value;
+    String name;
+    bool is_using;
     bool is_const;
     bool is_baked;
 } Procedure_Parameter;
 
+// TODO(soimn): Consider adding a #required directive that signals to the compiler that a certain return value 
+//              must allways be captured
+typedef struct Procedure_Return_Value
+{
+    String name;
+    struct Expression* type;
+} Procedure_Return_Value;
+
 typedef struct Procedure
 {
     Array(Procedure_Parameter) parameters;
-    Array(Named_Value) return_values;
+    Array(Procedure_Return_Value) return_values;
     Scope body;
+    bool has_body;
+    bool is_inline;
+    bool is_foreign;
 } Procedure;
+
+typedef struct Structure_Member
+{
+    struct Expression* type;
+    String name;
+    bool is_using;
+    bool is_strictly_ordered;
+    bool is_packed;
+} Structure_Member;
+
+typedef struct Structure_Parameter
+{
+    struct Expression* type;
+    struct Expression* value;
+    String name;
+    bool is_using;
+} Structure_Parameter;
 
 typedef struct Structure
 {
-    Array(Named_Value) parameters;
-    Array(Named_Value) members;
+    Array(Structure_Parameter) parameters;
+    Array(Structure_Member) members;
     bool is_union;
 } Structure;
 
+typedef struct Enumeration_Member
+{
+    String name;
+    struct Expression* value;
+} Enumeration_Member;
+
 typedef struct Enumeration
 {
-    struct Expression* member_type;
-    Array(Named_Value) members;
+    struct Expression* type;
+    Array(Enumeration_Member) members;
 } Enumeration;
+
+typedef struct Named_Argument
+{
+    String name;
+    struct Expression* value;
+} Named_Argument;
 
 typedef struct Expression
 {
     Enum32(EXPRESSION_KIND) kind;
-    Text_Interval text;
-    bool is_type;
+    
+    HIDDEN(Text_Interval) text;
     
     union
     {
@@ -157,29 +199,26 @@ typedef struct Expression
         
         struct Expression* operand;
         
+        // NOTE(soimn): If size is null this is either span type or a dynamic array type, depending on is_dynamic
         struct
         {
-            struct Expression* size;
             struct Expression* elem_type;
+            struct Expression* size;
+            bool is_dynamic;
         } array_type;
-        
-        struct
-        {
-            struct Expression* array;
-            struct Expression* index;
-        } subscript;
         
         struct
         {
             struct Expression* array;
             struct Expression* start;
             struct Expression* length;
-        } span;
+            bool is_span;
+        } subscript;
         
         struct
         {
             struct Expression* pointer;
-            Array(Named_Value) parameters;
+            Array(Named_Argument) arguments;
         } call;
         
         struct
@@ -191,8 +230,8 @@ typedef struct Expression
         struct
         {
             struct Expression* type;
-            Array(Named_Value) args;
-        } struct_literal;
+            Array(Named_Argument) arguments;
+        } data_literal;
         
         Procedure procedure;
         Structure structure;
@@ -200,13 +239,12 @@ typedef struct Expression
         
         String string;
         Number number;
-        char character;
-        U32 codepoint;
+        U32 character;
         bool boolean;
     };
 } Expression;
 
-typedef struct Attribute_Parameter
+typedef struct Attribute_Argument
 {
     union
     {
@@ -217,12 +255,12 @@ typedef struct Attribute_Parameter
     
     bool is_number;
     bool is_string;
-} Attribute_Parameter;
+} Attribute_Argument;
 
 typedef struct Attribute
 {
     String name;
-    Array(Attribute_Parameter) parameters;
+    Array(Attribute_Argument) arguments;
 } Attribute;
 
 enum DECLARATION_KIND
@@ -237,9 +275,11 @@ enum DECLARATION_KIND
 typedef struct Declaration
 {
     Enum32(DECLARATION_KIND) kind;
-    Text_Interval text;
     
-    bool is_exported;
+    HIDDEN(Text_Interval) text;
+    HIDDEN(bool) is_exported;
+    
+    String package_name;
     
     Array(Attribute) attributes;
     Array(String) names;
@@ -256,6 +296,7 @@ typedef struct Declaration
         struct
         {
             Array(Expression*) values;
+            bool is_distinct;
         } constant;
         
         Procedure procedure;
@@ -266,8 +307,12 @@ typedef struct Declaration
 
 enum STATEMENT_KIND
 {
+    Statement_Import,
+    Statement_Load,
+    
     Statement_Scope,
     Statement_Declaration,
+    Statement_ConstAssert,
     Statement_If,
     Statement_For,
     Statement_Defer,
@@ -275,44 +320,34 @@ enum STATEMENT_KIND
     Statement_Return,
     Statement_Assignment,
     Statement_Expression,
-    
-    Statement_Import,
-    Statement_Load,
-    Statement_ConstAssert,
-    Statement_ConstIf,
 };
 
 typedef struct Statement
 {
     Enum32(STATEMENT_KIND) kind;
-    Text_Interval text;
+    struct Statement* next;
+    
+    HIDDEN(Text_Interval) text;
     
     union
     {
+        // NOTE(soimn): This is not a statement in the language. The only reason this is defined as a statement 
+        // here is to allow imports inside of nested constant if statements
         struct
         {
             Package_ID package_id;
             String alias;
             bool is_exported;
+            bool is_foreign;
         } import;
         
+        // NOTE(soimn): This is not a statement in the language. The only reason this is defined as a statement 
+        //              here is to allow loads inside of nested constant if statements
         struct
         {
             File_ID file_id;
             bool is_exported;
         } load;
-        
-        struct
-        {
-            Expression* condition;
-            String message;
-        } const_assert;
-        
-        struct
-        {
-            Expression* condition;
-            Array(Statement) body;
-        } const_if;
         
         Scope scope;
         Declaration declaration;
@@ -320,8 +355,15 @@ typedef struct Statement
         struct
         {
             Expression* condition;
+            String message;
+        } const_assert_statement;
+        
+        struct
+        {
+            Expression* condition;
             Scope true_body;
             Scope false_body;
+            bool is_const;
         } if_statement;
         
         struct
@@ -331,22 +373,29 @@ typedef struct Statement
             Expression* condition;
             struct Statement* statement;
             Scope body;
-        } for_loop;
-        
-        Scope defer_statement;
-        Expression* using_expression;
+        } for_statement;
         
         struct
         {
-            Array(Named_Value) values;
+            Scope body;
+        } defer_statement;
+        
+        struct
+        {
+            Expression* path;
+        } using_statement;
+        
+        struct
+        {
+            Array(Named_Argument) arguments;
         } return_statement;
         
         struct
         {
             Enum32(EXPRESSION_KIND) operator;
-            Array(String) left;
+            Array(Expression*) left;
             Array(Expression*) right;
-        } assignment;
+        } assignment_statement;
         
         Expression* expression;
     };

@@ -69,10 +69,9 @@ enum TOKEN_KIND
 
 enum KEYWORD_KIND
 {
-    Keyword_Package,
-    
     Keyword_Load,
     Keyword_Import,
+    Keyword_Foreign,
     Keyword_As,
     
     Keyword_If,
@@ -96,30 +95,29 @@ enum KEYWORD_KIND
     KEYWORD_COUNT
 };
 
-const char* KeywordStrings[KEYWORD_COUNT] = {
-    [Keyword_Package]  = "package",
+global String KeywordStrings[KEYWORD_COUNT] = {
+    [Keyword_Load]     = CONST_STRING("load"),
+    [Keyword_Import]   = CONST_STRING("import"),
+    [Keyword_Foreign]  = CONST_STRING("foreign"),
+    [Keyword_As]       = CONST_STRING("as"),
     
-    [Keyword_Load]     = "load",
-    [Keyword_Import]   = "import",
-    [Keyword_As]       = "as",
+    [Keyword_If]       = CONST_STRING("if"),
+    [Keyword_Else]     = CONST_STRING("else"),
+    [Keyword_For]      = CONST_STRING("for"),
+    [Keyword_Break]    = CONST_STRING("break"),
+    [Keyword_Continue] = CONST_STRING("continue"),
     
-    [Keyword_If]       = "if",
-    [Keyword_Else]     = "else",
-    [Keyword_For]      = "for",
-    [Keyword_Break]    = "break",
-    [Keyword_Continue] = "continue",
+    [Keyword_Proc]     = CONST_STRING("proc"),
+    [Keyword_Struct]   = CONST_STRING("struct"),
+    [Keyword_Union]    = CONST_STRING("union"),
+    [Keyword_Enum]     = CONST_STRING("enum"),
     
-    [Keyword_Proc]     = "proc",
-    [Keyword_Struct]   = "struct",
-    [Keyword_Union]    = "union",
-    [Keyword_Enum]     = "enum",
+    [Keyword_Using]    = CONST_STRING("using"),
+    [Keyword_Defer]    = CONST_STRING("defer"),
+    [Keyword_Return]   = CONST_STRING("return"),
     
-    [Keyword_Using]    = "using",
-    [Keyword_Defer]    = "defer",
-    [Keyword_Return]   = "return",
-    
-    [Keyword_True]     = "true",
-    [Keyword_False]    = "false",
+    [Keyword_True]     = CONST_STRING("true"),
+    [Keyword_False]    = CONST_STRING("false")
 };
 
 typedef struct Token
@@ -132,7 +130,7 @@ typedef struct Token
         String string;
         Number number;
         Enum32(KEYWORD_KIND) keyword;
-        U32 codepoint;
+        U32 character;
     };
 } Token;
 
@@ -151,11 +149,152 @@ typedef struct Lexer
 } Lexer;
 
 bool
-ResolveUnicodeString(Lexer* lexer, String raw, String* string)
+ResolveString(Lexer* lexer, String raw, String* string)
 {
     bool encountered_errors = false;
     
-    NOT_IMPLEMENTED;
+    string->size = 0;
+    string->data = Arena_AllocateSize(lexer->arena, raw.size, ALIGNOF(U8));
+    
+    while (raw.size != 0)
+    {
+        if (*raw.data == '\\')
+        {
+            raw.data += 1;
+            raw.size -= 1;
+            
+            ASSERT(raw.size != 0);
+            
+            if (*raw.data == 'x' || *raw.data == 'u' || *raw.data == 'U')
+            {
+                uint digit_count = (*raw.data == 'x' ? 2 : (*raw.data == 'u' ? 4 : 6));
+                
+                raw.data += 1;
+                raw.size -= 1;
+                
+                U32 value = 0;
+                
+                for (uint i = 0; i < digit_count; ++i)
+                {
+                    value *= 16;
+                    
+                    if (ToUpper(*raw.data) >= 'A' && ToUpper(*raw.data) <= 'F')
+                    {
+                        value += (ToUpper(*raw.data) - 'A') + 10;
+                    }
+                    
+                    else if (*raw.data >= '0' && *raw.data <= '9')
+                    {
+                        value += *raw.data - '0';
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing remaining x digits
+                        encountered_errors = true;
+                        break;
+                    }
+                    
+                    raw.data += 1;
+                    raw.size -= 1;
+                }
+                
+                if (!encountered_errors)
+                {
+                    if (digit_count == 2)
+                    {
+                        string->data[string->size] = (U8)value;
+                        string->size += 1;
+                    }
+                    
+                    else
+                    {
+                        if (value > 0x10FFFF)
+                        {
+                            //// ERROR: Invalid UTF-8 character
+                            encountered_errors = true;
+                        }
+                        
+                        else
+                        {
+                            if (value <= 0xFF)
+                            {
+                                string->data[string->size] = (U8)value;
+                                string->size += 1;
+                            }
+                            
+                            else if (value <= 0x7FF)
+                            {
+                                // NOTE(soimn):
+                                // value: xxx xxyy yyyy
+                                // out:   110xxxxx 10yyyyyy
+                                string->data[string->size + 0] = (U8)(0xC0 || ((value & 0x7C0) >> 6));
+                                string->data[string->size + 1] = (U8)(0x80 || ((value & 0x03F) >> 0));
+                                string->size += 2;
+                            }
+                            
+                            else if (value <= 0xFFFF)
+                            {
+                                // NOTE(soimn):
+                                // value: xxxx yyyy yyzz zzzz
+                                // out:   1110xxxx 10yyyyyy 10zzzzzz
+                                string->data[string->size + 0] = (U8)(0xE0 || ((value & 0xF000) >> 12));
+                                string->data[string->size + 1] = (U8)(0x80 || ((value & 0x0FC0) >> 06));
+                                string->data[string->size + 2] = (U8)(0x80 || ((value & 0x003F) >> 00));
+                                string->size += 3;
+                            }
+                            
+                            else
+                            {
+                                // NOTE(soimn):
+                                // value: x xxyy yyyy zzzz zzpp pppp
+                                // out:   11110xxx 10yyyyyy 10zzzzzz 10pppppp
+                                string->data[string->size + 0] = (U8)(0xF0 || ((value & 0x1C0000) >> 18));
+                                string->data[string->size + 1] = (U8)(0x80 || ((value & 0x03F000) >> 12));
+                                string->data[string->size + 2] = (U8)(0x80 || ((value & 0x000FC0) >> 06));
+                                string->data[string->size + 3] = (U8)(0x80 || ((value & 0x00003F) >> 00));
+                                string->size += 4;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            else
+            {
+                U8 character = *raw.data;
+                
+                switch (*raw.data)
+                {
+                    case 'a': character = '\a'; break;
+                    case 'b': character = '\b'; break;
+                    case 'f': character = '\f'; break;
+                    case 'n': character = '\n'; break;
+                    case 'r': character = '\r'; break;
+                    case 't': character = '\t'; break;
+                    case 'v': character = '\v'; break;
+                }
+                
+                if (character != 0)
+                {
+                    string->data[string->size] = character;
+                    string->size += 1;
+                    
+                    raw.data += 1;
+                    raw.size -= 1;
+                }
+            }
+        }
+        
+        else
+        {
+            string->data[string->size] = *raw.data;
+            string->size += 1;
+            
+            raw.data += 1;
+            raw.size -= 1;
+        }
+    }
     
     return !encountered_errors;
 }
@@ -281,7 +420,7 @@ GetToken(Lexer* lexer)
                         
                         for (uint i = 0; i < KEYWORD_COUNT; ++i)
                         {
-                            if (StringCStringCompare(token.string, KeywordStrings[i]))
+                            if (StringCompare(token.string, KeywordStrings[i]))
                             {
                                 token.kind    = Token_Keyword;
                                 token.keyword = i;
@@ -299,6 +438,7 @@ GetToken(Lexer* lexer)
                         
                         while (peek[0] != 0 && peek[0] != '"')
                         {
+                            if (peek[0] == '\\' && peek[1] == '"') ++peek;
                             ++peek;
                         }
                         
@@ -313,7 +453,7 @@ GetToken(Lexer* lexer)
                             raw_string.size = (U8*)peek - token.string.data;
                             ++peek;
                             
-                            if (!ResolveUnicodeString(lexer, raw_string, &token.string))
+                            if (!ResolveString(lexer, raw_string, &token.string))
                             {
                                 token.kind = Token_Error;
                             }
@@ -328,6 +468,7 @@ GetToken(Lexer* lexer)
                         
                         while (peek[0] != 0 && peek[0] != '\'')
                         {
+                            if (peek[0] == '\\' && peek[1] == '\'') ++peek;
                             ++peek;
                         }
                         
@@ -343,48 +484,54 @@ GetToken(Lexer* lexer)
                             ++peek;
                             
                             String resolved_string;
-                            if (ResolveUnicodeString(lexer, raw_string, &resolved_string))
+                            if (ResolveString(lexer, raw_string, &resolved_string))
                             {
                                 if (resolved_string.data != 0)
                                 {
-                                    U8* bytes = resolved_string.data;
+                                    U8* bytes     = resolved_string.data;
+                                    U8 bytes_read = 0;
                                     
-                                    token.codepoint = 0;
+                                    token.character = 0;
                                     if ((bytes[0] & 0xF0) == 0xF0)
                                     {
-                                        token.codepoint |= ((U32)bytes[0] & 0x07) << 18;
-                                        token.codepoint |= ((U32)bytes[1] & 0x3F) << 12;
-                                        token.codepoint |= ((U32)bytes[2] & 0x3F) << 6;
-                                        token.codepoint |= ((U32)bytes[3] & 0x3F) << 0;
+                                        token.character |= ((U32)bytes[0] & 0x07) << 18;
+                                        token.character |= ((U32)bytes[1] & 0x3F) << 12;
+                                        token.character |= ((U32)bytes[2] & 0x3F) << 6;
+                                        token.character |= ((U32)bytes[3] & 0x3F) << 0;
                                         
-                                        resolved_string.size -= 4;
+                                        bytes_read = 4;
                                     }
                                     
                                     else if ((bytes[0] & 0xE0) == 0xE0)
                                     {
-                                        token.codepoint |= ((U32)bytes[0] & 0x0F) << 12;
-                                        token.codepoint |= ((U32)bytes[1] & 0x3F) << 6;
-                                        token.codepoint |= ((U32)bytes[2] & 0x3F) << 0;
+                                        token.character |= ((U32)bytes[0] & 0x0F) << 12;
+                                        token.character |= ((U32)bytes[1] & 0x3F) << 6;
+                                        token.character |= ((U32)bytes[2] & 0x3F) << 0;
                                         
-                                        resolved_string.size -= 3;
+                                        bytes_read = 3;
                                     }
                                     
                                     else if ((bytes[0] & 0xC0) == 0xC0)
                                     {
-                                        token.codepoint |= ((U32)bytes[0] & 0x1F) << 6;
-                                        token.codepoint |= ((U32)bytes[1] & 0x3F) << 0;
+                                        token.character |= ((U32)bytes[0] & 0x1F) << 6;
+                                        token.character |= ((U32)bytes[1] & 0x3F) << 0;
                                         
-                                        resolved_string.size -= 2;
+                                        bytes_read = 2;
                                     }
                                     
                                     else
                                     {
-                                        token.codepoint |= ((U32)bytes[0] & 0x7F);
+                                        token.character |= ((U32)bytes[0] & 0x7F);
                                         
-                                        resolved_string.size -= 1;
+                                        bytes_read = 1;
                                     }
                                     
-                                    if (resolved_string.size != 0)
+                                    if (resolved_string.size == bytes_read)
+                                    {
+                                        Arena_FreeSize(lexer->arena, resolved_string.data, resolved_string.size);
+                                    }
+                                    
+                                    else
                                     {
                                         //// ERROR: Character literal contains more than one codepoint
                                         token.kind = Token_Error;

@@ -89,10 +89,14 @@ Workspace_Open(Workspace_ID* workspace_id, Workspace_Options options, String fil
         workspace->arena    = MEMORY_ARENA_INIT(&workspace->allocator);
         workspace->packages = BUCKET_ARRAY_INIT(&workspace->arena, Package, 10);
         
+        // TODO(soimn): setup default mounting point
+        
         Package* main_pkg = BucketArray_Append(&workspace->packages);
         main_pkg->name.data = (U8*)"main";
         main_pkg->name.size = sizeof("main") - 1;
         main_pkg->path      = file_path;
+        
+        // IMPORTANT TODO(soimn): Resolve file_path
         
         // TODO(soimn): Run Workspace_WorkerParsingLoop on several threads
         // TODO(soimn): Set workspace->num_threads_working to the total number of threads
@@ -127,7 +131,7 @@ Workspace_InspectNextDeclaration(Workspace_ID workspace_id, Declaration* declara
 }
 
 EXPORT bool
-Workspace_ModifyCurrentDeclaration(Workspace_ID workspace_id, Declaration declaration)
+Workspace_ModifyCurrentDeclaration(Workspace_ID workspace_id, Declaration* declaration)
 {
     bool encountered_errors = false;
     
@@ -146,7 +150,7 @@ Workspace_ModifyCurrentDeclaration(Workspace_ID workspace_id, Declaration declar
 }
 
 EXPORT bool
-Workspace_InjectDeclaration(Workspace_ID workspace_id, Package_ID package, Declaration declaration)
+Workspace_InjectDeclaration(Workspace_ID workspace_id, String package_name, Declaration declaration)
 {
     bool encountered_errors = false;
     
@@ -165,7 +169,7 @@ Workspace_InjectDeclaration(Workspace_ID workspace_id, Package_ID package, Decla
 }
 
 EXPORT bool
-Workspace_InjectCode(Workspace_ID workspace_id, Package_ID package, String code)
+Workspace_InjectImport(Workspace_ID workspace_id, String package_name, String path, String alias)
 {
     bool encountered_errors = false;
     

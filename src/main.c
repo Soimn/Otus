@@ -13,10 +13,13 @@
 
 IMPORT bool Workspace_Open(Workspace_ID* workspace, Workspace_Options options, String file_path);
 IMPORT void Workspace_Close(Workspace_ID workspace);
+
 IMPORT bool Workspace_InspectNextDeclaration(Workspace_ID workspace, Declaration* declaration);
-IMPORT bool Workspace_ModifyCurrentDeclaration(Workspace_ID workspace, Declaration declaration);
-IMPORT bool Workspace_InjectDeclaration(Workspace_ID workspace, Package_ID package, Declaration declaration);
-IMPORT bool Workspace_InjectCode(Workspace_ID workspace, Package_ID package, String code);
+IMPORT bool Workspace_ModifyCurrentDeclaration(Workspace_ID workspace, Declaration* declaration);
+
+IMPORT bool Workspace_InjectDeclaration(Workspace_ID workspace, String package_name, Declaration* declaration);
+IMPORT bool Workspace_InjectImport(Workspace_ID workspace, String package_name, String path, String alias);
+
 IMPORT bool Workspace_GenerateBinary(Workspace_ID workspace, Binary_Options options);
 
 #include <stdio.h>
