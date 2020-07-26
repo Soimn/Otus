@@ -28,7 +28,7 @@ Philosophy:
   - Being able to easily read and reason about a piece of code is more important than being able to write code 
     quickly
 
-Problems: (P: problem, S: solution, ?: possible solution)
+Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)
   P: How should importing work in the language, and should cyclic imports be allowed?
   ?: Cyclic imports will be allowed, as importing a file will only declare a dependancy on that file. Importing a 
      directory is also possible, as that will import all source files in that directory and all sub directories.
@@ -46,7 +46,8 @@ Problems: (P: problem, S: solution, ?: possible solution)
 
   P: What could the language provide to handle name collisions?
   ?: Namespacing imports and file vs. export scope
-  S: Import statements which are able to selectively import declarations and namespace them
+  #: Import statements which are able to selectively import declarations and namespace them
+  S: Imports that namespace and file vs export scope
 
   P: How should attributes to procedures, structs and other constructs be marked up?
   ?: By compiler directives before the declaration
@@ -55,12 +56,14 @@ Problems: (P: problem, S: solution, ?: possible solution)
   P: Should macros be added to the language?
 
   P: Should the subscript operator work on pointers?
+  S: yes
 
   P: How far should metaprogramming be taken in this language?
   ?: Jai-esque polymorphism, run directives, body_text, modify and mutable compilation
 
   P: How should unicode strings and characters be represented in memory, or rather,
      how should UTF-8 strings and characters be expressed and manipulated?
+  S: Strings are utf-8 encoded arrays of bytes, characters are utf-8 but always 4 bytes large.
 
   P: How should float to int conversions be handled, where the floating point number is larger than the largest 
      integer type representable on a system?
@@ -104,6 +107,10 @@ Keywords:
   - enum
   - true
   - false
+  - as
+  - import
+  - load
+  - foreign
 
 Builtin types:
   - int        // A 64-bit signed integer
@@ -164,14 +171,13 @@ Compiler directives:
 // expression level
   - run
   - distinct
-  - codepoint
 
 Attributes:
 // Proc
   - inline
   - no_inline
   - foreign
-  - no_discard
+//  - no_discard
   - deprecated
   - distinct
 

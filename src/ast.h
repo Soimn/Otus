@@ -95,7 +95,9 @@ enum EXPRESSION_KIND
     Expression_Member,      // binary
     Expression_Proc,
     Expression_Run,         // unary
-    Expression_ArrayExpand, // prefix unary // IMPORTANT
+    Expression_ArrayExpand, // prefix unary
+    Expression_Location,
+    Expression_CallerLocation,
     
     // Literals
     Expression_Identifier,
@@ -114,6 +116,7 @@ typedef struct Procedure_Parameter
     bool is_using;
     bool is_const;
     bool is_baked;
+    bool no_alias;
 } Procedure_Parameter;
 
 // TODO(soimn): Consider adding a #required directive that signals to the compiler that a certain return value 
@@ -122,7 +125,12 @@ typedef struct Procedure_Return_Value
 {
     String name;
     struct Expression* type;
+    bool is_required;
 } Procedure_Return_Value;
+
+enum PROCEDURE_CALLING_CONVENTION
+{
+};
 
 typedef struct Procedure
 {
@@ -131,7 +139,8 @@ typedef struct Procedure
     Scope body;
     bool has_body;
     bool is_inline;
-    bool is_foreign;
+    bool is_foreign; // TODO(soimn): Should procedures be able to specify which library they link to?
+    Enum8(PROCEDURE_CALLING_CONVENTION) calling_convention;
 } Procedure;
 
 typedef struct Structure_Member
@@ -179,8 +188,7 @@ typedef struct Named_Argument
 typedef struct Expression
 {
     Enum32(EXPRESSION_KIND) kind;
-    
-    HIDDEN(Text_Interval) text;
+    Text_Interval text;
     
     union
     {
@@ -213,6 +221,7 @@ typedef struct Expression
             struct Expression* start;
             struct Expression* length;
             bool is_span;
+            bool should_bounds_check;
         } subscript;
         
         struct
@@ -232,6 +241,13 @@ typedef struct Expression
             struct Expression* type;
             Array(Named_Argument) arguments;
         } data_literal;
+        
+        struct
+        {
+            String name;
+            bool is_file;
+            bool is_line;
+        } location;
         
         Procedure procedure;
         Structure structure;
@@ -275,9 +291,7 @@ enum DECLARATION_KIND
 typedef struct Declaration
 {
     Enum32(DECLARATION_KIND) kind;
-    
-    HIDDEN(Text_Interval) text;
-    HIDDEN(bool) is_exported;
+    Text_Interval text;
     
     String package_name;
     
@@ -303,11 +317,14 @@ typedef struct Declaration
         Structure structure;
         Enumeration enumeration;
     };
+    
+    HIDDEN(bool) is_exported;
 } Declaration;
 
 enum STATEMENT_KIND
 {
     Statement_Import,
+    Statement_ForeignImport,
     Statement_Load,
     
     Statement_Scope,
@@ -320,26 +337,34 @@ enum STATEMENT_KIND
     Statement_Return,
     Statement_Assignment,
     Statement_Expression,
+    Statement_Run, // IMPORTANT TODO(soimn): Find out how to sort these
 };
 
 typedef struct Statement
 {
     Enum32(STATEMENT_KIND) kind;
-    struct Statement* next;
+    Text_Interval text;
     
-    HIDDEN(Text_Interval) text;
+    struct Statement* next;
     
     union
     {
         // NOTE(soimn): This is not a statement in the language. The only reason this is defined as a statement 
-        // here is to allow imports inside of nested constant if statements
+        //              here is to allow imports inside of nested constant if statements
         struct
         {
             Package_ID package_id;
             String alias;
             bool is_exported;
-            bool is_foreign;
         } import;
+        
+        // NOTE(soimn): This is not a statement in the language. The only reason this is defined as a statement 
+        //              here is to allow foreign imports inside of nested constant if statements
+        struct
+        {
+            String path;
+            bool is_exported;
+        } foreign_import;
         
         // NOTE(soimn): This is not a statement in the language. The only reason this is defined as a statement 
         //              here is to allow loads inside of nested constant if statements
@@ -396,6 +421,11 @@ typedef struct Statement
             Array(Expression*) left;
             Array(Expression*) right;
         } assignment_statement;
+        
+        struct
+        {
+            Scope scope;
+        } run_statement;
         
         Expression* expression;
     };

@@ -64,7 +64,6 @@ enum TOKEN_KIND
     Token_String,
     Token_Identifier,
     Token_Number,
-    Token_Keyword
 };
 
 enum KEYWORD_KIND
@@ -129,7 +128,6 @@ typedef struct Token
     {
         String string;
         Number number;
-        Enum32(KEYWORD_KIND) keyword;
         U32 character;
     };
 } Token;
@@ -417,17 +415,6 @@ GetToken(Lexer* lexer)
                         }
                         
                         token.string.size = (U8*)peek - token.string.data;
-                        
-                        for (uint i = 0; i < KEYWORD_COUNT; ++i)
-                        {
-                            if (StringCompare(token.string, KeywordStrings[i]))
-                            {
-                                token.kind    = Token_Keyword;
-                                token.keyword = i;
-                                
-                                break;
-                            }
-                        }
                     }
                     
                     else if (peek[-1] == '"')

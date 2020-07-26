@@ -49,7 +49,9 @@ typedef struct Workspace
     
     // NOTE(soimn): Element 0 is the default
     Bucket_Array(Mounting_Point) mounting_points;
+    
     bool export_by_default;
+    bool bounds_check_by_default;
     
     U8 num_threads_working;
     bool encountered_errors;
@@ -60,6 +62,8 @@ Package_ID
 Workspace_AppendPackage(Workspace* workspace, String path)
 {
     Mutex_Lock(workspace->package_mutex);
+    
+    NOT_IMPLEMENTED; // TODO(soimn): Check for duplicates
     
     Package_ID package_id = BucketArray_ElementCount(&workspace->packages);
     
