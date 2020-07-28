@@ -39,8 +39,7 @@ typedef struct Symbol_Table
 
 typedef struct Scope
 {
-    struct Statement* first_statement;
-    struct Statement* last_statement;
+    Array(Statement) statements;
     HIDDEN(Symbol_Table_ID) symbol_table_id;
 } Scope;
 

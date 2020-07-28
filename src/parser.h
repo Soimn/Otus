@@ -12,6 +12,8 @@ typedef struct Parser_State
     bool is_global_scope;
     bool is_proc_parameter;
     bool should_bounds_check;
+    
+    //Buffer array_builder_buffer;
 } Parser_State;
 
 bool ParseExpression(Parser_State state, Expression** expr);
@@ -58,13 +60,8 @@ AppendExpression(Parser_State state, Enum32(EXPRESSION_KIND) kind)
 Statement*
 AppendStatement(Parser_State state, Enum32(STATEMENT_KIND) kind)
 {
-    Statement* statement = BucketArray_Append(&state.package->statements);
+    Statement* statement = Array_Append(&state.current_scope->statements);
     statement->kind = kind;
-    
-    if (state.current_scope->first_statement) state.current_scope->first_statement      = statement;
-    else                                      state.current_scope->last_statement->next = statement;
-    
-    state.current_scope->last_statement = statement;
     
     switch (statement->kind)
     {
