@@ -85,6 +85,8 @@ Ideas:
   - When the allocator pointer on a dynamic array is null, the array exists but cannot be freed
   
   - Provide a syntactical way of cheking if a value is included in a set (i.e. avoid token.kind == ... || token.kind == ... || token.kind == ...)
+  
+  - Should scope local closures be a part of the language as a syntactical convenience (but _NO_ capture, only elide syntactic pass by value/ref)
 
 Observations from using C to build the compiler:
   - Default function arguments and function overloading are well worth their mental overhead. They allow for 
