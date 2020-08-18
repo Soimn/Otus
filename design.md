@@ -83,6 +83,8 @@ Ideas:
     (e.g. #assert([2]int{1, 3} == [2]int{0, 1} + [2]int{1, 2}))
 
   - When the allocator pointer on a dynamic array is null, the array exists but cannot be freed
+  
+  - Provide a syntactical way of cheking if a value is included in a set (i.e. avoid token.kind == ... || token.kind == ... || token.kind == ...)
 
 Observations from using C to build the compiler:
   - Default function arguments and function overloading are well worth their mental overhead. They allow for 
