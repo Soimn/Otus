@@ -17,11 +17,11 @@ Lesser goals:
   - Provide support for visual code editors (e.g. compile AST instead of text)
 
 Philosophy:
-  - Only features which _cannot_ be implemented by a library should be a language construct
+  - Only features which _cannot_ be implemented properly by a library should be a language construct
 
-  - Every operation (e.g. integer addition) should either be well defined or throw an error
+  - Every operation (e.g. integer addition) should either be well defined or throw a compile time error
 
-  - Build systems are _not_ and should _never_ be necessary to compile larger projects
+  - External build tools are _not_ and should _never_ be necessary to compile larger projects
 
   - There should only be _one_ implementation of a _standard_ library
 
@@ -30,18 +30,19 @@ Philosophy:
 
 Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)
   P: How should importing work in the language, and should cyclic imports be allowed?
-  ?: Cyclic imports will be allowed, as importing a file will only declare a dependancy on that file. Importing a 
-     directory is also possible, as that will import all source files in that directory and all sub directories.
+  ?: Cyclic imports will be allowed for packages, as importing a package will only declare a dependancy on that file.
+     Cyclic loads of files is not allowed. Importing a directory will import the file in the directort of the same name.
+     Loading a directory is also possible, as that will import all source files in that directory and all sub directories.
      All import paths are relative to the current file unless a specific mounting point is specified. Mounting
      points are defined in the build options, and are path snippets used as prefixes to any import path with
      the accompanying mounting point label as a prefix.
 
   P: How should procedure overloading work?
-  S: Overloading should be explicit, since the programmer complexity over explicit overloading is negligible and
-     should be more familiar to programmers coming from other languages
+  ?: Overloading should be implicit, since the programmer "headspace complexity" over explicit overloading is negligible and
+     should be more familiar to programmers coming from other language
 
   P: In what order should global variables and constants be initialized?
-  S: Globals and constants are initialized after their dependencies, respecting source order when possible, 
+  ?: Globals and constants are initialized after their dependencies, respecting source order when possible, 
      alphabetical otherwise
 
   P: What could the language provide to handle name collisions?
@@ -51,7 +52,7 @@ Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)
 
   P: How should attributes to procedures, structs and other constructs be marked up?
   ?: By compiler directives before the declaration
-  S: @attrtibute_name(args) or @[attribute_name_0(args), attribute_name_1(args), ...] for multiple
+  S: @attrtibute_name(args) or @[attribute_name_0(args), attribute_name_1(args), ...] for multiple, before the declaration
 
   P: Should macros be added to the language?
 
@@ -74,19 +75,16 @@ Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)
   S: "package_name.mangled_procedure_name" if not overridden
 
 Ideas:
-  - Comments cause a lot of problems when outdated, is there a better way to "comment" code than the current 
-    standard of leaving text that is ignored by the compiler? Should the compiler try to solve this? Should it 
-    pass the comments to a metaprogram that can "compile and check" the comments, or should this problem be left 
-    for text editors to solve?
-
   - Use arrays for SIMD like operations and support element-wise arithmetic
-    (e.g. #assert([2]int{1, 3} == [2]int{0, 1} + [2]int{1, 2}))
+    (e.g. #assert({:[2]int: 1, 3} == {:[2]int: 0, 1} + {:[2]int: 1, 2}))
 
   - When the allocator pointer on a dynamic array is null, the array exists but cannot be freed
   
   - Provide a syntactical way of cheking if a value is included in a set (i.e. avoid token.kind == ... || token.kind == ... || token.kind == ...)
   
   - Should scope local closures be a part of the language as a syntactical convenience (but _NO_ capture, only elide syntactic pass by value/ref)
+  
+  - Turn the "for" loop into a "for each" loop and beef up the "while" loop to take the old "for" loops place
 
 Observations from using C to build the compiler:
   - Default function arguments and function overloading are well worth their mental overhead. They allow for 
@@ -128,7 +126,7 @@ Builtin types:
   - F32               // 32-bit IEEE-754 float
   - F64               // 64-bit IEEE-754 float
 
-  - rawptr // A word sized integer pointing to a specific address in memory
+  - rawptr // A 64/32-bit (depending on architecture) sized integer pointing to a specific address in memory
   - typeid // A 32-bit value representing a specific type
   - any    // A typeid and a rawptr to the underlying data
 
@@ -222,18 +220,7 @@ Expressions:
   - literals
   - operations (add, sub, call, deref)
   - types
-
-TODO:
- - provide implicit procedure overloading
- - provide a terser casting syntax
- - remove *fix procedure calling
- - separate the concept of procedure, struct and enum declarations from constants
- - remove nil (it causes too much confusion, checking for 0 is a lot clearer)
- - revert back to C style pointer syntax
- - #run directives should not be allowed in global scope
- - Add ternary
- - Decide on &/^ for pointer types (PS: problems with & in call args)
-
+  
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -264,10 +251,10 @@ Workspace_GenerateBinary :: proc(workspace: Workspace, options: Binary_Options) 
 
 
 // TODO: 
-  - Find out how types should be presented and be manipulated in the metaprogram
-  - Find out how the metaprogram should be able to refer to declarations
+  - Find out how types should be represented and manipulated in the metaprogram
+  - Find out how the metaprogram should refer to declarations
   - Maybe ditch the direct declaration based API with a message loop instead?
-  - Should the internal and the API representation of the AST be memory compatible?
-  - How should body_text and modify be handled?
+  - Should the internal and API representation of the AST be memory compatible?
+  - Should body_text and modify be a part of the language and how should they be handled?
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
