@@ -28,8 +28,8 @@ Philosophy:
   - Being able to easily read and reason about a piece of code is more important than being able to write code 
     quickly
 
-Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)
-  P: How should importing work in the language, and should cyclic imports be allowed?
+Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)<br>
+  P: How should importing work in the language, and should cyclic imports be allowed?<br>
   ?: Cyclic imports will be allowed for packages, as importing a package will only declare a dependancy on that file.
      Cyclic loads of files is not allowed. Importing a directory will import the file in the directort of the same name.
      Loading a directory is also possible, as that will import all source files in that directory and all sub directories.
@@ -37,41 +37,41 @@ Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)
      points are defined in the build options, and are path snippets used as prefixes to any import path with
      the accompanying mounting point label as a prefix.
 
-  P: How should procedure overloading work?
+  P: How should procedure overloading work?<br>
   ?: Overloading should be implicit, since the programmer "headspace complexity" over explicit overloading is negligible and
      should be more familiar to programmers coming from other language
 
-  P: In what order should global variables and constants be initialized?
+  P: In what order should global variables and constants be initialized?<br>
   ?: Globals and constants are initialized after their dependencies, respecting source order when possible, 
      alphabetical otherwise
 
-  P: What could the language provide to handle name collisions?
-  ?: Namespacing imports and file vs. export scope
-  #: Import statements which are able to selectively import declarations and namespace them
+  P: What could the language provide to handle name collisions?<br>
+  ?: Namespacing imports and file vs. export scope<br>
+  #: Import statements which are able to selectively import declarations and namespace them<br>
   S: Imports that namespace and file vs export scope
 
-  P: How should attributes to procedures, structs and other constructs be marked up?
-  ?: By compiler directives before the declaration
+  P: How should attributes to procedures, structs and other constructs be marked up?<br>
+  ?: By compiler directives before the declaration<br>
   S: @attrtibute_name(args) or @[attribute_name_0(args), attribute_name_1(args), ...] for multiple, before the declaration
 
   P: Should macros be added to the language?
 
-  P: Should the subscript operator work on pointers?
+  P: Should the subscript operator work on pointers?<br>
   S: yes
 
-  P: How far should metaprogramming be taken in this language?
+  P: How far should metaprogramming be taken in this language?<br>
   ?: Jai-esque polymorphism, run directives, body_text, modify and mutable compilation
 
   P: How should unicode strings and characters be represented in memory, or rather,
-     how should UTF-8 strings and characters be expressed and manipulated?
+     how should UTF-8 strings and characters be expressed and manipulated?<br>
   S: Strings are utf-8 encoded arrays of bytes, characters are utf-8 but always 4 bytes large.
 
   P: How should float to int conversions be handled, where the floating point number is larger than the largest 
-     integer type representable on a system?
+     integer type representable on a system?<br>
   ?: However LLVM does it?
 
-  P: What should determine linking names, and should they be consistent?
-  ?: Name of the procedure followed by the type name of each argument, unless specified otherwise
+  P: What should determine linking names, and should they be consistent?<br>
+  ?: Name of the procedure followed by the type name of each argument, unless specified otherwise<br>
   S: "package_name.mangled_procedure_name" if not overridden
 
 Ideas:
