@@ -85,6 +85,8 @@ Ideas:
   - Should scope local closures be a part of the language as a syntactical convenience (but _NO_ capture, only elide syntactic pass by value/ref)
   
   - Turn the "for" loop into a "for each" loop and beef up the "while" loop to take the old "for" loops place
+  
+  - Move "inline" from an attribute to a directive or keyword, and add the option to inline a function at the call site and inline certain for loops
 
 Observations from using C to build the compiler:
   - Default function arguments and function overloading are well worth their mental overhead. They allow for 
