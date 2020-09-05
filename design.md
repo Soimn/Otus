@@ -7,8 +7,8 @@ Lesser goals:
   - Easy to parse (no/few ambiguities, negliable lookahead, consistent syntax) in order to help developers and
     tools understand and reason about the code
 
-  - Provide a powerfull toolset (metaprogramming and language constructs) with minimal use of keywords, obscure 
-    syntax or other abominations
+  - Provide a powerfull toolset (metaprogramming and language constructs) with minimal use of keywords, obscure
+    syntax and other abominations
 
   - Invoke the "feeling of low-level programming"
 
@@ -25,7 +25,7 @@ Philosophy:
 
   - There should only be _one_ implementation of a _standard_ library
 
-  - Being able to easily read and reason about a piece of code is more important than being able to write code 
+  - Being able to easily read and reason about a piece of code is more important than being able to write code
     quickly
 
 Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)<br>
@@ -42,7 +42,7 @@ Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)<
      should be more familiar to programmers coming from other language
 
   P: In what order should global variables and constants be initialized?<br>
-  ?: Globals and constants are initialized after their dependencies, respecting source order when possible, 
+  ?: Globals and constants are initialized after their dependencies, respecting source order when possible,
      alphabetical otherwise
 
   P: What could the language provide to handle name collisions?<br>
@@ -66,7 +66,7 @@ Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)<
      how should UTF-8 strings and characters be expressed and manipulated?<br>
   S: Strings are utf-8 encoded arrays of bytes, characters are utf-8 but always 4 bytes large.
 
-  P: How should float to int conversions be handled, where the floating point number is larger than the largest 
+  P: How should float to int conversions be handled, where the floating point number is larger than the largest
      integer type representable on a system?<br>
   ?: However LLVM does it?
 
@@ -89,9 +89,9 @@ Ideas:
   - Move "inline" from an attribute to a directive or keyword, and add the option to inline a function at the call site and inline certain for loops
 
 Observations from using C to build the compiler:
-  - Default function arguments and function overloading are well worth their mental overhead. They allow for 
-    hiding details which are unimportant in the current context, and they allow for greater flexibility when used 
-    in tandem with a well defined common API (e.g. switching storage data structures from a hash map to a bucket 
+  - Default function arguments and function overloading are well worth their mental overhead. They allow for
+    hiding details which are unimportant in the current context, and they allow for greater flexibility when used
+    in tandem with a well defined common API (e.g. switching storage data structures from a hash map to a bucket
     array des not require the usage code to change if both containers overload a common set of API functions).
 
   - Operator overloading is overrated, a procedure call is much clearer
@@ -137,7 +137,7 @@ Casting rules:
   - Distinct types cannot be casted
   - All pointers can be explicitly converted to any pointer type
   - rawptr can be explicitly, and implicitly, converted to any pointer type
-  - Fixed width integer, bool and floating point types can be converted to int, bool and float respectively, both 
+  - Fixed width integer, bool and floating point types can be converted to int, bool and float respectively, both
     explicitly and implicitly
   - Signed integer types can be explicitly casted to unsigned, and vice versa
   - Any integer type can be explicitly casted to floating point, and vice versa
@@ -147,9 +147,9 @@ Casting rules:
   - any can be casted to typeid and any pointer type, both explicitly and implicitly
 
 Casting behaviour:
-  - The resulting value of an integer casted to a smaller width will be equal to the N least significant bits of 
+  - The resulting value of an integer casted to a smaller width will be equal to the N least significant bits of
     the integer, where N is the width of the target type
-//  - The result of a floating point value casted to an integer will be equal to the N least significant bits of 
+//  - The result of a floating point value casted to an integer will be equal to the N least significant bits of
 //    the truncated value of the floating point value
   - The result of an integer value casted to floating point will be equal to the integer value represented as a
     IEEE-754 binary floating point value
@@ -222,6 +222,16 @@ Expressions:
   - literals
   - operations (add, sub, call, deref)
   - types
+
+Import packages & load files
+- Importing a package will __link__ the current and the imported packages' namespaces
+- Duplicate imports are deduplicated
+- Only package files can be imported
+- A file name equal to the directory name will be appended to an import path that leads to a directory
+<br>
+- Loading a file will __merge__ the current and the loaded files' namespaces
+- Duplicate loads throw an error
+- Only non-package files can be loaded
   
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -233,7 +243,7 @@ Expressions:
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-Metaprogramming API
+Old Metaprogramming API
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -252,7 +262,7 @@ Workspace_InjectImport :: proc(workspace: Workspace, package: string, path: stri
 Workspace_GenerateBinary :: proc(workspace: Workspace, options: Binary_Options) -> bool ---;
 
 
-// TODO: 
+// TODO:
   - Find out how types should be represented and manipulated in the metaprogram
   - Find out how the metaprogram should refer to declarations
   - Maybe ditch the direct declaration based API with a message loop instead?
@@ -260,3 +270,66 @@ Workspace_GenerateBinary :: proc(workspace: Workspace, options: Binary_Options) 
   - Should body_text and modify be a part of the language and how should they be handled?
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+New Metaprogramming API
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+OpenWorkspace
+
+CloseWorkspace
+
+FetchNextDeclaration
+
+ResubmitDeclaration
+
+SubmitDeclaration
+
+// CommitDeclaration -- implicit
+
+NumDeclarationsLeft -- different name or function?
+
+GenerateBinary
+
+
+// TODO:
+  - Find out how types should be represented and manipulated in the metaprogram
+  - Should the internal and API representation of the AST be memory compatible?
+  - Should body_text and modify be a part of the language and how should they be handled?
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+entities : []Declaration;
+
+for (decl: ^Declaration; FetchNextDeclaration(workspace, &decl))
+{
+	if (decl.name == "main" && NumDeclarationsLeft(workspace) != 0) ResubmitDeclaration(workspace, decl);
+	else
+	{
+		if (decl.kind == Declaration_Struct)
+		{
+			if (HasTag(decl, "entity"))
+			{
+				if (!HasTag(decl, "no_serialization")
+				{
+					serialization_proc := ParseCode(...); // create some sort of serialization procedure
+
+					Submitdeclaration(workspace, serialization_proc);
+				}
+
+				append(&entities, decl);
+			}
+		}
+
+		else if (decl.kind == Declaration_Proc)
+		{
+			// do something with types
+		}
+
+		if (NumDeclarationsLeft(workspace, "entity") == 0)
+		{
+			// do something with all the entities
+		}
+	}
+}
