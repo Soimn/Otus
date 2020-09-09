@@ -47,18 +47,51 @@ StringCompare(String s0, String s1)
     return (s0.size == 0 && s0.size == s1.size);
 }
 
-inline bool
-StringCStringCompare(String string, const char* const_cstring)
+void
+Print(Bucket_Array* array, const char* format, ...)
 {
-    char* cstring = (char*)const_cstring;
+    Arg_List arg_list;
+    ARG_LIST_START(arg_list, format);
     
-    while (string.size && *cstring && *string.data == *cstring)
+    for (char* scan = (char*)format; *scan; )
     {
-        string.data += 1;
-        string.size -= 1;
+        if (*scan == '%')
+        {
+            ++scan;
+            
+            if (*scan == 0 || *scan == '%')
+            {
+                *BucketArray_Append(array) = '%';
+                if (*scan == '%') ++scan;
+            }
+            
+            else if (*scan == 's')
+            {
+                const char* cstring = ARG_LIST_GET_ARG(arg_list, const char*);
+                
+                for (char* c = (char*)cstring; *c; ++c)
+                {
+                    *BucketArray_Append(array) = *c;
+                }
+            }
+            
+            else if (*scan == 'S')
+            {
+                String string = ARG_LIST_GET_ARG(arg_list, String);
+                
+                for (umm i = 0; i < string.size; ++i)
+                {
+                    *BucketArray_Append(array) = string.data[i];
+                }
+            }
+            
+            else INVALID_CODE_PATH;
+        }
         
-        cstring += 1;
+        else
+        {
+            *BucketArray_Append(array) = *scan;
+            ++scan;
+        }
     }
-    
-    return (string.size == 0 && *cstring == 0);
 }

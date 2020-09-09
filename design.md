@@ -92,7 +92,7 @@ Observations from using C to build the compiler:
   - Default function arguments and function overloading are well worth their mental overhead. They allow for
     hiding details which are unimportant in the current context, and they allow for greater flexibility when used
     in tandem with a well defined common API (e.g. switching storage data structures from a hash map to a bucket
-    array des not require the usage code to change if both containers overload a common set of API functions).
+    array deos not require the usage code to change if both containers overload a common set of API functions).
 
   - Operator overloading is overrated, a procedure call is much clearer
 
@@ -122,11 +122,10 @@ Builtin types:
   - bool       // An 8-bit value that can either be false (0) or true (any value that is not 0)
   - float      // A 64-bit IEEE-754 floating point value
 
-  - I8, I16, I32, I64 // Explicitly sized signed integer
-  - U8, U16, U32, U64 // Explicitly sized unsigned integer
-  - B8, B16, B32, B64 // Explicitly sized boolean
-  - F32               // 32-bit IEEE-754 float
-  - F64               // 64-bit IEEE-754 float
+  - i8, i16, i32, i64 // Explicitly sized signed integer
+  - u8, u16, u32, u64 // Explicitly sized unsigned integer
+  - b8, b16, b32, b64 // Explicitly sized boolean
+  - f32, f64          // Explicitly sized IEEE-754 float
 
   - rawptr // A 64/32-bit (depending on architecture) sized integer pointing to a specific address in memory
   - typeid // A 32-bit value representing a specific type
@@ -294,8 +293,8 @@ GenerateBinary
 
 
 // TODO:
-  - Find out how types should be represented and manipulated in the metaprogram
-  - Should the internal and API representation of the AST be memory compatible?
+  - Find out how types should be represented and manipulated in the metaprogram. Build metaprogram local type table and use type infos
+  - Should the internal and API representation of the AST be memory compatible? NO
   - Should body_text and modify be a part of the language and how should they be handled?
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
