@@ -365,6 +365,8 @@ GetToken(Lexer* lexer)
             
             else if (c == '"' || c == '\'')
             {
+                tokem.kind = (c == '"' ? Token_String : Token_Char);
+                
                 char terminator = c;
                 String string   = { .data = current };
                 
@@ -381,7 +383,143 @@ GetToken(Lexer* lexer)
                     string.size = current - token.string.data;
                     ++current;
                     
-                    NOT_IMPLEMENTED;
+                    String resolved_string = {
+                        .data = (u8*)Arena_Allocate(&lexer->package->arena, string.size, ALIGNOF(char)),
+                        .size = 0
+                    };
+                    
+                    bool encountered_errors = false;
+                    uint character_count    = 0;
+                    
+                    for (umm i = 0; !encountered_errors && i < string.size; ++i, ++character_count)
+                    {
+                        if (string.data[i] == '\\')
+                        {
+                            ++i;
+                            ASSERT(string.size > i);
+                            
+                            char c = string.data[i];
+                            ++i;
+                            
+                            if      (c == 'a')  resolved_string.data[resolved_string.size++] = '\a';
+                            else if (c == 'b')  resolved_string.data[resolved_string.size++] = '\b';
+                            else if (c == 'e')  resolved_string.data[resolved_string.size++] = '\e';
+                            else if (c == 'f')  resolved_string.data[resolved_string.size++] = '\f';
+                            else if (c == 'n')  resolved_string.data[resolved_string.size++] = '\n';
+                            else if (c == 'r')  resolved_string.data[resolved_string.size++] = '\r';
+                            else if (c == 't')  resolved_string.data[resolved_string.size++] = '\t';
+                            else if (c == 'v')  resolved_string.data[resolved_string.size++] = '\v';
+                            else if (c == '\\') resolved_string.data[resolved_string.size++] = '\\';
+                            else if (c == '\'') resolved_string.data[resolved_string.size++] = '\'';
+                            else if (c == '"')  resolved_string.data[resolved_string.size++] = '"';
+                            
+                            else if (c == 'u' ||
+                                     c == 'x')
+                            {
+                                bool is_byte = (c == 'x');
+                                
+                                uint digit_count = 0;
+                                u32 codepoint    = 0;
+                                
+                                while (i < string.size && digit_count < (is_byte ? 2 : 6))
+                                {
+                                    u8 digit = 0;
+                                    
+                                    if (IsDigit(string.data[i])) digit = string.data[i] - '0';
+                                    else if (ToUpper(string.data[i]) >= 'A' && ToUpper(string.data[i]) <= 'F')
+                                    {
+                                        digit = (string.data[i] - 'A') + 10;
+                                    }
+                                    
+                                    else break;
+                                    
+                                    codepoint = codepoint * 16 + digit;
+                                    
+                                    ++i;
+                                    ++digit_count;
+                                }
+                                
+                                if      (digit_count == 2) resolved_string.data[resolved_string.size++] = (u8)codepoint;
+                                else if (digit_count == 6)
+                                {
+                                    if (codepoint <= 0x007F)
+                                    {
+                                        resolved_string.data[resolved_string.size] = (u8)codepoint;
+                                        resolved_string.size                      += 1;
+                                    }
+                                    
+                                    else if (codepoint <= 0x07FF)
+                                    {
+                                        u8* bytes = resolved_string.data;
+                                        resolved_string.size += 2;
+                                        
+                                        bytes[0] = (u8)(0xC0 | (codepoint & 0x07C0) >> 6);
+                                        bytes[1] = (u8)(0x80 | (codepoint & 0x003F) >> 0);
+                                    }
+                                    
+                                    else if (codepoint <= 0xFFFF)
+                                    {
+                                        u8* bytes = resolved_string.data;
+                                        resolved_string.size += 3;
+                                        
+                                        bytes[0] = (u8)(0xE0 | (codepoint & 0xF000) >> 12);
+                                        bytes[1] = (u8)(0x80 | (codepoint & 0x0FC0) >> 6);
+                                        bytes[2] = (u8)(0x80 | (codepoint & 0x003F) >> 0);
+                                    }
+                                    
+                                    else if (codepoint <= 0x10FFFF)
+                                    {
+                                        u8* bytes = resolved_string.data;
+                                        resolved_string.size += 4;
+                                        
+                                        bytes[0] = (u8)(0xF0 | (codepoint & 0x1C0000) >> 18);
+                                        bytes[1] = (u8)(0x80 | (codepoint & 0x03F000) >> 12);
+                                        bytes[2] = (u8)(0x80 | (codepoint & 0x000FC0) >> 6);
+                                        bytes[3] = (u8)(0x80 | (codepoint & 0x00003F) >> 0);
+                                    }
+                                    
+                                    else
+                                    {
+                                        //// ERROR: Codepoint out of range
+                                        encountered_errors = true;
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    //// ERROR: Invalid number of digits
+                                    encountered_errors = true;
+                                }
+                            }
+                        }
+                        
+                        else
+                        {
+                            resolved_string.data[resolved_string.size] = string.data[i];
+                            resolved_string.size                      += 1;
+                        }
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        if (token.kind == Token_String) token.string = resolved_string;
+                        else
+                        {
+                            if (character_count != 1)
+                            {
+                                //// ERROR: Too many characters in character literal
+                                encountered_errors = true;
+                            }
+                            
+                            else
+                            {
+                                Copy(resolved_string.data + (4 - resolved_string.size), &token.character, resolved_string.size);
+                                Zero(&token.character, 4 - resolved_string.size);
+                            }
+                        }
+                    }
+                    
+                    if (encountered_errors) token.kind = Token_Invalid;
                 }
             }
             
@@ -696,7 +834,7 @@ DEBUG_TestLexer()
             case Token_CloseBrace:   name = "Token_CloseBrace";   break;
             case Token_OpenBracket:  name = "Token_OpenBracket";  break;
             case Token_CloseBracket: name = "Token_CloseBracket"; break;
-            case Token_Char:         name = "Token_Char"  ;       break;
+            case Token_Char:         name = "Token_Char";         break;
             case Token_Number:       name = "Token_Number";       break;
             case Token_String:       name = "Token_String";       break;
             case Token_Identifier:   name = "Token_Identifier";   break;

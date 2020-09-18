@@ -28,14 +28,20 @@ Philosophy:
   - Being able to easily read and reason about a piece of code is more important than being able to write code
     quickly
 
-Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)<br>
+Problems: (P: problem, I: important information, S: solution, ?: possible solution, # previous solutiuon)<br>
   P: How should importing work in the language, and should cyclic imports be allowed?<br>
-  ?: Cyclic imports will be allowed for packages, as importing a package will only declare a dependancy on that file.
+  #: Cyclic imports will be allowed for packages, as importing a package will only declare a dependancy on that file.
      Cyclic loads of files is not allowed. Importing a directory will import the file in the directort of the same name.
      Loading a directory is also possible, as that will import all source files in that directory and all sub directories.
      All import paths are relative to the current file unless a specific mounting point is specified. Mounting
      points are defined in the build options, and are path snippets used as prefixes to any import path with
-     the accompanying mounting point label as a prefix.
+     the accompanying mounting point label as a prefix.<br>
+  S: Imports are split in two: loading files and importing packages. Files are regular text files, while packages are
+     files which have a package declaration on the first line, ignoring whitespace. Only files may be loaded and only
+     packages may be imported. Loading works very similar to textual importing, and results in the loaded files' namespace
+     being embedded within the loader's namespace. Importing will only create a link between the namespaces. Cyclic loads are
+     therefore prohibited, however cyclic imports are perfectly legal. Trying to load a directory results in an error, whilst
+     importing a directory will search the diretory for a file with the same name as the directory.
 
   P: How should procedure overloading work?<br>
   ?: Overloading should be implicit, since the programmer "headspace complexity" over explicit overloading is negligible and
@@ -57,7 +63,9 @@ Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)<
   P: Should macros be added to the language?
 
   P: Should the subscript operator work on pointers?<br>
-  S: yes
+  #: yes<br>
+  ?: no? Maybe use intervals instead of pointers for this use case and implement pointer arithmetic as simple integer
+     subtraction, i.e. no divide by size of the pointed type
 
   P: How far should metaprogramming be taken in this language?<br>
   ?: Jai-esque polymorphism, run directives, body_text, modify and mutable compilation
@@ -74,6 +82,15 @@ Problems: (P: problem, S: solution, ?: possible solution, # previous solutiuon)<
   ?: Name of the procedure followed by the type name of each argument, unless specified otherwise<br>
   S: "package_name.mangled_procedure_name" if not overridden
 
+  P: Should there be a distinction between static arrays and intervals?<br>
+  I: Vector types: V2, V3, V4 :: [2]f32, [3]f32, [4]f32;<br>
+  S: Yes, because this allows static arrays to exist and be used without storing the pointer or length of the data
+     on the stack and in structs.
+
+  P: How should declarations within a procedure be handled?<br>
+  I: Either every declaration must be moved out of the procedure body, or they should all remain.<br>
+     Something in between will only result in confusion
+
 Ideas:
   - Use arrays for SIMD like operations and support element-wise arithmetic
     (e.g. #assert({:[2]int: 1, 3} == {:[2]int: 0, 1} + {:[2]int: 1, 2}))
@@ -88,13 +105,36 @@ Ideas:
   
   - Move "inline" from an attribute to a directive or keyword, and add the option to inline a function at the call site and inline certain for loops
 
+  - Allow use of the blank identifier to explicitly specify that a type should be inferred. e.g.
+    x, y, z, w : int, _, float, _ = 0, 0, 0, 0;
+
+  - Static arrays "only exist as data", length is stored in the type and the pointer to the data is stored in the symbol
+    table
+
+  - Provide Zig-esque optimization options: debug, release_safe, release_fast, release_small
+
+  - Provide a way of explicitly restricting return values in "safe" mode (mainly for providing a an api contract for
+    possible error return values)
+
 Observations from using C to build the compiler:
   - Default function arguments and function overloading are well worth their mental overhead. They allow for
     hiding details which are unimportant in the current context, and they allow for greater flexibility when used
     in tandem with a well defined common API (e.g. switching storage data structures from a hash map to a bucket
-    array deos not require the usage code to change if both containers overload a common set of API functions).
+    array does not require the usage code to change if both containers overload a common set of API functions).
 
   - Operator overloading is overrated, a procedure call is much clearer
+
+Observations from talk on Zig (https://www.youtube.com/watch?v=Gv2I7qTux7g), (+: posetive, -: negative)
+  + No distinction between constant if and regular if
+  + Control over whether a value is known at compile time
+  + The error handling system
+  + Every standard library function that allocates memory needs to be supplied with an allocator
+  + Per scope build mode
+TODO: There should be some negatives here ^
+
+Observations from other language:
+  - The dot enum thingy (infer the type name from .MemberName) is actually usefull
+  - The Odin where statement for structs and procedures seems like a better syntax than #modify
 
 Keywords:
   - return
@@ -158,6 +198,7 @@ Builtin functions:
   - alignof
   - offsetof
   - typeof
+  - type_info_of
   - assert
 
 Compiler directives:
