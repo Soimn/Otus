@@ -1,0 +1,541 @@
+Old Metaprogramming API
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Workspace_Open :: proc(workspace: ^Workspace, options: Workspace_Options, file_path: String) -> bool ---;
+
+Workspace_Close :: proc(workspace: Workspace) ---;
+
+Workspace_InspectNextDeclaration :: proc(workspace: Workspace, declaration: ^Declaration) -> bool ---;
+
+Workspace_ModifyCurrentDeclaration :: proc(workspace: Workspace, declaration: ^Declaration) -> bool ---;
+
+Workspace_InjectDeclaration :: proc(workspace: Workspace, package: string, declaration: ^Declaration) -> bool ---;
+
+Workspace_InjectImport :: proc(workspace: Workspace, package: string, path: string, alias: string) -> bool ---;
+
+Workspace_GenerateBinary :: proc(workspace: Workspace, options: Binary_Options) -> bool ---;
+
+
+// TODO:
+  - Find out how types should be represented and manipulated in the metaprogram
+  - Find out how the metaprogram should refer to declarations
+  - Maybe ditch the direct declaration based API with a message loop instead?
+  - Should the internal and API representation of the AST be memory compatible?
+  - Should body_text and modify be a part of the language and how should they be handled?
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+New Metaprogramming API
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+OpenWorkspace
+
+CloseWorkspace
+
+FetchNextDeclaration
+
+ResubmitDeclaration
+
+EmitDeclaration
+
+// CommitDeclaration -- implicit
+
+NumDeclarationsLeft -- different name or function?
+
+GenerateBinary
+
+
+// TODO:
+  - Find out how types should be represented and manipulated in the metaprogram. Build metaprogram local type table and use type infos
+  - Should the internal and API representation of the AST be memory compatible? NO
+  - Should body_text and modify be a part of the language and how should they be handled?
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+entities : []Declaration;
+
+for (decl: ^Declaration; FetchNextDeclaration(workspace, &decl))
+{
+	if (decl.name == "main" && NumDeclarationsLeft(workspace) != 0) ResubmitDeclaration(workspace, decl);
+	else
+	{
+		if (decl.kind == Declaration_Struct)
+		{
+			if (HasTag(decl, "entity"))
+			{
+				if (!HasTag(decl, "no_serialization")
+				{
+					serialization_proc := ParseCode(...); // create some sort of serialization procedure
+
+					Submitdeclaration(workspace, serialization_proc);
+				}
+
+				append(&entities, decl);
+			}
+		}
+
+		else if (decl.kind == Declaration_Proc)
+		{
+			// do something with types
+		}
+
+		if (NumDeclarationsLeft(workspace, "entity") == 0)
+		{
+			// do something with all the entities
+		}
+	}
+}
+
+// TODO(27.09.20):
+Try to tame LLVM into producing good code for this example: https://www.youtube.com/watch?v=R5tBY9Zyw6o&t=29s,
+and see if something can be done in the compiler to reduce this kind of confusion
+
+Problems:
+
+- What about two files who want to share the same local
+  namespace, but cannot be part of the same file for
+  some reason
+
+- Pointer vs intervall (unbounded, increment)
+
+- When should strings be resovled?
+
+- Should there be a distinction between static arrays and intervals
+
+
+
+
+
+CreateWindow :: proc(style: u32,
+                     class_name: ^u8,
+                     window_name: ^u8,
+                     style: u32,
+                     x: int, y: int,
+                     width: int, height: int,
+                     parent: ^WND,
+                     menu: ^MENU,
+                     instance: ^INSTANCE,
+                     param: rawptr) -> (HWND, error)
+                where class_name != 0, window_name != 0,
+                      error is_in {Success, Not_Enough_Memory, Out_Of_Memory, Bad_Arguments}
+{
+	// impl
+}
+
+x is_in [N]T expands to x == [0] || x == [1] || x == [2] || ...
+
+for (x in struct) expands to for (it, it_index : any, int = Iterate(struct); it.data != 0; Advance(&it, &it_index));
+
+What the compiler has to do:
+	Semantially check an AST
+	Generate type and symbol tables
+	Resolve identifiers
+	Generate bytecode
+	Run bytecode
+	Generate IR
+
+
+What if you want to compiler C code as Otus code?
+	Write parser that emits Otus AST
+	Run metaprogram that compiles the AST
+Problems:
+	How to tag code without the ability to use attributes?
+	How to report checker errors with a foreign AST?
+		Each AST node has an ID and a Text_Interval
+		The error handler (which is the user has to implement) gets the node, ID and Text_Interval, along
+		with any extra information about the problem
+
+
+
+
+General problems:
+	How should dynamic arrays work? (_NO_ boilerplate)
+
+
+Start & stop compilation
+Loop over every declaration
+Decide whether to defer or handle a declaration immediately
+Store declaration information
+Modify declaration and recheck
+Query about the remaining declarations
+Decide how errors and warnings should be logged
+Add additional AST nodes to the compilation
+
+
+
+
+
+NOTE:
+	There isn't much point in separating the parser from the compiler, since it does not help with support for other languages,
+    since they have to be transpiled either way, and it does not do much for non textual editors.
+	However, it may still be usefull to move the parser into the metaprogram, but still keep a text-centric handling of
+	debug info and things related. One problem with parsing code in the metaprogram is that import and load declarations
+	cannot be handled as done previously.
+
+API for separated parser:
+	- Register package
+	- Add ast to package
+	- Error handling has to be implemented by the metaprogram
+Problems:
+	- What about name lookup rules? Should they be ruled by the compiler or metaprogram?
+
+Metaprorgamming should support:
+	- Custom name lookup rules
+	- Full introspection
+
+
+
+
+Problems:
+	- context and allocation
+	- error handling semantics
+	- attributes, directives and keywords
+	- control structures
+	- Type, ABI, name lookup and other non AST metaprogramming features
+	- Overload picking, type resolution
+
+Stages:
+	* Parse
+	- Check and modify AST
+	- Generate bytecode
+	- Run bytecode
+	- Analyse, optimize and check bytecode
+	* Generate output
+
+
+What could be metaprogrammed in each stage:
+	- Checker
+		type conversion
+		//symbol lookup and modification (except constant decls)
+		inference
+		modify AST
+		decide inliness
+	- Bytecode gen
+		Overload resolution - This has to be done after every declaration has been generated, but does not deserve its own stage
+-	- Bytecode run
+		//what and in which order bytecode should run
+	- Analyse and optimize
+		perform arbitrary analysis and changes to bytecode
+
+The metaprogram performs general transformations
+The source code performs special transformations and specifies restrictions to the metaprogram
+
+Problem: Should these be metaprogrammable?
+	- symbol lookup
+	- type checking
+	- overload resolution
+
+Solution:
+	There are only four cases where being able to metaprogram these is usefull
+		- on/off name shadowing
+		- custom implicit conversions
+		- polymorphism solving
+		- overload resolution
+	
+	Polymorphism solving should be done by the compiler, since the only thing that is worth changing
+	is whether matching based on return value should be allowed or not.
+
+	Custom implicit conversions is only useful
+	when compiling code from other languages, and since overload resolution, symbol lookup and type checking needs to
+	be done by a trnaspiler to conform to this languages' AST and rules, it is not much additional work to handle
+	implicit conversions in th e transpiler instead.
+	The same reasoning applies to name shadowing.
+
+	Since there are no custom implicit conversions and polymorphism solving, there is also no need for custom overload
+	resolution
+
+// Updated
+
+What could be metaprogrammed in each stage:
+	- Meta
+		modify AST
+		decide inliness
+	- Analyse and optimize
+		perform arbitrary analysis and changes to bytecode
+
+What could be changed about a declaration (-: can change, *: cannot change):
+	- body
+	* procedure header (due to possible dependencies on procedures, that depend on the current procedure, within the proc body)
+	- scope apperance (add to scopes)
+
+The metaprogram performs general transformations
+The source code performs special transformations and specifies restrictions to the metaprogram
+
+Metaprogram API
+Open Workspace  - provide AST and options for compilation
+Close Workspace - Free resources
+
+Language constructs
+
+AST
+
+
+Problems:
+	- how to handle scopes in the metaprogram?
+	- Where should non-global declarations be stored, and should they be treated as global declarations by the metaprogram?
+	- How should overloads be handled? Implicit overloads may lead to a lot of halting, but explicit overloads will limit
+	  injection
+	- custom parser, what about compiler directives?
+	- ^void or rawptr
+Todo:
+	- rename for to while and change for to for each
+
+
+Compiler directives: * is handled by the compiler before meta
+	- bake & maybe dynamic bake *
+	- body_text *
+	- assert
+	- scope_inject *
+	- run
+The metaprogram needs to be able to emit these, should they therefore be a part of the AST, maybe?
+
+//////////////////////
+
+
+///////////////////////
+      CONTRACTS
+///////////////////////
+
+// old
+proc -> (i: int) where i >= -1 && i <= i32_max { return random_int(-1, i32_max); };
+
+// maybe
+RandomN1Max :: inline proc(max: $T, random_int : proc(T, T) -> T) -> (i: T)
+			   #contract_overload(is_integral(T)),
+			   #contract_in(max >= 0 && random_int(0, 0) == 0),
+               #contract_out(i >= -1 && i <= i32_max)
+{
+	return random_int(-1, i32_max);
+};
+
+MemoryArena_AllocateSize :: proc(arena: ^Memory_Arena, size: uint, alignment: uint = 1) -> (memory: ^void)
+							#contract_in(arena != 0 && size != 0 && alingment != 0),
+							#contract_out(memory != 0)
+{
+	memory = malloc(size + alingment - 1);
+}
+
+// maybe
+RandomN1Max :: inline proc(max: int, random_int : proc(int, int) -> int) -> (i: int)
+                      contract = {
+                          in  = max >= 0 && random_int(0, 0) == 0,
+                          out = i >= -1 && i <= i32_max
+                      }
+{
+	return random_int(-1, i32_max);
+};
+
+SomeContract :: contract(max: int, i: int) {
+    in:  max >= 0 && random_int(0, 0) == 0,
+    out: i >= -1 && i <= i32_max
+};
+
+RandomN1Max :: inline proc(max: int, random_int : proc(int, int) -> int) -> (i: int)
+                      contract = SomeContract(max, i) + {in: max < 5}
+{
+	return random_int(-1, i32_max);
+};
+
+compose
+standardize / attach to types
+in, out, overload
+
+RandomN1Max :: inline proc(max: $T, random_int : proc(T, T) -> T) -> (i: T)
+                      contract = {
+					      overload: is_integral(T)
+					      in: max > -1 && random_int(0, 0) == 0
+					      out: i >= -1 && i <= T.max
+					  }
+{
+	return random_int(-1, i32_max);
+}
+
+MemoryArena_AllocateInt :: proc(arena: ^Memory_Arena, $type: typeid) -> (memory: ^void, err: error)
+						contract(overload, is_integral(type) && sizeof(type) != 0 && alignof(type) != 0),
+						contract(in, arena != 0),
+						contract(out, memory != 0 && (err == .OutOfMemory || err == .InvalidArena)),
+{
+}
+
+OpenFile :: proc($file_name: string, open_mode: enum { Read, Write, ReadWrite }) -> File_Handle
+			where file_name.size != 0, ValidatePath(file_name),
+{
+
+}
+
+restrict overloading              - where clause
+restrict errors                   - metaprogram
+restrict argument & return values - metaprogram
+error handling                    - return error codes
+
+// maybe use an error type?
+//////////////////////////////////////////////////////////////////////////////////
+
+error type
+error :: struct(kind_t: typeid, data_t: typeid)
+         where typeinfo_of(typeid).kind == Type_Info.Enum
+{
+	kind: kind_t,
+	data: data_t
+}
+
+if (err) success is _always_ 0
+
+return err = {.OutOfMemory, "The program is out of memory"}
+
+Contracts can be implemented with a metaprogram
+
+@contract("in", array != 0 && typeid_of(T) != 0)
+@contract("out", err in {.Success, .OutOfMemory, .InvalidArguments})]
+@link_name("append_by_value")
+@NoProfile
+append_by_value :: proc(array: ^$T/^[..]$S, elem: S) -> (err: error)
+				   where typeinfo_of(T).kind != Type_Info.Array
+{
+	if (err := grow(array); err) return err;
+	array[array.size - 1] = elem;
+
+	return .Success;
+}
+
+@[
+  contract("in", array != 0 && typeid_of(T) != 0),
+  contract("out", err in {.Success, .OutOfMemory, .InvalidArguments})],
+  link_name("append_by_value"),
+  NoProfile
+]
+append_by_value :: proc(array: ^$T/^[..]$S, elem: S) -> (err: error)
+				   where typeinfo_of(T).kind != Type_Info.Array
+{
+	if (err := grow(array); err) return err;
+	array[array.size - 1] = elem;
+
+	return .Success;
+}
+
+//////////////////////////////////////////////////////////////////////////////////
+
+// Array.os
+
+append_by_value :: proc(array: ^$T/^[..]$S, elem: S) -> error
+{
+	if (err := grow(array); err) return err;
+	array[array.size - 1] = elem;
+
+	return .Success;
+}
+
+append_by_ptr :: proc(array: ^$T/^[..]$S, elem: ^S) -> error
+{
+	return append(array, *S);
+}
+
+append :: proc[append_by_value, append_by_ptr];
+
+// main.os
+
+import "Array.os" as array;
+
+append_by_any_value :: proc(array: ^$T/^[..]$S, elems: ..S) -> error
+{
+	for (elem in elems)
+	{
+		err := append(array, elem);
+
+		if (err) return err;
+		else continue;
+	}
+
+	return .Success;
+}
+
+#inject(append_by_any_value, array.append);
+
+///////////////////////
+ RENAMING DECLARATIONS
+///////////////////////
+
+#scope_file
+import "NintendoCode" as Nintendo;
+#scope_export
+
+#insert {
+	code : Code;
+
+	instert_if_statement(askdaslkdalskdlaksdlkasdl);
+	{
+		nintendo_info := typeinfo_of(Nintendo);
+		assert(nintendo_info.kind == Type_Info.Package);
+
+		for (declaration in nintendo_info.declaration)
+		{
+			new_decl := declaration;
+			new_decl.name = concatenate_strings("NC_", declaration.name);
+
+			append(&code.declarations, new_decl);
+
+			context->free(new_name.data);
+		}
+	}
+
+	return code;
+}
+
+complete list over what the metaprogram _can_ do:
+	- add declarations
+	- resubmit declaration
+	- commit declaration
+
+	- inspect pending declarations
+	- inspect finished declarations
+	- inspect type table
+	- inspect symbol table
+
+	- change inliness
+	- change procedure body
+	- change struct member order and alignment
+	- change enum member values
+
+	- add struct members
+	- add enum members
+	- add procedures to groups
+	- add procedures to groups which have "finished compilation"
+	- add scopes to list of scopes a declaration is visible to
+
+complete list over what the metaprogram _cannot_ do:
+	- remove declarations
+	- remove procedures from groups
+	- remove declaration from scopes
+
+	- change declaration header
+	- change struct and enum members
+	- change symbol or type table
+	- change symbol lookup or overload resolution rules
+	- change type checking rules
+
+problems regarding this:
+	- How should scope_file be represented and handled in the metaprogram?
+
+
+29.09 Notes:
+	- addition and removal of struct members can be done
+	- procedure parameter names can be changed by introducing the concept of aliasing, and either making
+	  the cannonical form for non-positional arguments indeces, or sorting the arguments and filling in
+	  blanks explicitly with the default value
+	- declaration names can be changed by introducing the concept of aliasing and making the cannonical form
+	  for symbols a UUID instead of a string
+	- procedures that contain calls to overloaded procedures should be held at an intermediary stage between
+	  the metaprogram and bytecode generation until they can be unambiguosly resolved
+	- removal of declarations can be supported by introducing an intermediary stage between the type checker and
+	  metaprogram where procedure headers are held until their body arrives. This allows for declaration removal
+	  without breaking any resolved references
+	- pointer to const is useful
+	- steps in slices can be achieved by a mapping procedure
+
+29.09 Problems:
+	- context and allocators
+	- the for loop and iterators
+	- "struct overloading/specialization"

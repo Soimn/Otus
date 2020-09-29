@@ -44,8 +44,13 @@ Problems: (P: problem, I: important information, S: solution, ?: possible soluti
      importing a directory will search the diretory for a file with the same name as the directory.
 
   P: How should procedure overloading work?<br>
-  ?: Overloading should be implicit, since the programmer "headspace complexity" over explicit overloading is negligible and
-     should be more familiar to programmers coming from other language
+  #: Overloading should be implicit, since the programmer "headspace complexity" over explicit overloading is negligible and
+     should be more familiar to programmers coming from other language<br>
+  I: implicit overloading may lead to a lot of pipeline stalling, since references to overloads which are
+	 not a "perfect" (perfect meaning no implicit casts) may need reevaluation later in compilation, which prevents
+	 every procedure with one or more non-perfect reference from leaving type checking, leading to a lot of potential
+	 stalls<br>
+  S: explicit overloads seem to be a must
 
   P: In what order should global variables and constants be initialized?<br>
   ?: Globals and constants are initialized after their dependencies, respecting source order when possible,
@@ -65,7 +70,7 @@ Problems: (P: problem, I: important information, S: solution, ?: possible soluti
   P: Should the subscript operator work on pointers?<br>
   #: yes<br>
   ?: no? Maybe use intervals instead of pointers for this use case and implement pointer arithmetic as simple integer
-     subtraction, i.e. no divide by size of the pointed type
+     arithmetic, i.e. no divide by size of the pointed type
 
   P: How far should metaprogramming be taken in this language?<br>
   ?: Jai-esque polymorphism, run directives, body_text, modify and mutable compilation
@@ -115,6 +120,9 @@ Ideas:
 
   - Provide a way of explicitly restricting return values in "safe" mode (mainly for providing a an api contract for
     possible error return values)
+
+  - "dynamic bake" directive that "bakes" arguments into a procedure call that are not constant, so as long as they are
+	in scope, these arguments will be implicitly passed to the procedures.
 
 Observations from using C to build the compiler:
   - Default function arguments and function overloading are well worth their mental overhead. They allow for
@@ -197,8 +205,8 @@ Builtin functions:
   - sizeof
   - alignof
   - offsetof
-  - typeof
-  - type_info_of
+  - typeid_of
+  - typeinfo_of
   - assert
 
 Compiler directives:
@@ -272,104 +280,3 @@ Import packages & load files
 - Loading a file will __merge__ the current and the loaded files' namespaces
 - Duplicate loads throw an error
 - Only non-package files can be loaded
-  
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-                                               Scratchpad
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-Old Metaprogramming API
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-Workspace_Open :: proc(workspace: ^Workspace, options: Workspace_Options, file_path: String) -> bool ---;
-
-Workspace_Close :: proc(workspace: Workspace) ---;
-
-Workspace_InspectNextDeclaration :: proc(workspace: Workspace, declaration: ^Declaration) -> bool ---;
-
-Workspace_ModifyCurrentDeclaration :: proc(workspace: Workspace, declaration: ^Declaration) -> bool ---;
-
-Workspace_InjectDeclaration :: proc(workspace: Workspace, package: string, declaration: ^Declaration) -> bool ---;
-
-Workspace_InjectImport :: proc(workspace: Workspace, package: string, path: string, alias: string) -> bool ---;
-
-Workspace_GenerateBinary :: proc(workspace: Workspace, options: Binary_Options) -> bool ---;
-
-
-// TODO:
-  - Find out how types should be represented and manipulated in the metaprogram
-  - Find out how the metaprogram should refer to declarations
-  - Maybe ditch the direct declaration based API with a message loop instead?
-  - Should the internal and API representation of the AST be memory compatible?
-  - Should body_text and modify be a part of the language and how should they be handled?
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-New Metaprogramming API
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-OpenWorkspace
-
-CloseWorkspace
-
-FetchNextDeclaration
-
-ResubmitDeclaration
-
-SubmitDeclaration
-
-// CommitDeclaration -- implicit
-
-NumDeclarationsLeft -- different name or function?
-
-GenerateBinary
-
-
-// TODO:
-  - Find out how types should be represented and manipulated in the metaprogram. Build metaprogram local type table and use type infos
-  - Should the internal and API representation of the AST be memory compatible? NO
-  - Should body_text and modify be a part of the language and how should they be handled?
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-entities : []Declaration;
-
-for (decl: ^Declaration; FetchNextDeclaration(workspace, &decl))
-{
-	if (decl.name == "main" && NumDeclarationsLeft(workspace) != 0) ResubmitDeclaration(workspace, decl);
-	else
-	{
-		if (decl.kind == Declaration_Struct)
-		{
-			if (HasTag(decl, "entity"))
-			{
-				if (!HasTag(decl, "no_serialization")
-				{
-					serialization_proc := ParseCode(...); // create some sort of serialization procedure
-
-					Submitdeclaration(workspace, serialization_proc);
-				}
-
-				append(&entities, decl);
-			}
-		}
-
-		else if (decl.kind == Declaration_Proc)
-		{
-			// do something with types
-		}
-
-		if (NumDeclarationsLeft(workspace, "entity") == 0)
-		{
-			// do something with all the entities
-		}
-	}
-}
