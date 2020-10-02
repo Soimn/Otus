@@ -484,34 +484,33 @@ import "NintendoCode" as Nintendo;
 	return code;
 }
 
-complete list over what the metaprogram _can_ do:
-	- add declarations
-	- resubmit declaration
-	- commit declaration
+list over what the metaprogram _can_ do (everything that does not break resolved declarations, and is also sane):
+	- add ~~& remove~~ declarations
+	- resubmit declarations
+	- commit declarations
 
 	- inspect pending declarations
 	- inspect finished declarations
 	- inspect type table
 	- inspect symbol table
 
-	- change inliness
-	- change procedure body
-	- change struct member order and alignment
-	- change enum member values
+//	- change declaration name
+//	- change parameter names
+	- change declaration body (value in case of constant or variable)
 
-	- add struct members
-	- add enum members
 	- add procedures to groups
 	- add procedures to groups which have "finished compilation"
-	- add scopes to list of scopes a declaration is visible to
+	- add additional scope links to declaration
 
-complete list over what the metaprogram _cannot_ do:
+list over what the metaprogram _cannot_ do (everything that breaks resolved decls or is insane):
 	- remove declarations
 	- remove procedures from groups
 	- remove declaration from scopes
 
-	- change declaration header
-	- change struct and enum members
+	- change top declaration type
+	- change declaration name
+	- change structure header
+	- change procedure header
 	- change symbol or type table
 	- change symbol lookup or overload resolution rules
 	- change type checking rules
@@ -521,21 +520,62 @@ problems regarding this:
 
 
 29.09 Notes:
-	- addition and removal of struct members can be done
-	- procedure parameter names can be changed by introducing the concept of aliasing, and either making
-	  the cannonical form for non-positional arguments indeces, or sorting the arguments and filling in
-	  blanks explicitly with the default value
-	- declaration names can be changed by introducing the concept of aliasing and making the cannonical form
-	  for symbols a UUID instead of a string
+	- addition and removal of struct members can be done assuming structs are prioitized by the checker
+//	- procedure parameter names can be changed by introducing the concept of aliasing, and either making
+//	  the cannonical form for non-positional arguments indeces, or sorting the arguments and filling in
+//	  blanks explicitly with the default value
+//	- declaration names can be changed by introducing the concept of aliasing and making the cannonical form
+//	  for symbols a UUID instead of a string
 	- procedures that contain calls to overloaded procedures should be held at an intermediary stage between
 	  the metaprogram and bytecode generation until they can be unambiguosly resolved
-	- removal of declarations can be supported by introducing an intermediary stage between the type checker and
-	  metaprogram where procedure headers are held until their body arrives. This allows for declaration removal
-	  without breaking any resolved references
-	- pointer to const is useful
+//	- removal of declarations can be supported by introducing an intermediary stage between the type checker and
+//	  metaprogram where procedure headers are held until their body arrives. This allows for declaration removal
+//	  without breaking any resolved references
+//	- pointer to const is useful
 	- steps in slices can be achieved by a mapping procedure
 
 29.09 Problems:
 	- context and allocators
 	- the for loop and iterators
 	- "struct overloading/specialization"
+
+Problems:
+	- parameter default value cannot be changed without having to introduce some sort of dependency tracking
+
+Reasons for not allowing modification of parameter names
+	- breaks references in the AST while the metaprogram is operating on it
+	- introduces "weird edge cases" where parameter name can be modified, but not type of default value
+	- behaviour can easily be replicated with a procedure binding
+
+Reasons for not allowing modification of declaration names:
+	- disconnect between symbols in source code and resulting bytecode and binary
+	- behaviour can easily be replicated with an "alias declaration"
+
+Reasons for not allowing declaration removal
+	- declaration removal can break semi-resolved refences and requires a lot of machinery to
+	  keep sane
+
+Reasons for not implementing a "pointer to const" concept:
+	- cannot be enforced due to pointer aliasing, and is therefore sort of pointless
+
+
+__Array_Normal :: struct(T: typeid, S: typeid = uint)
+		          where typeinfo_of(S).kind == Type_Info.Integer &&
+                        (cast(^Type_Info_Integer) typeinfo_of(S)).is_signed == false
+{
+	data: ^T,
+	size: S,
+	capacity: S,
+	allocator: Allocator
+}
+
+__Array :: struct[__Array_Normal];
+
+
+inject __Array <- struct(T: typeid, bucketed: bool, bucket_size: uint = 10)
+					     where bucketed == true
+{
+	first:   ^void,
+	current: ^void,
+	current_size: uint,
+}
