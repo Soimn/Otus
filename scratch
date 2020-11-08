@@ -579,3 +579,20 @@ inject __Array <- struct(T: typeid, bucketed: bool, bucket_size: uint = 10)
 	current: ^void,
 	current_size: uint,
 }
+
+
+__Array :: struct(T: typeid)
+{
+	allocator: ^Allocator,
+	data: ^T,
+	size: uint,
+	capacity: uint
+}
+
+Intergal_Type_Array :: struct(T: typeid) where (T 'CanBeUpcastedTo' int)
+{
+	allocator: ^Allocator,
+	data: ^T,
+	size: uint,
+	capacity: uint
+}

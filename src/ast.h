@@ -29,6 +29,8 @@ enum EXPRESION_KIND
     Expression_Subscript,
     Expression_Call,
     
+    Expression_PolymorphName,
+    Expression_PolymorphAlias,
     Expression_Pointer,
     Expression_Array,
     
@@ -44,6 +46,23 @@ enum EXPRESION_KIND
     Expression_StructLiteral,
 };
 
+enum PARAMETER_FLAG
+{
+    ParameterFlag_None    = 0x000,
+    ParameterFlag_Using   = 0x001,
+    ParameterFlag_Const   = 0x002,
+    ParameterFlag_Baked   = 0x004,
+    ParameterFlag_NoAlias = 0x008,
+};
+
+typedef struct Parameter
+{
+    String name;
+    struct Expression* type;
+    struct Expression* default_value;
+    Flag32(PARAMETER_FLAG) flags;
+} Parameter;
+
 typedef struct Expression
 {
     u8 kind;
@@ -57,6 +76,43 @@ typedef struct Expression
         };
         
         struct Expression* operand;
+        
+        struct
+        {
+            struct Expression* start;
+            struct Expression* end;
+            struct Expression* step;
+        } subscript;
+        
+        struct
+        {
+            struct Expression* pointer;
+            Array(Expression*) arguments;
+        } call;
+        
+        struct
+        {
+            struct Expression* type;
+            struct Expression* size;
+            bool is_dynamic;
+            bool is_slice;
+        } array;
+        
+        struct
+        {
+            Array(Parameter) parameters;
+            Array(Parameter) return_values;
+        } procedure;
+        
+        struct
+        {
+            
+        } structure;
+        
+        struct
+        {
+            
+        } enumeration;
         
         String string;
         Number number;

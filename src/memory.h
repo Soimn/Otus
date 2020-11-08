@@ -52,21 +52,16 @@ Zero(void* ptr, umm size)
 typedef struct Memory_Allocator
 {
     void* first_block;
-    Mutex mutex;
 } Memory_Allocator;
 
 void*
 Allocator_Allocate(Memory_Allocator* allocator, umm size)
 {
-    Mutex_Lock(allocator->mutex);
-    
     void* memory = System_AllocateMemory(size + sizeof(u64));
     Zero(memory, size + sizeof(u64));
     
     *(void**)memory = allocator->first_block;
     allocator->first_block = memory;
-    
-    Mutex_Unlock(allocator->mutex);
     
     return (u8*)memory + sizeof(u64);
 }
@@ -74,8 +69,6 @@ Allocator_Allocate(Memory_Allocator* allocator, umm size)
 void
 Allocator_Free(Memory_Allocator* allocator, void* ptr)
 {
-    Mutex_Lock(allocator->mutex);
-    
     void* prev = 0;
     void* curr = 0;
     for (void* block = allocator->first_block; block; )
@@ -98,15 +91,11 @@ Allocator_Free(Memory_Allocator* allocator, void* ptr)
     else allocator->first_block = *(void**)curr;
     
     System_FreeMemory(curr);
-    
-    Mutex_Unlock(allocator->mutex);
 }
 
 void
 Allocator_FreeAll(Memory_Allocator* allocator)
 {
-    Mutex_Lock(allocator->mutex);
-    
     for (void* scan = allocator->first_block; scan; )
     {
         void* next = *(void**)scan;
@@ -115,8 +104,6 @@ Allocator_FreeAll(Memory_Allocator* allocator)
         
         scan = next;
     }
-    
-    Mutex_Unlock(allocator->mutex);
 }
 
 
@@ -213,8 +200,7 @@ void*
 Arena_Allocate(Memory_Arena* arena, umm size, u8 alignment)
 {
     ASSERT(size > 0 && size <= U32_MAX);
-    ASSERT((alignment & ~(~alignment + 1)) == 0 &&
-           alignment > 0 && alignment <= 8);
+    ASSERT(alignment && (aligment & (~alignment + 1)) == alignment);
     
     void* result = 0;
     

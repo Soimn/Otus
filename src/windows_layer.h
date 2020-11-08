@@ -23,14 +23,10 @@ System_FreeMemory(void* memory)
 }
 
 void
-PrintCString(const char* cstring)
+PrintChar(char c)
 {
-    String string = {0};
-    string.data = (u8*)cstring;
-    
-    for (char* scan = (char*)cstring; *scan; ++scan) ++string.size;
-    
-    PrintString(string);
+    HANDLE stdout_handle = GetStdHandle((DWORD)-11);
+    WriteConsoleA(stdout_handle, &c, 1, 0, 0);
 }
 
 void
@@ -39,27 +35,5 @@ PrintString(String string)
     ASSERT(string.size <= U32_MAX);
     
     HANDLE stdout_handle = GetStdHandle((DWORD)-11);
-    WriteConsole(stdout_handle, string.data, (u32)string.size, 0, 0);
-}
-
-Mutex
-Mutex_Init()
-{
-    Mutex result = {0};
-    
-    NOT_IMPLEMENTED;
-    
-    return result;
-}
-
-void
-Mutex_Lock(Mutex m)
-{
-    NOT_IMPLEMENTED;
-}
-
-void
-Mutex_Unlock(Mutex m)
-{
-    NOT_IMPLEMENTED;
+    WriteConsoleA(stdout_handle, string.data, (u32)string.size, 0, 0);
 }

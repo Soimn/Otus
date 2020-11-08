@@ -280,3 +280,14 @@ Import packages & load files
 - Loading a file will __merge__ the current and the loaded files' namespaces
 - Duplicate loads throw an error
 - Only non-package files can be loaded
+
+New import system
+ - Scrap load, import everything
+ - Default import name is file name, can be overridden with the "package_name" directive, and the "import as" declaration
+ - Link names will be prepended with the import name
+ - Duplicate imports with the same import- and file name will be deduplicated
+ - Duplicate imports with the same import name and different file names will cause an error
+ - import         - link the scopes of the current and imported file
+ - import as      - link scopes, but rename imported scope
+ - using import   - merge current and imported scope
+ - foreign import - import foreign library

@@ -44,6 +44,12 @@ enum TOKEN_KIND
     Token_Semicolon,
     Token_Underscore,
     
+    Token_LArrow,      // <-
+    Token_RArrow,      // ->
+    Token_ThickRArrow, // =>
+    Token_Inc,
+    Token_Dec,
+    
     Token_OpenParen,
     Token_CloseParen,
     Token_OpenBrace,
@@ -59,56 +65,50 @@ enum TOKEN_KIND
     Token_EOF,
 };
 
+#define KEYWORD_LIST()               \
+X(Keyword_Foreign , "foreign"),  \
+X(Keyword_Import  , "import"),   \
+X(Keyword_As      , "as"),       \
+X(Keyword_If      , "if"),       \
+X(Keyword_Else    , "else"),     \
+X(Keyword_Break   , "break"),    \
+X(Keyword_Continue, "continue"), \
+X(Keyword_Using   , "using"),    \
+X(Keyword_Return  , "return"),   \
+X(Keyword_Defer   , "defer"),    \
+X(Keyword_Proc    , "proc"),     \
+X(Keyword_Struct  , "struct"),   \
+X(Keyword_Union   , "union"),    \
+X(Keyword_Enum    , "enum"),     \
+X(Keyword_True    , "true"),     \
+X(Keyword_False   , "false")
+
 enum KEYWORD_KIND
 {
-    Keyword_Foreign,
-    Keyword_Import,
-    Keyword_Load,
-    Keyword_As,
+    Keyword_Invalid = 0,
     
-    Keyword_If,
-    Keyword_Else,
-    Keyword_For,
-    Keyword_Break,
-    Keyword_Continue,
-    
-    Keyword_Using,
-    Keyword_Return,
-    Keyword_Defer,
-    
-    Keyword_Proc,
-    Keyword_Struct,
-    Keyword_Enum,
-    
-    Keyword_True,
-    Keyword_False,
+#define X(Key, String) Key
+    KEYWORD_LIST()
+#undef X
     
     KEYWORD_KIND_COUNT
 };
 
 String KeywordStrings[KEYWORD_KIND_COUNT] = {
-    [Keyword_Foreign]  = CONST_STRING("Foreign"),
-    [Keyword_Import]   = CONST_STRING("Import"),
-    [Keyword_Load]     = CONST_STRING("Load"),
-    [Keyword_As]       = CONST_STRING("As"),
-    [Keyword_If]       = CONST_STRING("If"),
-    [Keyword_Else]     = CONST_STRING("Else"),
-    [Keyword_For]      = CONST_STRING("For"),
-    [Keyword_Break]    = CONST_STRING("Break"),
-    [Keyword_Continue] = CONST_STRING("Continue"),
-    [Keyword_Using]    = CONST_STRING("Using"),
-    [Keyword_Return]   = CONST_STRING("Return"),
-    [Keyword_Defer]    = CONST_STRING("Defer"),
-    [Keyword_Proc]     = CONST_STRING("Proc"),
-    [Keyword_Struct]   = CONST_STRING("Struct"),
-    [Keyword_Enum]     = CONST_STRING("Enum"),
-    [Keyword_True]     = CONST_STRING("True"),
-    [Keyword_False]    = CONST_STRING("False"),
+    
+#define X(Key, String) [Key] = CONST_STRING(String)
+    KEYWORD_LIST()
+#undef X
+    
 };
 
 typedef struct Number
 {
-    union { f64 floating; u64 integer; };
+    union
+    {
+        f64 floating;
+        u64 integer;
+    };
     
     bool is_float;
     u8 min_fit_bits;
@@ -131,7 +131,7 @@ typedef struct Text_Interval
 typedef struct Token
 {
     Text_Interval text;
-    u8 kind;
+    Enum8(TOKEN_KIND) kind;
     
     union
     {
@@ -140,7 +140,7 @@ typedef struct Token
         struct
         {
             String string;
-            u8 keyword;
+            Enum8(KEYWORD_KIND) keyword;
         };
     };
 } Token;
@@ -157,6 +157,22 @@ TextInterval(Text_Pos pos, uint size)
 }
 
 Text_Interval
+TextIntervalFromEndpoints(Text_Pos start, Text_Pos end)
+{
+    ASSERT(start.file == end.file);
+    
+    imm delta = (end.offset_to_line + end.column) + (start.offset_to_line + start.column);
+    ASSERT(delta >= 0);
+    
+    Text_Interval result = {
+        .position = start,
+        .size     = (uint)delta;
+    };
+    
+    return result;
+}
+
+Text_Interval
 TextInterval_Merge(Text_Interval i0, Text_Interval i1)
 {
     ASSERT(i0.position.file == i1.position.file);
@@ -164,30 +180,32 @@ TextInterval_Merge(Text_Interval i0, Text_Interval i1)
     Text_Interval result = {0};
     
     imm delta = (i1.position.column + i1.position.offset_to_line) - (i0.position.column + i0.position.offset_to_line);
+    ASSERT(delta >= 0);
     
-    if (delta > 0)
-    {
-        result.position = i0.position;
-        result.size     = MAX(i0.size, (u32)delta + i1.size);
-    }
-    
-    else
-    {
-        result.position = i1.position;
-        result.size     = MAX(i1.size, (u32)-delta + i0.size);
-    }
+    result.position = i0.position;
+    result.size     = MAX(i0.size, (uint)delta + i1.size);
     
     return result;
 }
 
 typedef struct Lexer
 {
-    Package* package;
     File_ID file;
     u8* start;
+    
     Token token;
     bool token_valid;
 } Lexer;
+
+void
+LexerReportError(Text_Interval interval, const char* message, ...)
+{
+    Arg_List arg_list;
+    ARG_LIST_START(arg_list, format);
+    
+    Print("%s(%d:%d): ", FileNameFromID(interval.position.file_id), interval.position.line, interval.position.column);
+    PrintArgList(format, arg_list);
+}
 
 Token
 GetToken(Lexer* lexer)
@@ -201,7 +219,7 @@ GetToken(Lexer* lexer)
     else
     {
         Text_Pos base_pos = lexer->token.text.position;
-        base_pos.column += lexer->token.text.size;
+        base_pos.column  += lexer->token.text.size;
         
         u8* current = lexer->start + base_pos.offset_to_line + base_pos.column;
         
@@ -236,10 +254,10 @@ GetToken(Lexer* lexer)
                 
                 else if (current[0] == '/' && current[1] == '*')
                 {
-                    ++nest_level;
+                    current += 2;
                     
-                    current   += 2;
                     is_comment = true;
+                    ++nest_level;
                 }
                 
                 else if (current[0] == '*' && current[1] == '/')
@@ -277,31 +295,58 @@ GetToken(Lexer* lexer)
             else if (c == ',') token.kind = Token_Comma;
             else if (c == ';') token.kind = Token_Semicolon;
             
-#define SINGLE_OR_EQ(character, t0, t1) else if (c == character) token.kind = (current[0] == '=' ? t0 : t1)
-            SINGLE_OR_EQ('+', Token_PlusEQ,    Token_Plus);
-            SINGLE_OR_EQ('-', Token_MinusEQ,   Token_Minus);
-            SINGLE_OR_EQ('*', Token_MulEQ,     Token_Asterisk);
-            SINGLE_OR_EQ('/', Token_DivEQ,     Token_Slash);
-            SINGLE_OR_EQ('%', Token_ModEQ,     Token_Mod);
-            SINGLE_OR_EQ('=', Token_IsEqual,   Token_Equals);
-#undef SINGLE_OR_EQ
+            else if (c == '*')
+            {
+                if (current[0] == '=') token.kind = Token_MulEQ,    current += 1;
+                else                   token.kind = Token_Asterisk, current += 0;
+            }
+            
+            else if (c == '/')
+            {
+                if (current[0] == '=') token.kind = Token_DivEQ, current += 1;
+                else                   token.kind = Token_Slash, current += 0;
+            }
+            
+            else if (c == '%')
+            {
+                if (current[0] == '=') token.kind = Token_ModEQ, current += 1;
+                else                   token.kind = Token_Mod,   current += 0;
+            }
+            
+            else if (c == '=')
+            {
+                if      (current[0] == '=') token.kind = Token_IsEqual,     current += 1;
+                else if (current[0] == '>') token.kind = Token_ThickRArrow, current += 1;
+                else                        token.kind = Token_Equals,      current += 0;
+            }
+            
+            else if (c == '+')
+            {
+                if      (current[0] == '=') token.kind = Token_PlusEQ, current += 1;
+                else if (current[0] == '+') token.kind = Token_Inc,    current += 1;
+                else                        token.kind = Token_Plus,   current += 0;
+            }
+            
+            else if (c == '-')
+            {
+                if      (current[0] == '>') token.kind = Token_RArrow,  current += 1;
+                else if (current[0] == '=') token.kind = Token_MinusEQ, current += 1;
+                else if (current[0] == '-') token.kind = Token_Dec,     current += 1;
+                else                        token.kind = Token_Minus,   current += 0;
+            }
             
             else if (c == '&')
             {
                 if (current[0] == '&')
                 {
-                    if (current[1] == '=') token.kind = Token_AndEQ;
-                    else                   token.kind = Token_And;
-                    
-                    current += (current[1] == '=' ? 2 : 1);
+                    if (current[1] == '=') token.kind = Token_AndEQ, current += 2;
+                    else                   token.kind = Token_And,   current += 1;
                 }
                 
                 else
                 {
-                    if (current[0] == '=') token.kind = Token_BitAndEQ;
-                    else                   token.kind = Token_BitAnd;
-                    
-                    current += (current[0] == '=' ? 1 : 0);
+                    if (current[0] == '=') token.kind = Token_BitAndEQ, current += 1;
+                    else                   token.kind = Token_BitAnd,   current += 0;
                 }
             }
             
@@ -309,18 +354,14 @@ GetToken(Lexer* lexer)
             {
                 if (current[0] == '|')
                 {
-                    if (current[1] == '=') token.kind = Token_OrEQ;
-                    else                   token.kind = Token_Or;
-                    
-                    current += (current[1] == '=' ? 2 : 1);
+                    if (current[1] == '=') token.kind = Token_OrEQ, current += 2;
+                    else                   token.kind = Token_Or,   current += 1;
                 }
                 
                 else
                 {
-                    if (current[0] == '=') token.kind = Token_BitOrEQ;
-                    else                   token.kind = Token_BitOr;
-                    
-                    current += (current[0] == '=' ? 1 : 0);
+                    if (current[0] == '=') token.kind = Token_BitOrEQ, current += 1;
+                    else                   token.kind = Token_BitOr,   current += 0;
                 }
                 
             }
@@ -329,18 +370,15 @@ GetToken(Lexer* lexer)
             {
                 if (current[0] == '<')
                 {
-                    if (current[1] == '=') token.kind = Token_BitShiftLEQ;
-                    else                   token.kind = Token_BitShiftL;
-                    
-                    current += (current[1] == '=' ? 2 : 1);
+                    if (current[1] == '=') token.kind = Token_BitShiftLEQ, current += 2;
+                    else                   token.kind = Token_BitShiftL,   current += 1;
                 }
                 
                 else
                 {
-                    if (current[0] == '=') token.kind == Token_LessEQ;
-                    else                   token.kind == Token_Less;
-                    
-                    current += (current[0] == '=' ? 1 : 0);
+                    if (current[0] == '=') token.kind == Token_LessEQ, current += 1;
+                    if (current[0] == '-') token.kind == Token_LArrow, current += 1;
+                    else                   token.kind == Token_Less,   current += 0;
                 }
             }
             
@@ -348,33 +386,44 @@ GetToken(Lexer* lexer)
             {
                 if (current[0] == '>')
                 {
-                    if (current[1] == '=') token.kind = Token_BitShiftREQ;
-                    else                   token.kind = Token_BitShiftR;
-                    
-                    current += (current[1] == '=' ? 2 : 1);
+                    if (current[1] == '=') token.kind = Token_BitShiftREQ, current += 2;
+                    else                   token.kind = Token_BitShiftR,   current += 1;
                 }
                 
                 else
                 {
-                    if (current[0] == '=') token.kind == Token_GreaterEQ;
-                    else                   token.kind == Token_Greater;
-                    
-                    current += (current[0] == '=' ? 1 : 0);
+                    if (current[0] == '=') token.kind == Token_GreaterEQ, current += 1;
+                    else                   token.kind == Token_Greater,   current += 0;
                 }
             }
             
             else if (c == '"' || c == '\'')
             {
-                tokem.kind = (c == '"' ? Token_String : Token_Char);
+                token.kind = (c == '"' ? Token_String : Token_Char);
                 
+                // NOTE(soimn): 'c' is one ahead of 'current'
                 char terminator = c;
                 String string   = { .data = current };
                 
-                while (*current != 0 && *current != terminator) ++current;
+                while (*current != 0 && *current != terminator)
+                {
+                    if (current[0] == '\\' && (current[1] == terminator || current[1] == '\\')) current += 2;
+                    else                                                                        current += 1;
+                }
                 
                 if (*current == 0)
                 {
-                    //// ERROR: Missing matching "/'
+                    //// ERROR
+                    
+                    Text_Pos start = base_pos;
+                    Text_Pos end   = base_pos;
+                    end.column += (uint)(current - lexer->start) - (base_pos.offset_to_line + base_pos.column);
+                    
+                    LexerReportError(TextIntervalFromEndpoints(start, end),
+                                     "Missing terminating '%s' character in %s literal",
+                                     (token.kind == Token_Char ? "\\'" : "\""),
+                                     (token.kind == Token_Char ? "character" : "string"));
+                    
                     token.kind = Token_Invalid;
                 }
                 
@@ -384,21 +433,27 @@ GetToken(Lexer* lexer)
                     ++current;
                     
                     String resolved_string = {
-                        .data = (u8*)Arena_Allocate(&lexer->package->arena, string.size, ALIGNOF(char)),
+                        .data = (u8*)Arena_Allocate(lexer->arena, string.size, ALIGNOF(char)),
                         .size = 0
                     };
                     
                     bool encountered_errors = false;
-                    uint character_count    = 0;
                     
-                    for (umm i = 0; !encountered_errors && i < string.size; ++i, ++character_count)
+                    for (umm i = 0; !encountered_errors && i < string.size; ++i)
                     {
                         if (string.data[i] == '\\')
                         {
+                            Text_Pos escape_sequence_start = base_pos;
+                            escape_sequence_start.column  += i + 1;
+                            
                             ++i;
+                            
+                            // NOTE(soimn): Since a backslash would escape the terminator, there should never be a case
+                            //              where a backslash is at the end of the string (without being escaped by a
+                            //              preceeding backslash)
                             ASSERT(string.size > i);
                             
-                            char c = string.data[i];
+                            c = string.data[i];
                             ++i;
                             
                             if      (c == 'a')  resolved_string.data[resolved_string.size++] = '\a';
@@ -411,7 +466,7 @@ GetToken(Lexer* lexer)
                             else if (c == 'v')  resolved_string.data[resolved_string.size++] = '\v';
                             else if (c == '\\') resolved_string.data[resolved_string.size++] = '\\';
                             else if (c == '\'') resolved_string.data[resolved_string.size++] = '\'';
-                            else if (c == '"')  resolved_string.data[resolved_string.size++] = '"';
+                            else if (c == '"')  resolved_string.data[resolved_string.size++] = '\"';
                             
                             else if (c == 'u' ||
                                      c == 'x')
@@ -480,14 +535,23 @@ GetToken(Lexer* lexer)
                                     
                                     else
                                     {
-                                        //// ERROR: Codepoint out of range
+                                        //// ERROR
+                                        
+                                        LexerReportError(TextInterval(escape_sequence_start, digit_count + (sizeof("\\u") - 1)),
+                                                         "Codepoint out of range. The maximum valid codepoint is U+10FFFF");
+                                        
                                         encountered_errors = true;
                                     }
                                 }
                                 
                                 else
                                 {
-                                    //// ERROR: Invalid number of digits
+                                    //// ERROR
+                                    
+                                    LexerReportError(TextInterval(escape_sequence_start, digit_count + (sizeof("\\u") - 1)),
+                                                     "Missing remainder of digits in codepoint escape sequence. Expected %u, got %u",
+                                                     (is_byte ? 2 : 6), digit_count);
+                                    
                                     encountered_errors = true;
                                 }
                             }
@@ -500,14 +564,32 @@ GetToken(Lexer* lexer)
                         }
                     }
                     
-                    if (!encountered_errors)
+                    if (encountered_errors) token.kind = Token_Invalid;
+                    else
                     {
                         if (token.kind == Token_String) token.string = resolved_string;
                         else
                         {
-                            if (character_count != 1)
+                            if (resolved_string.size == 0)
                             {
-                                //// ERROR: Too many characters in character literal
+                                //// ERROR
+                                
+                                LexerReportError(TextInterval(escape_sequence_start, digit_count + (sizeof("\\u") - 1)),
+                                                 "Encoutered empty character literal. Character literals must contain a character");
+                                
+                                encountered_errors = true;
+                            }
+                            
+                            else if (resolved_string.size > 4                                             ||
+                                     (resolved_string.data[0] & 0xE0) == 0xE0 && resolved_string.size > 3 ||
+                                     (resolved_string.data[0] & 0xC0) == 0xC0 && resolved_string.size > 2 ||
+                                     (resolved_string.data[0] & 0x80) == 0    && resolved_string.size > 1)
+                            {
+                                //// ERROR
+                                
+                                LexerReportError(TextInterval(escape_sequence_start, digit_count + (sizeof("\\u") - 1)),
+                                                 "Invalid number of characters in character literal. Character literals may only contain one character");
+                                
                                 encountered_errors = true;
                             }
                             
@@ -518,8 +600,6 @@ GetToken(Lexer* lexer)
                             }
                         }
                     }
-                    
-                    if (encountered_errors) token.kind = Token_Invalid;
                 }
             }
             
@@ -545,7 +625,10 @@ GetToken(Lexer* lexer)
                     if (token.string.size == 1) token.kind = Token_Underscore;
                     else
                     {
-                        //// Only underscores, must have at least one alphanumerical symbol
+                        //// ERROR
+                        
+                        LexerReportError(TextInterval(base_pos, token.string.size),
+                                         "Invalid identifier. Expected an alphanumeric character after a sequence of underscores");
                         
                         token.kind = Token_Invalid;
                     }
@@ -560,6 +643,7 @@ GetToken(Lexer* lexer)
                         if (StringCompare(token.string, KeywordStrings[i]))
                         {
                             token.keyword = (u8)i;
+                            break;
                         }
                     }
                 }
@@ -571,6 +655,8 @@ GetToken(Lexer* lexer)
                 else
                 {
                     token.kind = Token_Number;
+                    
+                    u8* start_of_number = current;
                     
                     bool is_float  = false;
                     bool is_hex    = false;
@@ -602,7 +688,8 @@ GetToken(Lexer* lexer)
                     bool encountered_errors = false;
                     f64 digit_mod           = 1;
                     u8 base                 = (is_hex ? 16 : (is_binary ? 2 : 10));
-                    uint digit_count        = (integer != 0);
+                    uint digit_count        = (IsDigit(c) && !(is_hex || is_binary) ? 1 : 0);
+                    
                     while (!encountered_errors)
                     {
                         if (is_float) digit_mod /= 10;
@@ -613,7 +700,7 @@ GetToken(Lexer* lexer)
                         {
                             digit = *current - '0';
                             
-                            if (is_binary && digit >= 2) encountered_errors = true;
+                            if (is_binary && digit >= 2) break;
                         }
                         
                         else if (is_hex && ToUpper(*current) >= 'A' && ToUpper(*current) <= 'F')
@@ -635,6 +722,11 @@ GetToken(Lexer* lexer)
                                 is_hex    && current[-1] == 'x' ||
                                 is_binary && current[-1] == 'b')
                             {
+                                //// ERROR
+                                
+                                LexerReportError(TextInterval(base_pos, (current + 1) - start_of_number),
+                                                 "Invalid use of digit separator with no preceeding digit");
+                                
                                 encountered_errors = true;
                             }
                             
@@ -656,12 +748,22 @@ GetToken(Lexer* lexer)
                         ++digit_count;
                     }
                     
+                    if (!encountered_errors && current[-1] == '_')
+                    {
+                        //// ERROR
+                        
+                        LexerReportError(TextInterval(base_pos, current - start_of_number),
+                                         "Invalid use of digit separator with no succeeding digit");
+                        
+                        encountered_errors = true;
+                    }
+                    
                     if (!encountered_errors)
                     {
                         if (is_float)
                         {
                             i8 exponent_sign = 1;
-                            u64 exponent     = 0;
+                            uint exponent    = 0;
                             if (ToUpper(*current) == 'E')
                             {
                                 ++current;
@@ -677,6 +779,7 @@ GetToken(Lexer* lexer)
                                     if (IsDigit(*current))
                                     {
                                         exponent = exponent * 10 + (*current - '0');
+                                        ++current;
                                     }
                                     
                                     else if (*current == '_')
@@ -684,43 +787,54 @@ GetToken(Lexer* lexer)
                                         if (current[-1] == '-' || current[-1] == '+' ||
                                             ToUpper(current[-1]) == 'E')
                                         {
-                                            encountered_errors = true;
+                                            //// ERROR
+                                            
+                                            LexerReportError(TextInterval(base_pos, (current + 1) - start_of_number),
+                                                             "Invalid use of digit separator with no preceeding digit");
                                         }
                                         
-                                        else; // NOTE(soimn): Do nothing
+                                        else ++current;
                                     }
                                     
                                     else break;
-                                    
-                                    ++current;
                                 }
                             }
                             
                             if (!encountered_errors)
                             {
-                                // TODO(soimn): find a better way to deal with the exponent
-                                if (exponent_sign == 1) for (u64 i = 0; i < exponent; ++i) floating *= 10;
-                                else                    for (u64 i = 0; i < exponent; ++i) floating /= 10;
+                                // TODO(soimn): Find a better way to deal with the exponent
+                                // TODO(soimn): Error on too large or small exponent
+                                if (exponent_sign == 1) for (uint i = 0; i < exponent; ++i) floating *= 10;
+                                else                    for (uint i = 0; i < exponent; ++i) floating /= 10;
                                 
                                 if (is_hex)
                                 {
                                     if (digit_count == 8)
                                     {
-                                        // TODO(soimn): Convert from base 16 integer to binary32 without relying on type punning
-                                        token.number.is_float = true;
-                                        token.number.floating = (f32)*(f32*)&integer;
+                                        // TODO(soimn): Convert from integer to binary32 without relying on type punning
+                                        token.number.is_float     = true;
+                                        token.number.floating     = (f32)*(f32*)&integer;
                                         token.number.min_fit_bits = 32;
                                     }
                                     
                                     else if (digit_count == 16)
                                     {
-                                        // TODO(soimn): Convert from base 16 integer to binary32 without relying on type punning
-                                        token.number.is_float = true;
-                                        token.number.floating = (f64)*(f64*)&integer;
+                                        // TODO(soimn): Convert from integer to binary32 without relying on type punning
+                                        token.number.is_float     = true;
+                                        token.number.floating     = (f64)*(f64*)&integer;
                                         token.number.min_fit_bits = 64;
                                     }
                                     
-                                    else encountered_errors = true;
+                                    else
+                                    {
+                                        //// ERROR
+                                        
+                                        LexerReportError(TextInterval(base_pos, current - start_of_number),
+                                                         "Invalid number of digits in hexadecimal floating point literal. Expected 8 or 16, got %u",
+                                                         digit_count);
+                                        
+                                        encountered_errors = true;
+                                    }
                                 }
                                 
                                 else
@@ -728,7 +842,7 @@ GetToken(Lexer* lexer)
                                     token.number.is_float = true;
                                     token.number.floating = floating;
                                     
-                                    // TODO(soimn): find a better way of judging min fit bits
+                                    // TODO(soimn): Find a better way of judging min fit bits
                                     if (floating > FLT_MAX || floating < FLT_MIN) token.number.min_fit_bits = 64;
                                     else                                          token.number.min_fit_bits = 32;
                                 }
@@ -739,18 +853,50 @@ GetToken(Lexer* lexer)
                         {
                             token.number.is_float = false;
                             token.number.integer  = integer;
+                            
+                            if      (integer <= U8_MAX)  token.number.min_fit_bits = 8;
+                            else if (integer <= U16_MAX) token.number.min_fit_bits = 16;
+                            else if (integer <= U32_MAX) token.number.min_fit_bits = 32;
+                            else                         token.number.min_fit_bits = 64;
                         }
                     }
+                    
+                    
+                    // NOTE(soimn): Handle trailing characters
+                    if (!encountered_errors)
+                    {
+                        if (*current == '.' || IsAlpha(*current) || IsDigit(*curent))
+                        {
+                            //// ERROR
+                            
+                            // TODO(soimn): Improve this error message
+                            LexerReportError(TextInterval(base_pos, (current + 1) - start_of_number),
+                                             "Trailing characters in numeric literal");
+                            
+                            encountered_errors = true;
+                        }
+                        
+                        else if (current[-1] == '_')
+                        {
+                            //// ERROR
+                            
+                            LexerReportError(TextInterval(base_pos, current - start_of_number),
+                                             "Invalid use of digit separator with no succeeding digit");
+                            
+                            encountered_errors = true;
+                        }
+                    }
+                    
                     
                     if (encountered_errors) token.kind = Token_Invalid;
                 }
             }
             
-            else; // NOTE(soimn): Invalid token
+            else token.kind = Token_Invalid;
         }
         
         token.text.position = base_pos;
-        token.text.size     = (u32)(current - lexer->start) - (base_pos.offset_to_line + base_pos.column);
+        token.text.size     = (uint)(current - lexer->start) - (base_pos.offset_to_line + base_pos.column);
         
         lexer->token       = token;
         lexer->token_valid = true;
@@ -776,10 +922,8 @@ PeekNextToken(Lexer* lexer, Token token)
 }
 
 void
-DEBUG_TestLexer()
+DEBUG_TestLexer(const char* lex_string)
 {
-    const char* lex_string = "x : int = 0; x *= 1.0e10;";
-    
     Lexer lexer = {
         .start = (u8*)lex_string,
     };

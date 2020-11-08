@@ -9,4 +9,34 @@
 #error "unsupported platform"
 #endif
 
-EXPORT int TEMP_FUNC() { return 32; };
+EXPORT Workspace OpenWorkspace(Workspace_Options options, String file);
+EXPORT void CloseWorkspace(Workspace* workspace);
+
+EXPORT void ParseAllFiles(Workspace* workspace, ---);
+
+EXPORT Declaration* FetchDeclaration(Workspace* workspace);
+EXPORT
+
+
+ParseEverything -> ParsedStack
+
+while decl_pile != empty
+{
+    FetchDecl;
+    TypeCheckDecl;
+    
+    ResubmitDecl;
+    SubmitNewDecl;
+    
+    ModifyDecl;
+    
+    GenerateBytecodeForDecl;
+    
+    CommitDecl;
+}
+
+BytecodeStack
+
+Runnable
+
+GenerateBinary

@@ -91,7 +91,7 @@ typedef Buffer String;
 /// IDs and indeces
 //////////////////////////////////////////
 
-typedef u32 File_ID;
+typedef String* File_ID;
 
 /// Utility macros
 //////////////////////////////////////////
@@ -137,13 +137,8 @@ void System_FreeMemory(void* memory);
 #define ARG_LIST_START va_start
 #define ARG_LIST_GET_ARG va_arg
 
-void PrintCString(const char* cstring);
+void PrintChar(char c);
 void PrintString(String string);
-
-typedef u64 Mutex;
-Mutex Mutex_Init();
-void Mutex_Lock(Mutex m);
-void Mutex_Unlock(Mutex m);
 
 #ifdef _WIN32
 

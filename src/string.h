@@ -48,11 +48,8 @@ StringCompare(String s0, String s1)
 }
 
 void
-Print(Bucket_Array* array, const char* format, ...)
+PrintArgList(const char* format, Arg_List arg_list)
 {
-    Arg_List arg_list;
-    ARG_LIST_START(arg_list, format);
-    
     for (char* scan = (char*)format; *scan; )
     {
         if (*scan == '%')
@@ -61,7 +58,7 @@ Print(Bucket_Array* array, const char* format, ...)
             
             if (*scan == 0 || *scan == '%')
             {
-                *BucketArray_Append(array) = '%';
+                PrintChar('%');
                 if (*scan == '%') ++scan;
             }
             
@@ -69,20 +66,59 @@ Print(Bucket_Array* array, const char* format, ...)
             {
                 const char* cstring = ARG_LIST_GET_ARG(arg_list, const char*);
                 
-                for (char* c = (char*)cstring; *c; ++c)
+                String string = { .data = (u8*)cstring };
+                
+                for (char* cstring_scan = (char*)cstring; *cstring_scan; ++cstring_scan)
                 {
-                    *BucketArray_Append(array) = *c;
+                    ++string.size;
                 }
+                
+                PrintString(string);
             }
             
             else if (*scan == 'S')
             {
                 String string = ARG_LIST_GET_ARG(arg_list, String);
+                PrintString(string);
+            }
+            
+            else if (*scan == 'U' ||
+                     *scan == 'u' ||
+                     *scan == 'I' ||
+                     *scan == 'i')
+            {
+                i64 signed_number   = 0;
+                u64 unsigned_number = 0;
                 
-                for (umm i = 0; i < string.size; ++i)
+                if      (*scan == 'I') signed_number   = ARG_LIST_GET_ARG(arg_list, i64);
+                else if (*scan == 'i') signed_number   = ARG_LIST_GET_ARG(arg_list, i32);
+                else if (*scan == 'U') unsigned_number = ARG_LIST_GET_ARG(arg_list, u64);
+                else                   unsigned_number = ARG_LIST_GET_ARG(arg_list, u32);
+                
+                if (*scan == 'I' || *scan == 'i')
                 {
-                    *BucketArray_Append(array) = string.data[i];
+                    if (signed_number < 0)
+                    {
+                        PrintChar('-');
+                        signed_number *= -1;
+                    }
+                    
+                    unsigned_number = (u64)signed_number;
                 }
+                
+                u64 reversed_number = 0;
+                while (unsigned_number != 0)
+                {
+                    reversed_number  = reversed_number * 10 + unsigned_number % 10;
+                    unsigned_number /= 10;
+                }
+                
+                do
+                {
+                    PrintChar(reversed_number % 10 + '0');
+                    reversed_number /= 10;
+                    
+                } while (reversed_number != 0);
             }
             
             else INVALID_CODE_PATH;
@@ -90,8 +126,17 @@ Print(Bucket_Array* array, const char* format, ...)
         
         else
         {
-            *BucketArray_Append(array) = *scan;
+            PrintChar(*scan);
             ++scan;
         }
     }
+}
+
+void
+Print(const char* format, ...)
+{
+    Arg_List arg_list;
+    ARG_LIST_START(arg_list, format);
+    
+    PrintArgList(format, arg_list);
 }
