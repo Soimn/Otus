@@ -1,32 +1,15 @@
 Main goal: The goal of this programming language is to provide an alternative to C that is "simple but powerful"
 
-Lesser goals:
-  - Adopt a syntax similar to Jai in case of the language dying and Jai taking over as the language of choice
-    for my personal projects
-
+Specific goals:
   - Easy to parse (no/few ambiguities, negliable lookahead, consistent syntax) in order to help developers and
     tools understand and reason about the code
 
   - Provide a powerfull toolset (metaprogramming and language constructs) with minimal use of keywords, obscure
     syntax and other abominations
 
-  - Invoke the "feeling of low-level programming"
+  - The language should "feel" low-level
 
-  - Try to push metaprogramming "to a whole new level"
-
-  - Provide support for visual code editors (e.g. compile AST instead of text)
-
-Philosophy:
-  - Only features which _cannot_ be implemented properly by a library should be a language construct
-
-  - Every operation (e.g. integer addition) should either be well defined or throw a compile time error
-
-  - External build tools are _not_ and should _never_ be necessary to compile larger projects
-
-  - There should only be _one_ implementation of a _standard_ library
-
-  - Being able to easily read and reason about a piece of code is more important than being able to write code
-    quickly
+  - Provide powerful metaprogramming that is well defined
 
 Problems: (P: problem, I: important information, S: solution, ?: possible solution, # previous solutiuon)<br>
   P: How should importing work in the language, and should cyclic imports be allowed?<br>
@@ -36,21 +19,34 @@ Problems: (P: problem, I: important information, S: solution, ?: possible soluti
      All import paths are relative to the current file unless a specific mounting point is specified. Mounting
      points are defined in the build options, and are path snippets used as prefixes to any import path with
      the accompanying mounting point label as a prefix.<br>
-  S: Imports are split in two: loading files and importing packages. Files are regular text files, while packages are
+  #: Imports are split in two: loading files and importing packages. Files are regular text files, while packages are
      files which have a package declaration on the first line, ignoring whitespace. Only files may be loaded and only
      packages may be imported. Loading works very similar to textual importing, and results in the loaded files' namespace
      being embedded within the loader's namespace. Importing will only create a link between the namespaces. Cyclic loads are
      therefore prohibited, however cyclic imports are perfectly legal. Trying to load a directory results in an error, whilst
-     importing a directory will search the diretory for a file with the same name as the directory.
+     importing a directory will search the diretory for a file with the same name as the directory.<br>
+  S: A program consists of several modules with a single entry point. A module is a bundle of source files under the same
+     namespace and with the same default link name prefix. Modules can load source files, adding them to the module, and
+     import other modules, creating a reference to the other module and import foreign libraries, c style shared libraries.
+     Duplicate and cyclic loads are illegal. Duplicate imports are deduplicated and cyclic imports are perfectly legal. The
+     path to the file to be loaded, or the module to be imported, may be prefixed with a path prefix, in the form
+     "path_prefix:path/to/file/or/module". This is used for absolute paths. All paths are assumed to be relative to the
+     current file, if no path prefix is specified.
 
   P: How should procedure overloading work?<br>
   #: Overloading should be implicit, since the programmer "headspace complexity" over explicit overloading is negligible and
      should be more familiar to programmers coming from other language<br>
-  I: implicit overloading may lead to a lot of pipeline stalling, since references to overloads which are
+  I: Implicit overloading may lead to a lot of pipeline stalling, since references to overloads which are
 	 not a "perfect" (perfect meaning no implicit casts) may need reevaluation later in compilation, which prevents
 	 every procedure with one or more non-perfect reference from leaving type checking, leading to a lot of potential
 	 stalls<br>
-  S: explicit overloads seem to be a must
+  #: Explicit overloads seem to be a must<br>
+  I: Explicit overloads still have the problem with pipeline stalling, and have proven to be harder to use, since most
+     languages use implicit overloads (making explicit overloads feel unnatural to anyone migrating from almost any
+     other language), and a lot of functionality is harder to implement with explicit overloading, when shadowing is
+	 not allowed.<br>
+  S: Implicit overloading
+
 
   P: In what order should global variables and constants be initialized?<br>
   ?: Globals and constants are initialized after their dependencies, respecting source order when possible,
@@ -59,21 +55,22 @@ Problems: (P: problem, I: important information, S: solution, ?: possible soluti
   P: What could the language provide to handle name collisions?<br>
   ?: Namespacing imports and file vs. export scope<br>
   #: Import statements which are able to selectively import declarations and namespace them<br>
-  S: Imports that namespace and file vs export scope
+  #: Imports that namespace and file vs export scope<br>
+  S: Imports that namespace and public vs. private module scopes
 
   P: How should attributes to procedures, structs and other constructs be marked up?<br>
   ?: By compiler directives before the declaration<br>
-  S: @attrtibute_name(args) or @[attribute_name_0(args), attribute_name_1(args), ...] for multiple, before the declaration
+  #: @attrtibute_name(args) or @[attribute_name_0(args), attribute_name_1(args), ...] for multiple, before the declaration<br>
+  S: @attribute_name(args), multiple attributes are separated by whitespace, can be placed before and after(before terminator) any declaration
 
-  P: Should macros be added to the language?
+  P: Should macros be added to the language?<br>
+  ?: yes? Similar to Jai macros
 
   P: Should the subscript operator work on pointers?<br>
   #: yes<br>
   ?: no? Maybe use intervals instead of pointers for this use case and implement pointer arithmetic as simple integer
-     arithmetic, i.e. no divide by size of the pointed type
-
-  P: How far should metaprogramming be taken in this language?<br>
-  ?: Jai-esque polymorphism, run directives, body_text, modify and mutable compilation
+     arithmetic, i.e. no divide by size of the pointed type<br>
+  S: No, and pointer arithemtic is treated as integer arithmetic
 
   P: How should unicode strings and characters be represented in memory, or rather,
      how should UTF-8 strings and characters be expressed and manipulated?<br>
@@ -85,7 +82,8 @@ Problems: (P: problem, I: important information, S: solution, ?: possible soluti
 
   P: What should determine linking names, and should they be consistent?<br>
   ?: Name of the procedure followed by the type name of each argument, unless specified otherwise<br>
-  S: "package_name.mangled_procedure_name" if not overridden
+  #: "package_name.mangled_procedure_name" if not overridden<br>
+  S: "module_name.mangled_procedure_name" if not overridden
 
   P: Should there be a distinction between static arrays and intervals?<br>
   I: Vector types: V2, V3, V4 :: [2]f32, [3]f32, [4]f32;<br>
@@ -93,56 +91,65 @@ Problems: (P: problem, I: important information, S: solution, ?: possible soluti
      on the stack and in structs.
 
   P: How should declarations within a procedure be handled?<br>
-  I: Either every declaration must be moved out of the procedure body, or they should all remain.<br>
-     Something in between will only result in confusion
+  I: Either move every declaration out of the procedure body, handle them inplace.<br>
+     A mix of both will only result in confusion
+
+  P: Struct, and maybe array, literal syntax<br>
+  #: {:type: field0, field1} for structs, {:[X]: elem0, elem1, elem2} for arrays, where X is either an integer or ? (infer size)<br>
+  ?: {:type: field0, field1} for structs, [:type: elem0, elem1, elem2] for arrays<br>
+  ?: type{field0, field1} for structs, type[elem0, elem1, elem2] for arrays<br>
+  ?: type{field0, field1} for structs, [X]type[elem0, elem1, elem2] for arrays, where X is either an integer or ? (infer size)
+
+  P: Should there be types for 8- and 16-bit floats?<br>
+
+  P: Should constant ifs be a directive or statement?<br>
+  I: Constant ifs need "transparent" scopes, support only a condition and may appear in global scope<br>
+  S: Constant ifs should be a directive
 
 Ideas:
   - Use arrays for SIMD like operations and support element-wise arithmetic
-    (e.g. #assert({:[2]int: 1, 3} == {:[2]int: 0, 1} + {:[2]int: 1, 2}))
 
   - When the allocator pointer on a dynamic array is null, the array exists but cannot be freed
   
-  - Provide a syntactical way of cheking if a value is included in a set (i.e. avoid token.kind == ... || token.kind == ... || token.kind == ...)
+  - Provide a syntactical way of cheking if a value is included in a set (i.e. avoid token.kind == ... || token.kind == ... || token.kind == ...)<br>
+	It may be possible to use array literals for this, but only if the compiler can "unroll" them.
   
-  - Should scope local closures be a part of the language as a syntactical convenience (but _NO_ capture, only elide syntactic pass by value/ref)
-  
-  - Turn the "for" loop into a "for each" loop and beef up the "while" loop to take the old "for" loops place
-  
-  - Move "inline" from an attribute to a directive or keyword, and add the option to inline a function at the call site and inline certain for loops
-
   - Allow use of the blank identifier to explicitly specify that a type should be inferred. e.g.
     x, y, z, w : int, _, float, _ = 0, 0, 0, 0;
 
-  - Static arrays "only exist as data", length is stored in the type and the pointer to the data is stored in the symbol
-    table
-
   - Provide Zig-esque optimization options: debug, release_safe, release_fast, release_small
 
-  - Provide a way of explicitly restricting return values in "safe" mode (mainly for providing a an api contract for
-    possible error return values)
-
   - "dynamic bake" directive that "bakes" arguments into a procedure call that are not constant, so as long as they are
-	in scope, these arguments will be implicitly passed to the procedures.
+	in scope, these arguments will be implicitly passed to the procedures. Essentially a syntactic closure
 
-Observations from using C to build the compiler:
-  - Default function arguments and function overloading are well worth their mental overhead. They allow for
-    hiding details which are unimportant in the current context, and they allow for greater flexibility when used
-    in tandem with a well defined common API (e.g. switching storage data structures from a hash map to a bucket
-    array does not require the usage code to change if both containers overload a common set of API functions).
+  - a beefier version of the attribute which can also be used by itself as an expression or declaration
 
-  - Operator overloading is overrated, a procedure call is much clearer
+Builtin types:
+  - int               // A 64-bit signed integer
+  - uint              // A 64-bit unsigned integer
+  - float             // A 64-bit IEEE-754 floating point value
+  - bool              // An 8-bit value that can either be false (0) or true (any value that is not 0)
 
-Observations from talk on Zig (https://www.youtube.com/watch?v=Gv2I7qTux7g), (+: posetive, -: negative)
-  + No distinction between constant if and regular if
-  + Control over whether a value is known at compile time
-  + The error handling system
-  + Every standard library function that allocates memory needs to be supplied with an allocator
-  + Per scope build mode
-TODO: There should be some negatives here ^
+  - i8, i16, i32, i64 // Explicitly sized signed integer
+  - u8, u16, u32, u64 // Explicitly sized unsigned integer
+  - f32, f64          // Explicitly sized IEEE-754 float
 
-Observations from other language:
-  - The dot enum thingy (infer the type name from .MemberName) is actually usefull
-  - The Odin where statement for structs and procedures seems like a better syntax than #modify
+  - rawptr            // A 64/32-bit (depending on architecture) sized integer pointing to a specific address in memory
+  - typeid            // A 32-bit value representing a specific type
+  - any               // A typeid and a rawptr to the underlying data
+
+Casting rules:
+  - distinct types do not cast
+  - any pointer type can be explicitly casted to any other pointer type and can be implicitly casted to and from rawptr
+  - "typeid" can be explicitly casted to any integer type
+  - no type can be casted to "typeid"
+  - "any" can be explicitly casted to any pointer type and any type can be implicitly casted to "any"
+  - any specific base type implicitly casts to an unspecific type of the the same category<br>
+    i.e. i8, i16, i32, i64 implicitly cast to int, u8..64 cast to uint, f32 and f64 cast to float
+  - any integer and float type can be explicitly casted to any other integer or float type
+  - any base type can be explicitly casted to bool
+  - bool can be explicitly casted to any integer, float and pointer type
+
 
 Keywords:
   - return
@@ -153,7 +160,9 @@ Keywords:
   - break
   - continue
   - for
+  - while
   - proc
+  - where
   - struct
   - union
   - enum
@@ -163,43 +172,11 @@ Keywords:
   - import
   - load
   - foreign
-
-Builtin types:
-  - int        // A 64-bit signed integer
-  - uint       // A 64-bit unsigned integer
-  - bool       // An 8-bit value that can either be false (0) or true (any value that is not 0)
-  - float      // A 64-bit IEEE-754 floating point value
-
-  - i8, i16, i32, i64 // Explicitly sized signed integer
-  - u8, u16, u32, u64 // Explicitly sized unsigned integer
-  - b8, b16, b32, b64 // Explicitly sized boolean
-  - f32, f64          // Explicitly sized IEEE-754 float
-
-  - rawptr // A 64/32-bit (depending on architecture) sized integer pointing to a specific address in memory
-  - typeid // A 32-bit value representing a specific type
-  - any    // A typeid and a rawptr to the underlying data
-
-Casting rules:
-  - Aliased types can be both implicitly and explicitly converted to the base type or another alias of said type
-  - Distinct types cannot be casted
-  - All pointers can be explicitly converted to any pointer type
-  - rawptr can be explicitly, and implicitly, converted to any pointer type
-  - Fixed width integer, bool and floating point types can be converted to int, bool and float respectively, both
-    explicitly and implicitly
-  - Signed integer types can be explicitly casted to unsigned, and vice versa
-  - Any integer type can be explicitly casted to floating point, and vice versa
-  - Any boolean type can be explicitly casted to any integer type, and vice versa
-  - Any boolean type can be explicitly casted to any floating point type, and vice versa
-  - typeid can be explicitly casted to any integer type, and vice versa
-  - any can be casted to typeid and any pointer type, both explicitly and implicitly
-
-Casting behaviour:
-  - The resulting value of an integer casted to a smaller width will be equal to the N least significant bits of
-    the integer, where N is the width of the target type
-//  - The result of a floating point value casted to an integer will be equal to the N least significant bits of
-//    the truncated value of the floating point value
-  - The result of an integer value casted to floating point will be equal to the integer value represented as a
-    IEEE-754 binary floating point value
+  - inline
+  - no_inline
+  - distinct
+//  - comptime // #run by default
+//  - runtime  // disallow compile time execution
 
 Builtin functions:
   - sizeof
@@ -207,87 +184,79 @@ Builtin functions:
   - offsetof
   - typeid_of
   - typeinfo_of
-  - assert
 
 Compiler directives:
-// only global
-  - scope_export
-  - scope_file
-
-// statement level
-  - if
-  - bounds_check
-  - no_bounds_check
-  - assert
-
-// expression level
-  - run
-  - distinct
-
-Attributes:
-// Proc
-  - inline
-  - no_inline
-  - foreign
-//  - no_discard
-  - deprecated
-  - distinct
+  - #if        // constant if, transparent scope
+  - #assert    // constant assert
+  - #inject    // inject a declaration into the scope of another module
+  - #insert    // insert a code object in place
+  - #code      // mark source code as a code object
+  - #run       // run something at compile time
+  - #bake      // create a new version of a symbol with some constant data "baked" in
 
 Control structures:
- - if
+ - if    // if (init; condition; post)
  - else
- - for
+ - for   // for (symbol in iterator/variable)
+ - while // while (init; condition; post)
 
 Allowed at global scope:
-  - import
-  - load
-  - scope_export, scope_file and if directives
-  - declarations
+  - import declaration
+  - load declaration
+  - variable declarations
+  - constant declarations
 
 Declarations:
-  - procedure declaration
-  - struct declaration
-  - union declaration
-  - enum declaration
   - variable declaration
   - constant declaration
 
 Statements:
+  - scope
   - declaration
   - if
   - else
   - for
+  - while
   - break
   - continue
   - defer
   - return
   - using
   - assignment
-  - block
   - expression
 
 Expressions:
   - literals
-  - operations (add, sub, call, deref)
+  - operations
   - types
 
-Import packages & load files
-- Importing a package will __link__ the current and the imported packages' namespaces
-- Duplicate imports are deduplicated
-- Only package files can be imported
-- A file name equal to the directory name will be appended to an import path that leads to a directory
-<br>
-- Loading a file will __merge__ the current and the loaded files' namespaces
-- Duplicate loads throw an error
-- Only non-package files can be loaded
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-New import system
- - Scrap load, import everything
- - Default import name is file name, can be overridden with the "package_name" directive, and the "import as" declaration
- - Link names will be prepended with the import name
- - Duplicate imports with the same import- and file name will be deduplicated
- - Duplicate imports with the same import name and different file names will cause an error
- - import         - link the scopes of the current and imported file
- - import as      - link scopes, but rename imported scope
- - using import   - merge current and imported scope
- - foreign import - import foreign library
+Metaprograms
+
+[attribute]
+Name :: struct([attribute] name: type, ) [attribute]
+{
+	[attribute] name: type [attribute],
+}
+
+[attribute]
+Name :: enum type
+{
+	name = value [attribute],
+}
+
+[attribute]
+Constant :: value;
+
+[attribute]
+variable := value;
+
+proc([attribute] name: type, ) -> ([attribute]name: type, ) [attribute]
+
+proc(@NoAlias a: ^int) -> int
+{
+	return *a;
+}

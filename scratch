@@ -596,3 +596,76 @@ Intergal_Type_Array :: struct(T: typeid) where (T 'CanBeUpcastedTo' int)
 	size: uint,
 	capacity: uint
 }
+
+
+The import system is now centered around the concept of a module. A program consists of a single source file that may
+	 "import" and "load" modules and source files. Loading a source file is effectively the same as copy/pasting the source
+	 code, but with added semantic information. Meaning, a file that loads five other files can effectively be thought of
+	 as one large file containing all 6 files. Duplicate and cyclic loads are therefore illegal. Importing a module is quite
+	 different from loading a file. Modules are collections of source files that share the same namespace and link name
+     prefix, if not overridden. Additionally, every module may include a possibly unique metaprogram. Importing a module
+     will create a link from the importee's namespace to the module's namespace, represented as a symbol with a name equal
+     to the module name. When a module is imported for the first time, it's metaprogram is ran and the resulting information
+     is cached. Every subsequent import from any module will refer to that very same cached information. It is also possible
+     to instantiate a different version of the module that may have a different name and provide arbitrary arguments to the
+     module's metaprogram. Multiple imports of the same module with different names are allowed, but multiple imports under
+     the same name are not. Cyclic imports are also allowed, since an import is only a link to a namespace. Loads require a
+	 file path in the format "prefix:path/to/file_with_optional_extension", while imports require a path to either a directory
+	 or file, in the format "prefix:path/to/file_or_directory_with_optional_extension". The "prefix:" part is optional, and is
+	 used for absolute paths (file paths are normally relative). Addition and removal of prefixes can be done in a metaprogram.
+	 Importing a directory will import a file within that directory of the same name and the correct extension. Additionally
+	 there is "foreign import" which import c style dynamic libraries.
+
+
+
+
+Decissions:
+- Modules do not posses their own metaprogram
+- Modules renamed to packages (since they now are just a bunch of source files)
+- Import aliasing only affects the symbol name for the importer
+- The metaprogram decides things about the package before it is processed (like import overriding)
+- Imports are not exported from packages, unless they are explicitly exported
+- using imports are scope local
+- custom parsing will not be supported in the near future
+
+
+
+using import "core:math" as Math; //Math, math
+using import "core:math"; //-,math
+import "core:math"; // math
+import "core:math" as _;
+using import "core:math";
+
+using symbol as new_symol;
+
+using Math.cos as cos;
+using math as Math;
+
+
+injection
+replacement
+
+package main
+
+import "";
+#include("");
+#load("")
+
+
+C tricks
+
+// brace init everywhere
+struct Struct { int member; };
+Struct s;
+s = (struct Struct){.member = 0}; // valid
+
+// using
+struct Child
+{
+    struct Struct; // equivalent to using
+};
+
+Child c = {.member = 0};
+
+// pointer to temporary
+in c you can always do (int[]){{3}} which is more portable than &(int){3}

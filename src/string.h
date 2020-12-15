@@ -47,6 +47,22 @@ StringCompare(String s0, String s1)
     return (s0.size == 0 && s0.size == s1.size);
 }
 
+inline bool
+StringCStringCompare(String string, const char* cstring)
+{
+    u8* bcstring = (u8*)cstring;
+    
+    while (string.size != 0 && *bcstring && *string.data == *bcstring)
+    {
+        string.data += 1;
+        string.size -= 1;
+        
+        bcstring += 1;
+    }
+    
+    return (string.size == 0 && *cstring == 0);
+}
+
 void
 PrintArgList(const char* format, Arg_List arg_list)
 {
