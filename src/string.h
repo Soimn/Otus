@@ -47,22 +47,6 @@ StringCompare(String s0, String s1)
     return (s0.size == 0 && s0.size == s1.size);
 }
 
-inline bool
-StringCStringCompare(String string, const char* cstring)
-{
-    u8* bcstring = (u8*)cstring;
-    
-    while (string.size != 0 && *bcstring && *string.data == *bcstring)
-    {
-        string.data += 1;
-        string.size -= 1;
-        
-        bcstring += 1;
-    }
-    
-    return (string.size == 0 && *cstring == 0);
-}
-
 void
 PrintArgList(const char* format, Arg_List arg_list)
 {
@@ -74,7 +58,7 @@ PrintArgList(const char* format, Arg_List arg_list)
             
             if (*scan == 0 || *scan == '%')
             {
-                PrintChar('%');
+                System_PrintChar('%');
                 if (*scan == '%') ++scan;
             }
             
@@ -89,13 +73,13 @@ PrintArgList(const char* format, Arg_List arg_list)
                     ++string.size;
                 }
                 
-                PrintString(string);
+                System_PrintString(string);
             }
             
             else if (*scan == 'S')
             {
                 String string = ARG_LIST_GET_ARG(arg_list, String);
-                PrintString(string);
+                System_PrintString(string);
             }
             
             else if (*scan == 'U' ||
@@ -115,7 +99,7 @@ PrintArgList(const char* format, Arg_List arg_list)
                 {
                     if (signed_number < 0)
                     {
-                        PrintChar('-');
+                        System_PrintChar('-');
                         signed_number *= -1;
                     }
                     
@@ -131,7 +115,7 @@ PrintArgList(const char* format, Arg_List arg_list)
                 
                 do
                 {
-                    PrintChar(reversed_number % 10 + '0');
+                    System_PrintChar(reversed_number % 10 + '0');
                     reversed_number /= 10;
                     
                 } while (reversed_number != 0);
@@ -142,7 +126,7 @@ PrintArgList(const char* format, Arg_List arg_list)
         
         else
         {
-            PrintChar(*scan);
+            System_PrintChar(*scan);
             ++scan;
         }
     }

@@ -1,6 +1,9 @@
 #include "compiler_api.h"
-#include <stdlib.h>
-#include <stdio.h>
+
+// TODO(soimn): Remove these
+#include <stdlib.h> // malloc & free
+#include <stdio.h>  // printf and putc
+#include <stdarg.h> // va_*
 
 #define CONST_STRING(str) (String){.data = (u8*)(str), .size = sizeof(str) - 1}
 
@@ -45,7 +48,9 @@
 
 #define ARRAY_COUNT(EX) (sizeof(EX) / sizeof((EX)[0]))
 
+#define Slice_ElementAt(array, type, index) (type*)((u8*)(array)->data + sizeof(type) * (index))
 #define DynamicArray_ElementAt(array, type, index) (type*)((u8*)(array)->data + sizeof(type) * (index))
+#define SLICE_TO_DYNAMIC_ARRAY(slice) (Dynamic_Array){.data = (slice).data, .size = (slice).size}
 
 //////////////////////////////////////////
 
@@ -74,16 +79,19 @@ System_FreeMemory(void* memory)
 #define ARG_LIST_GET_ARG va_arg
 
 void
-PrintChar(char c)
+System_PrintChar(char c)
 {
     putchar(c);
 }
 
 void
-PrintString(String string)
+System_PrintString(String string)
 {
     printf("%.*s", (int)string.size, string.data);
 }
+
+struct Memory_Arena;
+bool System_ReadEntireFile(String path, struct Memory_Arena* arena, String* content);
 
 //////////////////////////////////////////
 
@@ -101,6 +109,9 @@ TextInterval(Text_Pos pos, u32 size)
 inline Text_Interval
 TextInterval_Merge(Text_Interval i0, Text_Interval i1)
 {
+    ASSERT(i0.pos.file == i1.pos.file);
+    ASSERT(i0.pos.offset_to_line + i0.pos.column + i0.size <= i1.pos.offset_to_line + i1.pos.column + i1.size);
+    
     Text_Interval interval = {
         .pos  = i0.pos,
         .size = (i1.size + i1.pos.column + i1.pos.offset_to_line) - (i0.pos.column + i0.pos.offset_to_line)
@@ -109,14 +120,32 @@ TextInterval_Merge(Text_Interval i0, Text_Interval i1)
     return interval;
 }
 
-//////////////////////////////////////////
+inline Text_Interval
+TextInterval_FromEndpoints(Text_Pos p0, Text_Pos p1)
+{
+    ASSERT(p0.file == p1.file);
+    ASSERT(p0.offset_to_line + p0.column <= p1.offset_to_line + p1.column);
+    
+    u32 size = (p1.column + p1.offset_to_line) - (p0.column + p0.offset_to_line);
+    
+    return TextInterval(p0, size);
+}
 
-#define PersistentArena(workspace) ((Memory_Arena*)&(workspace)->compiler_state[0])
-#define TempArena(workspace)       ((Memory_Arena*)&(workspace)->compiler_state[sizeof(Memory_Arena)])
+//////////////////////////////////////////
 
 #include "memory.h"
 #include "string.h"
+
+typedef struct Compiler_State
+{
+    Workspace* workspace;
+    Memory_Arena persistent_memory;  // is never cleared
+    Memory_Arena transient_memory;   // is cleared between every file
+    Memory_Arena temp_memory;        // is often cleared
+} Compiler_State;
+
 #include "lexer.h"
+#include "parser.h"
 
 #if 0
 ParseEverything -> ParsedStack

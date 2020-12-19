@@ -234,29 +234,32 @@ Expressions:
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-Metaprograms
+@string(param0, param1)
+
+import "" [attribute];
+using import "" [attribute];
+using import "" as A [attribute];
 
 [attribute]
-Name :: struct([attribute] name: type, ) [attribute]
+Name :: [attribute] struct([attribute] name: type, ) where expr [attribute]
 {
 	[attribute] name: type [attribute],
 }
 
 [attribute]
-Name :: enum type
+Name :: [attribute] enum type
 {
-	name = value [attribute],
+	[attribute] name = value [attribute],
 }
 
 [attribute]
-Constant :: value;
+Constant :: value [attribute];
 
 [attribute]
-variable := value;
+variable := value [attribute];
 
-proc([attribute] name: type, ) -> ([attribute]name: type, ) [attribute]
+[attribute]
+statement;
 
-proc(@NoAlias a: ^int) -> int
-{
-	return *a;
-}
+[attribute]
+Name :: [attribute] proc([attribute] name: type, ) -> ([attribute] name: type, ) where expr [attribute]

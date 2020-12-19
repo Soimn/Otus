@@ -1,7 +1,7 @@
 #!/bin/bash
 
 defines=""
-compile_options="-Wall -Wextra -Wno-logical-op-parentheses -fPIC"
+compile_options="-Wall -Wextra -Wno-logical-op-parentheses -Wno-unused-parameter -fPIC"
 link_options=""
 
 if [ ! -d ./build ]; then

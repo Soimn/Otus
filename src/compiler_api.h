@@ -78,8 +78,8 @@ typedef struct Dynamic_Array
 {
     void* allocator;
     void* data;
-    umm size;
-    umm capacity;
+    u64 size;
+    u64 capacity;
 } Dynamic_Array;
 
 #define Dynamic_Array(T) Dynamic_Array
@@ -87,8 +87,10 @@ typedef struct Dynamic_Array
 //////////////////////////////////////////
 
 typedef i32 File_ID;
+typedef i32 Package_ID;
 
 #define INVALID_FILE_ID -1
+#define INVALID_PACKAGE_ID -1
 
 //////////////////////////////////////////
 
@@ -128,22 +130,47 @@ enum TOKEN_KIND
     Token_Slash,
     Token_Percentage,
     Token_Exclamation,
+    Token_Ampersand,
+    Token_Equal,
+    Token_Pipe,
+    Token_Tilde,
+    Token_Colon,
+    Token_Less,
+    Token_Greater,
+    
+    Token_AmpersandAmpersand,
+    Token_PipePipe,
+    Token_LessLess,
+    Token_GreaterGreater,
+    
+    Token_PlusEqual,
+    Token_MinusEqual,
+    Token_AsteriskEqual,
+    Token_SlashEqual,
+    Token_PercentageEqual,
+    Token_ExclamationEqual,
+    Token_EqualEqual,
+    Token_TildeEqual,
+    Token_ColonEqual,
+    Token_AmpersandEqual,
+    Token_PipeEqual,
+    Token_LessEqual,
+    Token_GreaterEqual,
+    
+    Token_AmpersandAmpersandEqual,
+    Token_PipePipeEqual,
+    Token_LessLessEqual,
+    Token_GreaterGreaterEqual,
+    
     Token_At,
     Token_Hash,
     Token_Cash,
-    Token_Ampersand,
-    Token_Equals,
     Token_QuestionMark,
-    Token_Pipe,
-    Token_Tilde,
     Token_Hat,
     Token_Quote,
     Token_Period,
-    Token_Colon,
     Token_Comma,
     Token_Semicolon,
-    Token_Less,
-    Token_Greater,
     Token_OpenParen,
     Token_CloseParen,
     Token_OpenBracket,
@@ -183,6 +210,10 @@ enum KEYWORD_KIND
     Keyword_For,
     Keyword_Break,
     Keyword_Continue,
+    Keyword_Inline,
+    Keyword_In,
+    Keyword_NotIn,
+    Keyword_Do,
     
     KEYWORD_KIND_COUNT
 };
@@ -239,10 +270,10 @@ enum EXPR_KIND
     Expr_Call,
     
     // Types
-    Expr_SliceType,
-    Expr_ArrayType,
-    Expr_DynamicArrayType,
-    Expr_PointerType,
+    Expr_Slice,
+    Expr_Array,
+    Expr_DynamicArray,
+    Expr_Pointer,
     Expr_Struct,
     Expr_Union,
     Expr_Enum,
@@ -256,23 +287,17 @@ enum EXPR_KIND
     Expr_ArrayLiteral,
 };
 
-enum DECL_KIND
-{
-    Decl_Invalid = 0,
-    
-    Decl_Variable,
-    Decl_Constant,
-    Decl_Import,
-};
-
 enum AST_NODE_KIND
 {
     AST_Invalid = 0,
     
-    AST_Directive,
+    AST_Empty, // Usefull for @note; statements
     
-    AST_Declaration,
     AST_Expression,
+    
+    AST_ImportDecl,
+    AST_VariableDecl,
+    AST_ConstantDecl,
     
     AST_Scope,
     
@@ -286,7 +311,15 @@ enum AST_NODE_KIND
     AST_Return,
     AST_Using,
     AST_Defer,
+    
+    AST_Assignment,
 };
+
+typedef struct Attribute
+{
+    String name;
+    Dynamic_Array(AST_Node) arguments;
+} Attribute;
 
 typedef struct Scope
 {
@@ -297,28 +330,39 @@ typedef struct Scope
 typedef struct AST_Node
 {
     Enum8(AST_NODE_KIND) kind;
+    Enum8(AST_EXPR_KIND) expr_kind;
     Text_Interval text;
+    Dynamic_Array(Attribute) attributes;
     
     union
     {
+        Scope scope;
         
+        struct
+        {
+            String alias;
+            Package_ID package_id;
+            bool is_using;
+        } import;
+        
+        struct
+        {
+            struct AST_Node* init;
+            struct AST_Node* condition;
+            struct AST_Node* true_body;
+            struct AST_Node* false_body;
+        } if_statement;
+        
+        struct AST_Node* expression;
     };
 } AST_Node;
 
 //////////////////////////////////////////
 
-typedef struct File
+typedef struct Package
 {
     String path;
-    String name;
-    String content;
-    Dynamic_Array(Token) tokens;
-} File;
-
-typedef struct Module
-{
-    Dynamic_Array(File_ID) files;
-} Module;
+} Package;
 
 typedef struct Path_Prefix
 {
@@ -328,10 +372,21 @@ typedef struct Path_Prefix
 
 typedef struct Workspace
 {
-    u8 compiler_state[sizeof(u64) * 4];
-    Dynamic_Array(File) files;
-    Dynamic_Array(Module) modules;
-    Dynamic_Array(Path_Prefix) path_prefixes;
+    void* compiler_state;
+    Slice(String) file_paths;
+    Slice(Package) packages;
+    Slice(Path_Prefix) path_prefixes;
 } Workspace;
 
 //////////////////////////////////////////
+
+
+// IMPORTANT
+// Memory compatibility
+// Bucket_Array vs Slice vs Dynamic_Array, how to interface?
+
+
+// Problem: How to store declarations
+// Declarations must be stored such that lookup, creation and deletion is fast without too much fragmentation
+// Idea: Store declaration data and all child nodes in one contigous(?) region of memory, such that tree traversal may be faster and memory can be freed with a single free list entry
+// Idea: The parser uses the TempArena, until an entire top-level declaration is parsed, then the declaration is copied into persistent memory
