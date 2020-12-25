@@ -12,15 +12,15 @@ token->kind = equal_kind;                \
 else token->kind = single_kind;              \
 } break
 
-#define SINGLE_DOUBLE_OR_EQUAL(ch, single_kind, double_kind, equal_kind)      \
-case ch:                                                                  \
-{                                                                         \
-if (content[offset] == '=' || content[offset] == ch)                  \
-{                                                                     \
-offset += 1;                                                      \
-token->kind = (content[offset] == '=' ? equal_kind : double_kind; \
-}                                                  \
-else token->kind = single_kind;                                       \
+#define SINGLE_DOUBLE_OR_EQUAL(ch, single_kind, double_kind, equal_kind)       \
+case ch:                                                                   \
+{                                                                          \
+if (content[offset] == '=' || content[offset] == ch)                   \
+{                                                                      \
+offset += 1;                                                       \
+token->kind = (content[offset] == '=' ? equal_kind : double_kind); \
+}                                                                      \
+else token->kind = single_kind;                                        \
 } break
 
 #define SINGLE_DOUBLE_EQUAL_OR_DOUBLEEQUAL(ch, single_kind, double_kind, single_equal_kind, double_equal_kind) \
