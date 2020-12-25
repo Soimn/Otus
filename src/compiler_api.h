@@ -157,18 +157,18 @@ enum TOKEN_KIND
     Token_LessEqual,
     Token_GreaterEqual,
     
-    Token_AmpersandAmpersandEqual,
-    Token_PipePipeEqual,
     Token_LessLessEqual,
     Token_GreaterGreaterEqual,
     
+    Token_Period,
+    Token_PeriodPeriod,
+    
     Token_At,
-    Token_Hash,
     Token_Cash,
+    Token_Hash,
     Token_QuestionMark,
     Token_Hat,
     Token_Quote,
-    Token_Period,
     Token_Comma,
     Token_Semicolon,
     Token_OpenParen,

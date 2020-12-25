@@ -1,3 +1,52 @@
+#define CURRENT_TOKEN_SIZE(token, offset)\
+((offset) - ((token)->text.pos.column + (token)->text.pos.offset_to_line))
+
+#define SINGLE_OR_EQUAL(ch, single_kind, equal_kind) \
+case ch:                                         \
+{                                                \
+if (content[offset] == '=')                  \
+{                                            \
+offset += 1;                             \
+token->kind = equal_kind;                \
+}                                            \
+else token->kind = single_kind;              \
+} break
+
+#define SINGLE_DOUBLE_OR_EQUAL(ch, single_kind, double_kind, equal_kind)      \
+case ch:                                                                  \
+{                                                                         \
+if (content[offset] == '=' || content[offset] == ch)                  \
+{                                                                     \
+offset += 1;                                                      \
+token->kind = (content[offset] == '=' ? equal_kind : double_kind; \
+}                                                  \
+else token->kind = single_kind;                                       \
+} break
+
+#define SINGLE_DOUBLE_EQUAL_OR_DOUBLEEQUAL(ch, single_kind, double_kind, single_equal_kind, double_equal_kind) \
+case ch:                                                                                                   \
+{                                                                                                          \
+if (content[offset] == ch)                                                                             \
+{                                                                                                      \
+offset += 1;                                                                                       \
+if (content[offset] == '=')                                                                        \
+{                                                                                                  \
+offset += 1;                                                                                   \
+token->kind = double_equal_kind;                                                               \
+}                                                                                                  \
+else token->kind = double_kind;                                                                    \
+}                                                                                                      \
+else                                                                                                   \
+{                                                                                                      \
+if (content[offset] == '=')                                                                        \
+{                                                                                                  \
+offset += 1;                                                                                   \
+token->kind = single_equal_kind;                                                               \
+}                                                                                                  \
+else token->kind = single_kind;                                                                    \
+}                                                                                                      \
+} break
+
 String KeywordStrings[KEYWORD_KIND_COUNT] = {
     [Keyword_Package]  = CONST_STRING("package"),
     [Keyword_Import]   = CONST_STRING("import"),
@@ -46,6 +95,10 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
     String file_content;
     if (!System_ReadEntireFile(*path, &compiler_state->temp_memory, &file_content))
     {
+        // TODO(soimn): How should this error be communicated to the user?
+        // NOTE(soimn): The file path has already been checked and the existance of the file verified. If
+        //              this error occurrs, the target file has either been deleted during compilation,
+        //              or a wierd OS error has happened.
         //// ERROR: Failed to load file
         encountered_errors = true;
     }
@@ -59,65 +112,65 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
         u32 offset_to_line = 0;
         u32 line           = 0;
         
-#define CURRENT_TOKEN_SIZE(token, offset)\
-((offset) - ((token)->text.pos.column + (token)->text.pos.offset_to_line))
-        
         while (!encountered_errors)
         {
             Token* token = BucketArray_AppendElement(token_array);
             
-            bool is_comment        = false;
-            umm comment_nest_level = 0;
-            while (content[offset] != 0)
-            {
-                if (content[offset] == '\n')
-                {
-                    offset_to_line = offset;
-                    line          += 1;
-                    
-                    offset += 1;
-                }
+            { /// Eat all whitespace and comments
+                bool is_comment        = false;
+                umm comment_nest_level = 0;
                 
-                else if (content[offset] == ' '  ||
-                         content[offset] == '\r' ||
-                         content[offset] == '\t' ||
-                         content[offset] == '\v' ||
-                         content[offset] == '\f')
+                while (content[offset] != 0)
                 {
-                    offset += 1;
-                }
-                
-                else if (!is_comment && (content[offset]     == '/' &&
-                                         content[offset + 1] == '/'))
-                {
-                    is_comment = true;
-                    
-                    offset += 2;
-                }
-                
-                else if (content[offset] == '/' && content[offset + 1] == '*')
-                {
-                    offset += 2;
-                    
-                    if (comment_nest_level != 0 || !is_comment)
+                    if (content[offset] == '\n')
                     {
-                        comment_nest_level += 1;
-                    }
-                }
-                
-                else if (content[offset] == '*' && content[offset + 1] == '/')
-                {
-                    offset += 2;
-                    
-                    if (comment_nest_level != 0)
-                    {
-                        comment_nest_level -= 1;
+                        offset_to_line = offset;
+                        line          += 1;
                         
-                        if (comment_nest_level == 0) break;
+                        offset += 1;
                     }
+                    
+                    else if (content[offset] == ' '  ||
+                             content[offset] == '\r' ||
+                             content[offset] == '\t' ||
+                             content[offset] == '\v' ||
+                             content[offset] == '\f')
+                    {
+                        offset += 1;
+                    }
+                    
+                    else if (!is_comment && (content[offset]     == '/' &&
+                                             content[offset + 1] == '/'))
+                    {
+                        is_comment = true;
+                        
+                        offset += 2;
+                    }
+                    
+                    else if (content[offset] == '/' && content[offset + 1] == '*')
+                    {
+                        offset += 2;
+                        
+                        if (comment_nest_level != 0 || !is_comment)
+                        {
+                            comment_nest_level += 1;
+                        }
+                    }
+                    
+                    else if (content[offset] == '*' && content[offset + 1] == '/')
+                    {
+                        offset += 2;
+                        
+                        if (comment_nest_level != 0)
+                        {
+                            comment_nest_level -= 1;
+                            
+                            if (comment_nest_level == 0) break;
+                        }
+                    }
+                    
+                    else break;
                 }
-                
-                else break;
             }
             
             token->text.pos.file           = file_id;
@@ -147,17 +200,6 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                 case '{':  token->kind = Token_OpenBrace;    break;
                 case '}':  token->kind = Token_CloseBrace;   break;
                 
-#define SINGLE_OR_EQUAL(ch, single_kind, equal_kind) \
-case ch:                                         \
-{                                                \
-if (content[offset] == '=')                  \
-{                                            \
-offset += 1;                             \
-token->kind = equal_kind;                \
-}                                            \
-else token->kind = single_kind;              \
-} break
-                
                 SINGLE_OR_EQUAL('+', Token_Plus, Token_PlusEqual);
                 SINGLE_OR_EQUAL('-', Token_Minus, Token_MinusEqual);
                 SINGLE_OR_EQUAL('*', Token_Asterisk, Token_AsteriskEqual);
@@ -168,38 +210,11 @@ else token->kind = single_kind;              \
                 SINGLE_OR_EQUAL(':', Token_Colon, Token_ColonEqual);
                 SINGLE_OR_EQUAL('~', Token_Tilde, Token_TildeEqual);
                 
-#undef SINGLE_OR_EQUAL
+                SINGLE_DOUBLE_OR_EQUAL('&', Token_Ampersand, Token_AmpersandAmpersand, Token_AmpersandEqual);
+                SINGLE_DOUBLE_OR_EQUAL('|', Token_Pipe, Token_PipePipe, Token_PipeEqual);
                 
-#define DOUBLE_SINGLE_OR_EQUAL(ch, single_kind, double_kind, single_equal_kind, double_equal_kind) \
-case ch:                                                                                       \
-{                                                                                              \
-if (content[offset] == ch)                                                                 \
-{                                                                                          \
-offset += 1;                                                                           \
-if (content[offset] == '=')                                                            \
-{                                                                                      \
-offset += 1;                                                                       \
-token->kind = double_equal_kind;                                                   \
-}                                                                                      \
-else token->kind = double_kind;                                                        \
-}                                                                                          \
-else                                                                                       \
-{                                                                                          \
-if (content[offset] == '=')                                                            \
-{                                                                                      \
-offset += 1;                                                                       \
-token->kind = single_equal_kind;                                                   \
-}                                                                                      \
-else token->kind = single_kind;                                                        \
-}                                                                                          \
-} break
-                
-                DOUBLE_SINGLE_OR_EQUAL('&', Token_Ampersand, Token_AmpersandAmpersand, Token_AmpersandEqual, Token_AmpersandAmpersandEqual);
-                DOUBLE_SINGLE_OR_EQUAL('|', Token_Pipe, Token_PipePipe, Token_PipeEqual, Token_PipePipeEqual);
-                DOUBLE_SINGLE_OR_EQUAL('<', Token_Less, Token_LessLess, Token_LessEqual, Token_LessLessEqual);
-                DOUBLE_SINGLE_OR_EQUAL('>', Token_Greater, Token_GreaterGreater, Token_GreaterEqual, Token_GreaterGreaterEqual);
-                
-#undef DOUBLE_SINGLE_OR_EQUAL
+                SINGLE_DOUBLE_EQUAL_OR_DOUBLEEQUAL('<', Token_Less, Token_LessLess, Token_LessEqual, Token_LessLessEqual);
+                SINGLE_DOUBLE_EQUAL_OR_DOUBLEEQUAL('>', Token_Greater, Token_GreaterGreater, Token_GreaterEqual, Token_GreaterGreaterEqual);
                 
                 default:
                 {
@@ -233,7 +248,7 @@ else token->kind = single_kind;                                                 
                             {
                                 //// ERROR
                                 
-                                Text_Interval report_text = TextInterval(token->text.pos, CURRENT_TOKEN_SIZE(token, offset));
+                                Text_Interval report_text      = TextInterval(token->text.pos, CURRENT_TOKEN_SIZE(token, offset));
                                 Text_Interval report_highlight = report_text;
                                 
                                 ReportLexerError(compiler_state, report_text, report_highlight,
@@ -260,20 +275,28 @@ else token->kind = single_kind;                                                 
                     {
                         if (c == '.' && !IsDigit(content[offset]))
                         {
-                            token->kind = Token_Period;
+                            if (content[offset] == '.')
+                            {
+                                offset += 1;
+                                token->kind = Token_PeriodPeriod;
+                            }
+                            
+                            else token->kind = Token_Period;
                         }
                         
                         else
                         {
-                            bool is_hex    = false;
-                            bool is_binary = false;
-                            bool is_float  = (c == '.');
+                            bool is_hex                   = false;
+                            bool is_binary                = false;
+                            bool is_float                 = (c == '.');
+                            umm digit_count               = 0;
+                            bool contains_non_zero_digits = false;
                             
                             if (c == '0')
                             {
                                 if      (content[offset] == 'x') is_hex    = true;
                                 else if (content[offset] == 'b') is_binary = true;
-                                else if (content[offset] == 'h') is_float = true, is_hex = true;
+                                else if (content[offset] == 'h') is_float  = true, is_hex = true;
                                 
                                 if (is_hex || is_binary) offset += 1;
                             }
@@ -283,17 +306,16 @@ else token->kind = single_kind;                                                 
                             
                             u8 base = (is_hex ? 16  : (!is_binary ? 10 : 2));
                             
-                            if (c != '.' && !(is_hex || is_binary))
+                            if  (!is_float && !is_hex && !is_binary)
                             {
-                                integer  = c - '0';
-                                floating = c - '0';
+                                integer     = c - '0';
+                                floating    = c - '0';
+                                digit_count = 1;
+                                contains_non_zero_digits = (c != '0');
                             }
                             
-                            bool integer_overflown        = false;
-                            bool last_was_digit           = (IsDigit(c) && !(is_hex || is_binary));
-                            bool contains_non_zero_digits = false;
-                            umm hex_digit_count           = 0;
-                            f64 floating_digit_adj        = 0.1;
+                            bool integer_overflown = false;
+                            f64 floating_digit_adj = 0.1;
                             while (!encountered_errors)
                             {
                                 u8 digit = 0;
@@ -331,7 +353,7 @@ else token->kind = single_kind;                                                 
                                 
                                 else if (content[offset] == '_')
                                 {
-                                    if (last_was_digit); // NOTE(soimn): Ignore
+                                    if (content[offset - 1] != '.'); // NOTE(soimn): Ignore
                                     else
                                     {
                                         //// ERROR
@@ -353,27 +375,26 @@ else token->kind = single_kind;                                                 
                                 
                                 if (!(content[offset] == '.' || content[offset] == '_'))
                                 {
-                                    u64 new_integer = integer * base + digit;
+                                    u64 new_integer   = integer * base + digit;
                                     integer_overflown = (integer_overflown || new_integer < integer);
                                     
-                                    integer  = new_integer;
-                                    floating = floating * (is_float ? 1 : 10) + digit * (is_float ? floating_digit_adj : 1);
+                                    integer = new_integer;
                                     
-                                    hex_digit_count += 1;
-                                    last_was_digit   = true;
+                                    if (is_float) floating += digit * floating_digit_adj;
+                                    else          floating  = floating * 10 + digit;
+                                    
+                                    digit_count             += 1;
                                     contains_non_zero_digits = (contains_non_zero_digits || digit != 0);
                                     
                                     if (is_float) floating_digit_adj /= 10;
                                 }
-                                
-                                else last_was_digit = false;
                                 
                                 offset += 1;
                             }
                             
                             if (!encountered_errors)
                             {
-                                if (hex_digit_count == 0)
+                                if (digit_count == 0)
                                 {
                                     // NOTE(soimn): Zero digits before and after decimal point has already been handled.
                                     //              The only remaining possibility for zero digit literals are hex and
@@ -386,22 +407,20 @@ else token->kind = single_kind;                                                 
                                     Text_Interval report_highlight = report_text;
                                     
                                     ReportLexerError(compiler_state, report_text, report_highlight,
-                                                     "Missing digits after hex/binary literal prefix");
+                                                     "Missing digits after %s literal prefix",
+                                                     (is_hex ? "hexadecimal" : "binary"));
                                     
                                     encountered_errors = true;
                                 }
                                 
-                                else if (content[offset - 1] == '_')
+                                else if (content[offset - 1] == '_' && (!is_float || ToUpper(content[offset]) != 'E'))
                                 {
                                     //// ERROR
-                                    
                                     Text_Interval report_text = TextInterval(token->text.pos, CURRENT_TOKEN_SIZE(token, offset));
                                     Text_Interval report_highlight = report_text;
                                     
-                                    report_highlight.pos.column += report_text.size - 1;
-                                    report_highlight.size        = 1;
-                                    
-                                    ReportLexerError(compiler_state, report_text, report_highlight, "Missing digits after digit separator");
+                                    ReportLexerError(compiler_state, report_text, report_highlight,
+                                                     "Missing digits after digit separator");
                                     
                                     encountered_errors = true;
                                 }
@@ -412,7 +431,7 @@ else token->kind = single_kind;                                                 
                                     {
                                         if (is_hex)
                                         {
-                                            if (hex_digit_count == 8)
+                                            if (digit_count == 8)
                                             {
                                                 token->kind = Token_Number;
                                                 token->number.is_float     = true;
@@ -425,7 +444,7 @@ else token->kind = single_kind;                                                 
                                                 Copy(&i, &token->number.floating, sizeof(f32));
                                             }
                                             
-                                            else if (hex_digit_count == 16)
+                                            else if (digit_count == 16)
                                             {
                                                 token->kind = Token_Number;
                                                 token->number.is_float     = true;
@@ -468,7 +487,6 @@ else token->kind = single_kind;                                                 
                                                     offset += 1;
                                                 }
                                                 
-                                                last_was_digit = false;
                                                 while (!encountered_errors)
                                                 {
                                                     if (IsDigit(content[offset]))
@@ -490,14 +508,12 @@ else token->kind = single_kind;                                                 
                                                         
                                                         else exponent = new_exponent;
                                                         
-                                                        last_was_digit = true;
-                                                        
-                                                        offset += 1;
+                                                        offset        += 1;
                                                     }
                                                     
                                                     else if (content[offset] == '_')
                                                     {
-                                                        if (last_was_digit) offset += 1;
+                                                        if (content[offset - 1] != '-' && content[offset - 1] != '+') offset += 1;
                                                         else
                                                         {
                                                             //// ERROR
@@ -530,7 +546,7 @@ else token->kind = single_kind;                                                 
                                                 u64 flt_bits = 0;
                                                 Copy(&floating, &flt_bits, sizeof(f64));
                                                 
-                                                // NOTE(soimn): Ignore the sign bit
+                                                // NOTE(soimn): Ignore the sign bit by shifting left once
                                                 if (contains_non_zero_digits && (flt_bits << 1) == 0)
                                                 {
                                                     //// ERROR
@@ -571,7 +587,7 @@ else token->kind = single_kind;                                                 
                                                     token->number.floating = floating;
                                                     
                                                     // HACK(soimn): Replace this with something more sane
-                                                    volatile f32 f = floating;
+                                                    volatile f32 f = (f32)floating;
                                                     if ((f64)f == floating) token->number.min_fit_bits = 32;
                                                     else                    token->number.min_fit_bits = 64;
                                                 }
@@ -638,7 +654,7 @@ else token->kind = single_kind;                                                 
                         {
                             //// ERROR
                             
-                            Text_Interval report_text = TextInterval(token->text.pos, CURRENT_TOKEN_SIZE(token, offset));
+                            Text_Interval report_text      = TextInterval(token->text.pos, CURRENT_TOKEN_SIZE(token, offset));
                             Text_Interval report_highlight = report_text;
                             
                             ReportLexerError(compiler_state, report_text, report_highlight, "Unterminated string");
@@ -650,8 +666,8 @@ else token->kind = single_kind;                                                 
                         {
                             offset += 1;
                             
-                            if (raw_string.size == 0) token->string = raw_string;
-                            else
+                            token->string = (String){0};
+                            if (raw_string.size != 0)
                             {
                                 token->string.data = Arena_Allocate(&compiler_state->persistent_memory, raw_string.size, ALIGNOF(u8));
                                 token->string.size = 0;
@@ -664,6 +680,7 @@ else token->kind = single_kind;                                                 
                                         i += 2;
                                         ASSERT(raw_string.size > i);
                                         
+                                        // TODO(soimn): Should ansi escape codes be supported?
                                         if      (c == 'a') token->string.data[token->string.size++] = '\a';
                                         else if (c == 'b') token->string.data[token->string.size++] = '\b';
                                         else if (c == 'e') token->string.data[token->string.size++] = '\e';
@@ -677,7 +694,19 @@ else token->kind = single_kind;                                                 
                                             u32 codepoint = 0;
                                             for (umm j = i; !encountered_errors && i < j + (c == 'u' ? 6 : 2); ++i)
                                             {
-                                                if (i == raw_string.size)
+                                                if (i < raw_string.size && IsDigit(raw_string.data[i]))
+                                                {
+                                                    codepoint = codepoint * 10 + (raw_string.data[i] - '0');
+                                                }
+                                                
+                                                else if (i < raw_string.size &&
+                                                         ToUpper(raw_string.data[i]) >= 'A' &&
+                                                         ToUpper(raw_string.data[i]) <= 'F')
+                                                {
+                                                    codepoint = codepoint * 10 + (ToUpper(raw_string.data[i]) - 'A') + 10;
+                                                }
+                                                
+                                                else
                                                 {
                                                     //// ERROR
                                                     
@@ -689,8 +718,6 @@ else token->kind = single_kind;                                                 
                                                     
                                                     encountered_errors = true;
                                                 }
-                                                
-                                                else codepoint = codepoint * 10 + (raw_string.data[i] - '0');
                                             }
                                             
                                             if (!encountered_errors)
@@ -738,7 +765,7 @@ else token->kind = single_kind;                                                 
                                         
                                         else
                                         {
-                                            token->string.data[token->string.size++] = raw_string.data[i];
+                                            token->string.data[token->string.size++] = c;
                                         }
                                     }
                                     
@@ -775,7 +802,10 @@ else token->kind = single_kind;                                                 
         }
     }
     
-#undef CURRENT_TOKEN_SIZE
-    
     return !encountered_errors;
 }
+
+#undef CURRENT_TOKEN_SIZE
+#undef SINGLE_OR_EQUAL
+#undef SINGLE_DOUBLE_OR_EQUAL
+#undef SINGLE_DOUBLE_EQUAL_OR_DOUBLEEQUAL
