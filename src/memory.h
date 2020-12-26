@@ -305,23 +305,28 @@ BucketArray_ElementCount(Bucket_Array* array)
 Slice
 BucketArray_FlattenContent(Memory_Arena* arena, Bucket_Array* array)
 {
+    Slice result = {0};
+    
     umm size = BucketArray_ElementCount(array) * array->element_size;
     
-    Slice result = {
-        .data = Arena_Allocate(arena, size, ALIGNOF(u64)),
-        .size = size
-    };
-    
-    umm cursor = 0;
-    void* scan = array->first;
-    for (umm i = 0; i < array->current_bucket_count; ++i)
+    if (size != 0)
     {
-        umm bucket_byte_size = (*(void**)scan == 0 ? array->current_bucket_size : array->bucket_size) * array->element_size;
+        result = (Slice){
+            .data = Arena_Allocate(arena, size, ALIGNOF(u64)),
+            .size = size
+        };
         
-        Copy((u8*)scan + sizeof(u64), (u8*)result.data + cursor, bucket_byte_size);
-        
-        cursor += bucket_byte_size;
-        scan    = *(void**)scan;
+        umm cursor = 0;
+        void* scan = array->first;
+        for (umm i = 0; i < array->current_bucket_count; ++i)
+        {
+            umm bucket_byte_size = (*(void**)scan == 0 ? array->current_bucket_size : array->bucket_size) * array->element_size;
+            
+            Copy((u8*)scan + sizeof(u64), (u8*)result.data + cursor, bucket_byte_size);
+            
+            cursor += bucket_byte_size;
+            scan    = *(void**)scan;
+        }
     }
     
     return result;

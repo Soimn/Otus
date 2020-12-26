@@ -1,6 +1,14 @@
+typedef struct Scope_Builder
+{
+    Bucket_Array(AST_Node*) expressions;
+    Bucket_Array(AST_Node*) statements;
+} Scope_Builder;
+
 typedef struct Parser_State
 {
     Compiler_State* compiler_state;
+    
+    Scope_Builder scope_builder;
     
     Bucket_Array(Token) tokens;
     Bucket_Array_Iterator token_it;
@@ -39,30 +47,20 @@ SkipToNextToken(Parser_State* state)
 }
 
 inline void
-SkipToPeek(Parser_State* state)
+SkipPastPeek(Parser_State* state)
 {
     state->token_it = state->peek_it;
     GetToken(state);
 }
 
-AST_Node*
-AddExpression(Parser_State* state, Enum8(AST_EXPR_KIND) expr_kind)
+bool
+IsAssignment(Enum8(TOKEN_KIND) kind)
 {
-    AST_Node* result = 0;
-    
-    NOT_IMPLEMENTED;
-    
-    return result;
-}
-
-AST_Node*
-AddStatement(Parser_State* state, Enum8(AST_NODE_KIND) kind)
-{
-    AST_Node* result = 0;
-    
-    NOT_IMPLEMENTED;
-    
-    return result;
+    return (kind == Token_TildeEqual    || kind == Token_Equal           ||
+            kind == Token_PlusEqual     || kind == Token_MinusEqual      ||
+            kind == Token_AsteriskEqual || kind == Token_PercentageEqual ||
+            kind == Token_PipeEqual     || kind == Token_AmpersandEqual  ||
+            kind == Token_TildeEqual);
 }
 
 enum COMPILER_DIRECTIVE_KIND
@@ -239,205 +237,446 @@ ParseExpression(Parser_State* state, AST_Node** result)
 }
 
 bool
-ParseScope(Parser_State* state, AST_Node* scope_node)
+ParseStatement(Parser_State* state, AST_Node* result)
 {
     bool encountered_errors = false;
     
-    NOT_IMPLEMENTED;
+    bool ParseScope(Parser_State* state, AST_Node* scope_node);
     
-    return !encountered_errors;
-}
-
-bool
-ParseStatement(Parser_State* state)
-{
-    bool encountered_errors = false;
+    Token token     = GetToken(state);
+    Token peek      = PeekNextToken(state);
+    Token peek_next = PeekNextToken(state);
     
-    Token token              = GetToken(state);
-    Text_Pos statement_start = state->text_pos;
-    
-    Bucket_Array(Attribute) attributes = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Attribute, 3);
-    
+    Bucket_Array attribute_array = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Attribute, 3);
     if (token.kind == Token_At)
     {
-        if (!ParseAttributes(state, &attributes))
+        if (!ParseAttributes(state, &attribute_array))
         {
             encountered_errors = true;
         }
     }
     
-    if (!encountered_errors)
+    Slice attribute_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &attribute_array);
+    result->attributes = SLICE_TO_DYNAMIC_ARRAY(attribute_slice);
+    
+    token     = GetToken(state);
+    peek      = PeekNextToken(state);
+    peek_next = PeekNextToken(state);
+    
+    if (token.kind == Token_Semicolon)
     {
-        token           = GetToken(state);
-        Token peek      = PeekNextToken(state);
-        Token peek_next = PeekNextToken(state);
-        
-        AST_Node* statement             = 0;
-        bool do_not_check_for_semicolon = false;
-        
-        if (token.kind == Token_Semicolon)
+        if (result->attributes.size == 0)
         {
-            // NOTE(soimn): Semicolon is eaten due to 'do_not_check_for_semicolon' being false
+            //// ERROR: Stray semicolon
+            encountered_errors = true;
+        }
+        
+        else
+        {
+            result->kind = AST_Empty;
             
-            if (BucketArray_ElementCount(&attributes) == 0)
+            SkipToNextToken(state);
+        }
+    }
+    
+    else if (token.kind == Token_OpenBrace)
+    {
+        result->kind = AST_Scope;
+        
+        if (!ParseScope(state, result))
+        {
+            encountered_errors = true;
+        }
+    }
+    
+    else if (token.kind == Token_Identifier && token.keyword == Keyword_For ||
+             ((token.kind == Token_Identifier || token.kind == Token_Underscore) && peek.kind == Token_Colon &&
+              peek_next.kind == Token_Identifier && peek_next.keyword == Keyword_For))
+    {
+        result->kind = AST_For;
+        
+        if (peek.kind == Token_Colon)
+        {
+            if (token.kind == Token_Underscore)
             {
-                //// ERROR: Stray semicolon
+                //// ERROR: Loop labels cannot be blank
                 encountered_errors = true;
             }
             
             else
             {
-                statement = AddStatement(state, AST_Empty);
-            }
-        }
-        
-        else if (token.kind == Token_OpenBrace)
-        {
-            statement = AddStatement(state, AST_Scope);
-            do_not_check_for_semicolon = true;
-            
-            if (!ParseScope(state, statement))
-            {
-                encountered_errors = true;
-            }
-        }
-        
-        else if (token.kind == Token_Identifier)
-        {
-            if (token.keyword == Keyword_If)
-            {
-                statement = AddStatement(state, AST_If);
-                do_not_check_for_semicolon = true;
+                result->for_statement.label = token.string;
                 
-                SkipToNextToken(state);
-                token = GetToken(state);
-                peek  = PeekNextToken(state);
-                
-                // NOTE(soimn): If init statement. Allows only assignment and declaration
-                if (peek.kind == Token_Comma || peek.kind == Token_Colon || peek.kind == Token_Equal)
-                {
-                    NOT_IMPLEMENTED;
-                }
-                
-                if (!encountered_errors)
-                {
-                    if (!ParseExpression(state, &statement->if_statement.condition)) encountered_errors = true;
-                    else
-                    {
-                        NOT_IMPLEMENTED;
-                    }
-                }
-            }
-            
-            else if (token.keyword == Keyword_Else)
-            {
-                //// ERROR: Illegal else without matching if
-                encountered_errors = true;
-            }
-            
-            else if (token.keyword == Keyword_When)
-            {
-                statement = AddStatement(state, AST_When);
-                do_not_check_for_semicolon = true;
-                
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (token.keyword == Keyword_While ||
-                     (peek.kind == Token_Colon &&
-                      peek_next.kind == Token_Identifier && peek.keyword == Keyword_While))
-            {
-                statement = AddStatement(state, AST_While);
-                do_not_check_for_semicolon = true;
-                
-                String label = {};
-                if (peek.kind == Token_Colon)
-                {
-                    label = token.string;
-                    
-                    SkipToNextToken(state); // Skip label name
-                    SkipToNextToken(state); // Skip colon
-                }
-                
-                SkipToNextToken(state);
-                
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (token.keyword == Keyword_For ||
-                     (peek.kind == Token_Colon &&
-                      peek_next.kind == Token_Identifier && peek.keyword == Keyword_For))
-            {
-                statement = AddStatement(state, AST_For);
-                do_not_check_for_semicolon = true;
-                
-                String label = {};
-                if (peek.kind == Token_Colon)
-                {
-                    label = token.string;
-                    SkipToPeek(state);
-                }
-                
-                else SkipToNextToken(state);
-                
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (token.keyword == Keyword_Break)
-            {
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (token.keyword == Keyword_Continue)
-            {
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (token.keyword == Keyword_Return)
-            {
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (token.keyword == Keyword_Using)
-            {
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (token.keyword == Keyword_Defer)
-            {
-                NOT_IMPLEMENTED;
-            }
-            
-            else if (peek.kind == Token_Comma || peek.kind == Token_Colon)
-            {
-                do_not_check_for_semicolon = true;
-                
-                // NOTE(soimn): Assignment, variable declaration or constant declaration
-                NOT_IMPLEMENTED;
-            }
-        }
-        
-        if (!encountered_errors && statement == 0)
-        {
-            statement = AddStatement(state, AST_Expression);
-            
-            if (!ParseExpression(state, &statement->expression))
-            {
-                encountered_errors = true;
+                SkipToNextToken(state); // NOTE(soimn): Skip label
+                SkipToNextToken(state); // NOTE(soimn): Skip colon
             }
         }
         
         if (!encountered_errors)
         {
-            if (BucketArray_ElementCount(&attributes) != 0)
+            SkipToNextToken(state);
+            token = GetToken(state);
+            
+            NOT_IMPLEMENTED;
+        }
+    }
+    
+    else if (token.kind == Token_Identifier && token.keyword == Keyword_While ||
+             ((token.kind == Token_Identifier || token.kind == Token_Underscore) && peek.kind == Token_Colon &&
+              peek_next.kind == Token_Identifier && peek_next.keyword == Keyword_While))
+    {
+        result->kind = AST_While;
+        
+        if (peek.kind == Token_Colon)
+        {
+            if (token.kind == Token_Underscore)
             {
-                Slice attribute_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &attributes);
-                statement->attributes = SLICE_TO_DYNAMIC_ARRAY(attribute_slice);
+                //// ERROR: Loop labels cannot be blank
+                encountered_errors = true;
             }
             
-            statement->text = TextInterval_FromEndpoints(statement_start, state->text_pos);
+            else
+            {
+                result->while_statement.label = token.string;
+                
+                SkipToNextToken(state); // NOTE(soimn): Skip label
+                SkipToNextToken(state); // NOTE(soimn): Skip colon
+            }
+        }
+        
+        if (!encountered_errors)
+        {
+            SkipToNextToken(state);
+            token = GetToken(state);
+            peek  = PeekNextToken(state);
             
-            if (!do_not_check_for_semicolon)
+            if ((token.kind == Token_Identifier || token.kind == Token_Underscore) &&
+                (peek.kind == Token_Comma || peek.kind == Token_Colon || IsAssignment(peek.kind)))
+            {
+                result->while_statement = ;
+                if (!ParseStatement(state, result->while_statement.init)) encountered_errors = true;
+                else
+                {
+                    if (token.kind == Token_Semicolon) SkipToNextToken(state);
+                    else
+                    {
+                        //// ERROR: Missing while statement condition after init statement
+                        encountered_errors = true;
+                    }
+                }
+            }
+            
+            else if (token.kind == Token_Semicolon)
+            {
+                // NOTE(soimn): Skip semicolon after empty init statement
+                SkipToNextToken(state);
+            }
+            
+            if (!encountered_errors)
+            {
+                token = GetToken(state);
+                
+                if (token.kind == Token_OpenBrace ||
+                    token.kind == Token_Identifier && token.keyword == Keyword_Do)
+                {
+                    //// ERROR: Missing while statement condition before body
+                    encountered_errors = true;
+                }
+                
+                else
+                {
+                    if (token.kind != Token_Semicolon)
+                    {
+                        if (!ParseExpression(state, &result->if_statement.condition))
+                        {
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        token = GetToken(state);
+                        
+                        if (token.kind == Token_Semicolon)
+                        {
+                            SkipToNextToken(state);
+                            token = GetToken(state);
+                            
+                            if (token.kind != Token_OpenBrace && (token.kind != Token_Identifier || token.keyword != Keyword_Do))
+                            {
+                                result->while_statement.step = ;
+                                if (!ParseStatement(state, result->while_statement.step))
+                                {
+                                    encountered_errors = true;
+                                }
+                            }
+                        }
+                        
+                        if (!encountered_errors)
+                        {
+                            if (token.kind != Token_OpenBrace && (token.kind != Token_Identifier || token.keyword != Keyword_Do))
+                            {
+                                //// ERROR: Missing body of while statement
+                                encountered_errors = true;
+                            }
+                            
+                            else
+                            {
+                                if (token.kind == Token_Identifier) SkipToNextToken(state);
+                                
+                                result->while_statement.body = ;
+                                if (!ParseScope(state, result->while_statement.body))
+                                {
+                                    encountered_errors = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    else if (token.kind == Token_Identifier && token.keyword != Keyword_Invalid)
+    {
+        if (token.keyword == Keyword_If)
+        {
+            result->kind = AST_If;
+            
+            SkipToNextToken(state);
+            token = GetToken(state);
+            peek  = PeekNextToken(state);
+            
+            if ((token.kind == Token_Identifier || token.kind == Token_Underscore) &&
+                (peek.kind == Token_Comma || peek.kind == Token_Colon || IsAssignment(peek.kind)))
+            {
+                result->if_statement.init = ;
+                if (!ParseStatement(state, result->if_statement.init)) encountered_errors = true;
+                else
+                {
+                    if (token.kind == Token_Semicolon) SkipToNextToken(state);
+                    else
+                    {
+                        //// ERROR: Missing if statement condition after init statement
+                        encountered_errors = true;
+                    }
+                }
+            }
+            
+            else if (token.kind == Token_Semicolon)
+            {
+                // NOTE(soimn): Skip semicolon after empty init statement
+                SkipToNextToken(state);
+            }
+            
+            if (!encountered_errors)
+            {
+                token = GetToken(state);
+                
+                if (token.kind == Token_Semicolon)
+                {
+                    //// ERROR: Step statements are not allowed in if statements
+                    encountered_errors = true;
+                }
+                
+                else if (token.kind == Token_OpenBrace ||
+                         token.kind == Token_Identifier && token.keyword == Keyword_Do)
+                {
+                    //// ERROR: Missing if statement condition before body
+                    encountered_errors = true;
+                }
+                
+                else
+                {
+                    if (!ParseExpression(state, &result->if_statement.condition)) encountered_errors = true;
+                    else
+                    {
+                        token = GetToken(state);
+                        
+                        if (token.kind == Token_Semicolon)
+                        {
+                            //// ERROR: Step statements are not allowed in if statements
+                            encountered_errors = true;
+                        }
+                        
+                        else if (token.kind != Token_OpenBrace && (token.kind != Token_Identifier || token.keyword != Keyword_Do))
+                        {
+                            //// ERROR: Missing body of if statement
+                            encountered_errors = true;
+                        }
+                        
+                        else
+                        {
+                            if (token.kind == Token_Identifier) SkipToNextToken(state);
+                            
+                            result->if_statement.true_body = ;
+                            if (!ParseScope(state, result->if_statement.true_body)) encountered_errors = true;
+                            else
+                            {
+                                token = GetToken(state);
+                                peek  = PeekNextToken(state);
+                                
+                                if (token.kind == Token_Identifier && token.keyword == Keyword_Else)
+                                {
+                                    SkipToNextToken(state);
+                                    
+                                    if (peek.kind == Token_Identifier && peek.keyword == Keyword_If)
+                                    {
+                                        result->if_statement.false_body = ;
+                                        if (!ParseStatement(state, result->if_statement.false_body))
+                                        {
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                    
+                                    else
+                                    {
+                                        result->if_statement.false_body = ;
+                                        if (!ParseScope(state, result->if_statement.false_body))
+                                        {
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        else if (token.keyword == Keyword_When)
+        {
+            result->kind = AST_When;
+            
+            SkipToNextToken(state);
+            token = GetToken(state);
+            peek  = PeekNextToken(state);
+            
+            if (token.kind == Token_Semicolon ||
+                (token.kind == Token_Identifier || token.kind == Token_Underscore) &&
+                (peek.kind == Token_Comma || peek.kind == Token_Colon || IsAssignment(peek.kind)))
+            {
+                //// ERROR: Init statements are disallowed in when statements
+                encountered_errors = true;
+            }
+            
+            else
+            {
+                if (token.kind == Token_Semicolon)
+                {
+                    //// ERROR: Step statements are not allowed in when statements
+                    encountered_errors = true;
+                }
+                
+                else if (token.kind == Token_OpenBrace ||
+                         token.kind == Token_Identifier && token.keyword == Keyword_Do)
+                {
+                    //// ERROR: Missing when statement condition before body
+                    encountered_errors = true;
+                }
+                
+                else
+                {
+                    if (!ParseExpression(state, &result->when_statement.condition)) encountered_errors = true;
+                    else
+                    {
+                        token = GetToken(state);
+                        
+                        if (token.kind == Token_Semicolon)
+                        {
+                            //// ERROR: Step statements are not allowed in when statements
+                            encountered_errors = true;
+                        }
+                        
+                        else if (token.kind != Token_OpenBrace && (token.kind != Token_Identifier || token.keyword != Keyword_Do))
+                        {
+                            //// ERROR: Missing body of when statement
+                            encountered_errors = true;
+                        }
+                        
+                        else
+                        {
+                            if (token.kind == Token_Identifier) SkipToNextToken(state);
+                            
+                            result->when_statement.true_body = ;
+                            if (!ParseScope(state, result->when_statement.true_body)) encountered_errors = true;
+                            else
+                            {
+                                token = GetToken(state);
+                                peek  = PeekNextToken(state);
+                                
+                                if (token.kind == Token_Identifier && token.keyword == Keyword_Else)
+                                {
+                                    SkipToNextToken(state);
+                                    
+                                    if (peek.kind == Token_Identifier && peek.keyword == Keyword_When)
+                                    {
+                                        result->when_statement.false_body = ;
+                                        if (!ParseStatement(state, result->when_statement.false_body))
+                                        {
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                    
+                                    else
+                                    {
+                                        result->when_statement.false_body = ;
+                                        if (!ParseScope(state, result->when_statement.false_body))
+                                        {
+                                            encountered_errors = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        else if (token.keyword == Keyword_Else)
+        {
+            if (result->attributes.size != 0)
+            {
+                //// ERROR: Attributes cannot be applied to else statements
+                encountered_errors = true;
+            }
+            
+            else
+            {
+                //// ERROR: Illegal else without macthing if
+                encountered_errors = true;
+            }
+        }
+        
+        else if (token.keyword == Keyword_Break || token.keyword == Keyword_Continue)
+        {
+            Enum8(AST_NODE_KIND) kind = (token.keyword == Keyword_Break ? AST_Break : AST_Continue);
+            
+            result->kind = kind;
+            
+            SkipToNextToken(state);
+            token = GetToken(state);
+            
+            if (token.kind == Token_Identifier)
+            {
+                if (token.keyword != Keyword_Invalid)
+                {
+                    //// ERROR: Invalid use of keyword as label
+                    encountered_errors = true;
+                }
+                
+                else
+                {
+                    if (kind == AST_Break) result->break_statement.label    = token.string;
+                    else                   result->continue_statement.label = token.string;
+                    
+                    SkipToNextToken(state);
+                }
+            }
+            
+            if (!encountered_errors)
             {
                 token = GetToken(state);
                 if (token.kind == Token_Semicolon) SkipToNextToken(state);
@@ -448,7 +687,254 @@ ParseStatement(Parser_State* state)
                 }
             }
         }
+        
+        else if (token.keyword == Keyword_Defer)
+        {
+            result->kind = AST_Defer;
+            
+            SkipToNextToken(state);
+            token = GetToken(state);
+            
+            if (token.kind == Token_Identifier && token.keyword == Keyword_Do)
+            {
+                //// ERROR: Invalid use of so keyword. Defer statements are directly followed by a statement, no do is used.
+                encountered_errors = true;
+            }
+            
+            else
+            {
+                result->defer_statement.scope = ;
+                if (!ParseScope(state, result->defer_statement.scope))
+                {
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        else if (token.keyword == Keyword_Using)
+        {
+            result->kind = AST_Using;
+            
+            SkipToNextToken(state);
+            
+            if (!ParseExpression(state, &result->using_statement.symbol_path)) encountered_errors = true;
+            else
+            {
+                token = GetToken(state);
+                
+                if (token.kind == Token_Identifier)
+                {
+                    if (token.keyword == Keyword_Import)
+                    {
+                        //// ERROR: Invalid use of import declaration. Import declarations are only allowed in global scope
+                        encountered_errors = true;
+                    }
+                    
+                    else if (token.keyword == Keyword_As)
+                    {
+                        SkipToNextToken(state);
+                        token = GetToken(state);
+                        
+                        if (token.kind != Token_Identifier)
+                        {
+                            if (token.kind == Token_Underscore)
+                            {
+                                //// ERROR: Using declaration alias cannot be blank
+                                encountered_errors = true;
+                            }
+                            
+                            else
+                            {
+                                //// ERROR: Missing alias after as keyword in using declaration
+                                encountered_errors = true;
+                            }
+                        }
+                        
+                        else
+                        {
+                            result->using_statement.alias = token.string;
+                            SkipToNextToken(state);
+                        }
+                    }
+                }
+                
+                if (!encountered_errors)
+                {
+                    token = GetToken(state);
+                    if (token.kind == Token_Semicolon) SkipToNextToken(state);
+                    else
+                    {
+                        //// ERROR: Missing semicolon after statement
+                        encountered_errors = true;
+                    }
+                }
+            }
+        }
+        
+        else if (token.keyword == Keyword_Return)
+        {
+            result->kind = AST_Return;
+            
+            Bucket_Array arguments = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Named_Argument, 3);
+            
+            token = GetToken(state);
+            while (token.kind != Token_Semicolon)
+            {
+                token = GetToken(state);
+                peek  = PeekNextToken(state);
+                
+                Named_Argument* argument = BucketArray_AppendElement(&arguments);
+                
+                if (peek.kind == Token_Equal)
+                {
+                    if (token.kind == Token_Identifier)
+                    {
+                        if (token.keyword != Keyword_Invalid)
+                        {
+                            //// ERROR: Invalid use of keyword as argument name
+                            encountered_errors = true;
+                        }
+                        
+                        else
+                        {
+                            argument->name = token.string;
+                            SkipPastPeek(state);
+                        }
+                    }
+                    
+                    else if (token.kind == Token_Underscore)
+                    {
+                        //// ERROR: Blank identifier cannot be used in as names in named argument lists
+                        encountered_errors = true;
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing semicolon after statement
+                        encountered_errors = true;
+                    }
+                }
+                
+                if (!encountered_errors)
+                {
+                    if (!ParseExpression(state, &argument->value)) encountered_errors = true;
+                    else
+                    {
+                        token = GetToken(state);
+                        
+                        if (token.kind == Token_Comma) SkipToNextToken(state);
+                        else break;
+                    }
+                }
+            }
+            
+            Slice arguments_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &arguments);
+            result->return_statement.arguments = SLICE_TO_DYNAMIC_ARRAY(arguments_slice);
+            
+            token = GetToken(state);
+            if (token.kind == Token_Semicolon) SkipToNextToken(state);
+            else
+            {
+                //// ERROR: Missing semicolon after statement
+                encountered_errors = true;
+            }
+        }
+        
+        else
+        {
+            if (token.keyword == Keyword_Import)
+            {
+                //// ERROR: Invalid use of import declaration. Import declarations are only allowed in global scope
+                encountered_errors = true;
+            }
+            
+            else
+            {
+                // IMPORTANT TODO(soimn): This breaks inline and no_inline calls
+                //// ERROR: Invalid use of keyword
+                encountered_errors = true;
+            }
+        }
     }
+    
+    else if ((token.kind == Token_Identifier || token.kind == Token_Underscore) &&
+             (peek.kind == Token_Comma || peek.kind == Token_Colon || IsAssignment(peek.kind)))
+    {
+        NOT_IMPLEMENTED;
+    }
+    
+    else
+    {
+        result->kind = AST_Expression;
+        
+        if (!ParseExpression(state, &result)) encountered_errors = true;
+        else
+        {
+            token = GetToken(state);
+            if (token.kind == Token_Semicolon) SkipToNextToken(state);
+            else
+            {
+                //// ERROR: Missing semicolon after statement
+                encountered_errors = true;
+            }
+        }
+    }
+    
+    return !encountered_errors;
+}
+
+bool
+ParseScope(Parser_State* state, AST_Node* scope_node)
+{
+    bool encountered_errors = false;
+    
+    Token token = GetToken(state);
+    
+    bool is_single_line = false;
+    if (token.kind != Token_OpenBrace)
+    {
+        ASSERT(token.kind == Token_Identifier && token.keyword == Keyword_Do);
+        is_single_line = true;
+    }
+    
+    SkipToNextToken(state);
+    
+    Scope_Builder prev_builder = state->scope_builder;
+    
+    state->scope_builder = (Scope_Builder){
+        .expressions = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, AST_Node, 10),
+        .statements  = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, AST_Node, 10),
+    };
+    
+    do
+    {
+        token = GetToken(state);
+        if (token.kind == Token_CloseBrace)
+        {
+            if (is_single_line)
+            {
+                //// ERROR: Missing statement
+                encountered_errors = true;
+            }
+            
+            else
+            {
+                SkipToNextToken(state);
+                break;
+            }
+        }
+        
+        else
+        {
+            AST_Node* statement = ;
+            if (!ParseStatement(state, statement))
+            {
+                encountered_errors = true;
+            }
+        }
+    } while (!encountered_errors && !is_single_line);
+    
+    state->scope_builder = prev_builder;
     
     return !encountered_errors;
 }
@@ -485,11 +971,13 @@ ParseFile(Compiler_State* compiler_state, File_ID file_id)
                     (token.kind == Token_Identifier && token.keyword == Keyword_Using &&
                      peek.kind  == Token_Identifier && peek.keyword  == Keyword_Import))
                 {
-                    bool is_using = (token.keyword == Keyword_Using);
+                    AST_Node* import_node = ;
+                    import_node->kind            = AST_ImportDecl;
+                    import_node->import.is_using = (token.keyword == Keyword_Using);
                     
                     Text_Pos import_decl_start = state.text_pos;
                     
-                    SkipToPeek(&state);
+                    SkipPastPeek(&state);
                     token = GetToken(&state);
                     
                     if (token.kind != Token_String)
@@ -504,7 +992,7 @@ ParseFile(Compiler_State* compiler_state, File_ID file_id)
                         if (!ResolvePathString(&state, token.string, &resolved_path, false)) encountered_errors = true;
                         else
                         {
-                            Package_ID package_id = INVALID_PACKAGE_ID;
+                            import_node->import.package_id = INVALID_PACKAGE_ID;
                             
                             for (umm i = 0; i < state.compiler_state->workspace->packages.size; ++i)
                             {
@@ -512,23 +1000,21 @@ ParseFile(Compiler_State* compiler_state, File_ID file_id)
                                 
                                 if (StringCompare(resolved_path, package->path))
                                 {
-                                    package_id = i;
+                                    import_node->import.package_id = i;
                                     break;
                                 }
                             }
                             
-                            if (package_id == INVALID_PACKAGE_ID)
+                            if (import_node->import.package_id == INVALID_PACKAGE_ID)
                             {
                                 // TODO(soimn): Load package
                                 NOT_IMPLEMENTED;
                             }
                             
-                            String alias = {};
-                            
                             token = GetToken(&state);
                             if (token.kind == Token_Identifier && token.keyword == Keyword_As)
                             {
-                                if (!is_using)
+                                if (!import_node->import.is_using)
                                 {
                                     //// ERROR: Illegal use of 'as' keyword outside of using declaration
                                     encountered_errors = true;
@@ -547,35 +1033,32 @@ ParseFile(Compiler_State* compiler_state, File_ID file_id)
                                     
                                     else
                                     {
-                                        alias = token.string;
+                                        import_node->import.alias = token.string;
                                         SkipToNextToken(&state);
                                     }
                                 }
                             }
                             
-                            AST_Node* import_node = AddStatement(&state, AST_ImportDecl);
-                            import_node->text = TextInterval_FromEndpoints(import_decl_start, state.text_pos);
-                            
-                            import_node->import.alias      = alias;
-                            import_node->import.package_id = package_id;
-                            import_node->import.is_using   = is_using;
-                            
                             token = GetToken(&state);
                             if (token.kind == Token_At)
                             {
-                                Bucket_Array attributes;
-                                if (!ParseAttributes(&state, &attributes))
+                                Bucket_Array attributes = BUCKET_ARRAY_INIT(&state.compiler_state->temp_memory, Attribute, 3);
+                                if (!ParseAttributes(&state, &attributes)) encountered_errors = true;
+                                else
                                 {
-                                    encountered_errors = true;
+                                    // IMPORTANT TODO(soimn): Flattening
+                                    Slice attribute_slice = BucketArray_FlattenContent(&state.compiler_state->persistent_memory, &attributes);
+                                    
+                                    import_node->attributes = SLICE_TO_DYNAMIC_ARRAY(attribute_slice);
                                 }
-                                
-                                Slice attribute_slice = BucketArray_FlattenContent(&state.compiler_state->persistent_memory, &attributes);
-                                
-                                import_node->attributes = SLICE_TO_DYNAMIC_ARRAY(attribute_slice);
                             }
                             
                             token = GetToken(&state);
-                            if (token.kind == Token_Semicolon) SkipToNextToken(&state);
+                            if (token.kind == Token_Semicolon)
+                            {
+                                import_node->text = TextInterval_FromEndpoints(import_decl_start, state.text_pos);
+                                SkipToNextToken(&state);
+                            }
                             else
                             {
                                 //// ERROR: Missing terminating semicolon after import statement
@@ -605,7 +1088,8 @@ ParseFile(Compiler_State* compiler_state, File_ID file_id)
                 else
                 {
                     // TODO(soimn): Remember memory managemement, use parser state to store accumulated size, or calculate from cached offset?
-                    if (ParseStatement(&state))
+                    AST_Node* statement = ;
+                    if (!ParseStatement(&state, statement))
                     {
                         encountered_errors = true;
                     }

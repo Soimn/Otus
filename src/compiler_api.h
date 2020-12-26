@@ -318,14 +318,20 @@ enum AST_NODE_KIND
 typedef struct Attribute
 {
     String name;
-    Dynamic_Array(AST_Node) arguments;
+    Dynamic_Array(AST_Node*) arguments;
 } Attribute;
 
 typedef struct Scope
 {
-    Dynamic_Array(AST_Node) expressions;
-    Dynamic_Array(AST_Node) statements;
+    Dynamic_Array(AST_Node*) expressions;
+    Dynamic_Array(AST_Node*) statements;
 } Scope;
+
+typedef struct Named_Argument
+{
+    struct AST_Node* value;
+    String name;
+} Named_Argument;
 
 typedef struct AST_Node
 {
@@ -353,7 +359,72 @@ typedef struct AST_Node
             struct AST_Node* false_body;
         } if_statement;
         
-        struct AST_Node* expression;
+        struct
+        {
+            struct AST_Node* condition;
+            struct AST_Node* true_body;
+            struct AST_Node* false_body;
+        } when_statement;
+        
+        struct
+        {
+            struct AST_Node* init;
+            struct AST_Node* condition;
+            struct AST_Node* step;
+            struct AST_Node* body;
+            String label;
+        } while_statement;
+        
+        struct
+        {
+            String label;
+        } for_statement;
+        
+        struct
+        {
+            String label;
+        } break_statement, continue_statement;
+        
+        struct
+        {
+            struct AST_Node* scope;
+        } defer_statement;
+        
+        struct
+        {
+            struct AST_Node* symbol_path;
+            String alias;
+        } using_statement;
+        
+        struct
+        {
+            Dynamic_Array(Named_Argument) arguments;
+        } return_statement;
+        
+        // IMPORTANT TODO(soimn): Multiple
+        struct
+        {
+            struct AST_Node* type;
+            struct AST_Node* value;
+            String name;
+            bool is_uninitialized;
+            bool is_using;
+        } variable_declaration;
+        
+        struct
+        {
+            struct AST_Node* type;
+            struct AST_Node* value;
+            String name;
+            bool is_using;
+        } constant_declaration;
+        
+        struct
+        {
+            Enum8(AST_EXPR_KIND) op;
+            struct AST_Node* left_side;
+            struct AST_Node* right_side;
+        } assignment_statement;
     };
 } AST_Node;
 
