@@ -47,9 +47,116 @@ else token->kind = single_kind;                                                 
 }                                                                                                      \
 } break
 
+
+enum TOKEN_KIND
+{
+    Token_Invalid = 0,
+    
+    Token_Plus,
+    Token_Minus,
+    Token_Asterisk,
+    Token_Slash,
+    Token_Percentage,
+    Token_Exclamation,
+    Token_Ampersand,
+    Token_Equal,
+    Token_Pipe,
+    Token_Tilde,
+    Token_Colon,
+    Token_Less,
+    Token_Greater,
+    
+    Token_ColonColon,
+    Token_AmpersandAmpersand,
+    Token_PipePipe,
+    Token_LessLess,
+    Token_GreaterGreater,
+    
+    Token_MinusMinusMinus,
+    Token_MinusGreater,
+    
+    Token_PlusEqual,
+    Token_MinusEqual,
+    Token_AsteriskEqual,
+    Token_SlashEqual,
+    Token_PercentageEqual,
+    Token_ExclamationEqual,
+    Token_EqualEqual,
+    Token_TildeEqual,
+    Token_ColonEqual,
+    Token_AmpersandEqual,
+    Token_PipeEqual,
+    Token_LessEqual,
+    Token_GreaterEqual,
+    
+    Token_LessLessEqual,
+    Token_GreaterGreaterEqual,
+    
+    Token_Period,
+    Token_PeriodPeriod,
+    Token_PeriodPeriodLess,
+    
+    Token_At,
+    Token_Cash,
+    Token_Hash,
+    Token_QuestionMark,
+    Token_Hat,
+    Token_Quote,
+    Token_Comma,
+    Token_Semicolon,
+    Token_OpenParen,
+    Token_CloseParen,
+    Token_OpenBracket,
+    Token_CloseBracket,
+    Token_OpenBrace,
+    Token_CloseBrace,
+    Token_Underscore,
+    
+    Token_Number,
+    Token_String,
+    Token_Identifier,
+    
+    Token_EndOfStream,
+    
+    TOKEN_KIND_COUNT
+};
+
+enum KEYWORD_KIND
+{
+    Keyword_Invalid = 0,
+    
+    Keyword_Package,
+    Keyword_Import,
+    Keyword_Foreign,
+    Keyword_As,
+    Keyword_Defer,
+    Keyword_Return,
+    Keyword_Using,
+    Keyword_Proc,
+    Keyword_Where,
+    Keyword_Struct,
+    Keyword_Union,
+    Keyword_Enum,
+    Keyword_If,
+    Keyword_Else,
+    Keyword_When,
+    Keyword_While,
+    Keyword_For,
+    Keyword_Break,
+    Keyword_Continue,
+    Keyword_In,
+    Keyword_NotIn,
+    Keyword_Do,
+    Keyword_True,
+    Keyword_False,
+    
+    KEYWORD_KIND_COUNT
+};
+
 String KeywordStrings[KEYWORD_KIND_COUNT] = {
     [Keyword_Package]  = CONST_STRING("package"),
     [Keyword_Import]   = CONST_STRING("import"),
+    [Keyword_Foreign]  = CONST_STRING("foreign"),
     [Keyword_As]       = CONST_STRING("as"),
     [Keyword_Defer]    = CONST_STRING("defer"),
     [Keyword_Return]   = CONST_STRING("return"),
@@ -66,11 +173,32 @@ String KeywordStrings[KEYWORD_KIND_COUNT] = {
     [Keyword_For]      = CONST_STRING("for"),
     [Keyword_Break]    = CONST_STRING("break"),
     [Keyword_Continue] = CONST_STRING("continue"),
-    [Keyword_Inline]   = CONST_STRING("inline"),
     [Keyword_In]       = CONST_STRING("in"),
     [Keyword_NotIn]    = CONST_STRING("not_in"),
     [Keyword_Do]       = CONST_STRING("do"),
+    [Keyword_True]     = CONST_STRING("true"),
+    [Keyword_False]    = CONST_STRING("false"),
 };
+
+typedef struct Token
+{
+    Text_Interval text;
+    
+    union
+    {
+        Number number;
+        
+        struct
+        {
+            String string;
+            Enum8(KEYWORD_KIND) keyword;
+            bool ends_with_space;
+        };
+    };
+    
+    Enum8(TOKEN_KIND) kind;
+    
+} Token;
 
 void
 ReportLexerError(Compiler_State* compiler_state, Text_Interval text, Text_Interval highlight, const char* message, ...)
@@ -201,20 +329,42 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                 case '}':  token->kind = Token_CloseBrace;   break;
                 
                 SINGLE_OR_EQUAL('+', Token_Plus, Token_PlusEqual);
-                SINGLE_OR_EQUAL('-', Token_Minus, Token_MinusEqual);
                 SINGLE_OR_EQUAL('*', Token_Asterisk, Token_AsteriskEqual);
                 SINGLE_OR_EQUAL('/', Token_Slash, Token_SlashEqual);
                 SINGLE_OR_EQUAL('%', Token_Percentage, Token_PercentageEqual);
                 SINGLE_OR_EQUAL('!', Token_Exclamation, Token_ExclamationEqual);
                 SINGLE_OR_EQUAL('=', Token_Equal, Token_EqualEqual);
-                SINGLE_OR_EQUAL(':', Token_Colon, Token_ColonEqual);
                 SINGLE_OR_EQUAL('~', Token_Tilde, Token_TildeEqual);
                 
+                SINGLE_DOUBLE_OR_EQUAL(':', Token_Colon, Token_ColonColon, Token_ColonEqual);
                 SINGLE_DOUBLE_OR_EQUAL('&', Token_Ampersand, Token_AmpersandAmpersand, Token_AmpersandEqual);
                 SINGLE_DOUBLE_OR_EQUAL('|', Token_Pipe, Token_PipePipe, Token_PipeEqual);
                 
                 SINGLE_DOUBLE_EQUAL_OR_DOUBLEEQUAL('<', Token_Less, Token_LessLess, Token_LessEqual, Token_LessLessEqual);
                 SINGLE_DOUBLE_EQUAL_OR_DOUBLEEQUAL('>', Token_Greater, Token_GreaterGreater, Token_GreaterEqual, Token_GreaterGreaterEqual);
+                
+                case '-':
+                {
+                    if (content[offset] == '-' && content[offset + 1] == '-')
+                    {
+                        offset += 2;
+                        token->kind = Token_MinusMinusMinus;
+                    }
+                    
+                    else if (content[offset] == '=')
+                    {
+                        offset += 1;
+                        token->kind = Token_MinusEqual;
+                    }
+                    
+                    else if (content[offset] == '>')
+                    {
+                        offset += 1;
+                        token->kind = Token_MinusGreater;
+                    }
+                    
+                    else token->kind = Token_Minus;
+                }
                 
                 default:
                 {
@@ -267,6 +417,11 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                                         break;
                                     }
                                 }
+                                
+                                token->ends_with_space = (content[offset] == 0    || content[offset] == ' '  ||
+                                                          content[offset] == '\t' || content[offset] == '\v' ||
+                                                          content[offset] == '\n' || content[offset] == '\r' ||
+                                                          content[offset] == '\f');
                             }
                         }
                     }
@@ -277,8 +432,17 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                         {
                             if (content[offset] == '.')
                             {
-                                offset += 1;
-                                token->kind = Token_PeriodPeriod;
+                                if (content[offset + 1] == '<')
+                                {
+                                    offset += 2;
+                                    token->kind = Token_PeriodPeriodLess;
+                                }
+                                
+                                else
+                                {
+                                    offset += 1;
+                                    token->kind = Token_PeriodPeriod;
+                                }
                             }
                             
                             else token->kind = Token_Period;

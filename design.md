@@ -170,13 +170,7 @@ Keywords:
   - false
   - as
   - import
-  - load
   - foreign
-  - inline
-  - no_inline
-  - distinct
-//  - comptime // #run by default
-//  - runtime  // disallow compile time execution
 
 Builtin functions:
   - sizeof
@@ -184,35 +178,23 @@ Builtin functions:
   - offsetof
   - typeid_of
   - typeinfo_of
-
-Compiler directives:
-  - #if        // constant if, transparent scope
-  - #assert    // constant assert
-  - #inject    // inject a declaration into the scope of another module
-  - #insert    // insert a code object in place
-  - #code      // mark source code as a code object
-  - #run       // run something at compile time
-  - #bake      // create a new version of a symbol with some constant data "baked" in
+  - assert
 
 Control structures:
- - if    // if (init; condition; post)
+ - if    // if (init; condition)
  - else
  - for   // for (symbol in iterator/variable)
- - while // while (init; condition; post)
-
-Allowed at global scope:
-  - import declaration
-  - load declaration
-  - variable declarations
-  - constant declarations
+ - while // while (init; condition; step)
 
 Declarations:
+  - import declaration
   - variable declaration
   - constant declaration
 
 Statements:
   - scope
   - declaration
+  - expression
   - if
   - else
   - for
@@ -223,7 +205,6 @@ Statements:
   - return
   - using
   - assignment
-  - expression
 
 Expressions:
   - literals
@@ -234,32 +215,21 @@ Expressions:
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-@string(param0, param1)
+Attribute - @name(param0, param1)
+Directive - #name
 
-import "" [attribute];
-using import "" [attribute];
-using import "" as A [attribute];
+[attribute] statement
+[directive] expr
 
-[attribute]
-Name :: [attribute] struct([attribute] name: type, ) where expr [attribute]
+[attribute] Name :: [directive] struct([attribute] [directive] name: [directive] type, ) where [directive] expr [attribute]
 {
-	[attribute] name: type [attribute],
+	[directive] name: [directive] type [attribute],
 }
 
 [attribute]
-Name :: [attribute] enum type
+Name :: [directive] enum [directive] type
 {
-	[attribute] name = value [attribute],
+	[directive] name = [directive] value [attribute],
 }
 
-[attribute]
-Constant :: value [attribute];
-
-[attribute]
-variable := value [attribute];
-
-[attribute]
-statement;
-
-[attribute]
-Name :: [attribute] proc([attribute] name: type, ) -> ([attribute] name: type, ) where expr [attribute]
+[attribute] Name :: [directive] proc([attribute] [directive] name: [directive] type, ) -> ([attribute] name: [directive] type, ) where [directive] expr [attribute] {}

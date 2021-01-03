@@ -120,123 +120,6 @@ typedef struct Text_Interval
     u32 size;
 } Text_Interval;
 
-enum TOKEN_KIND
-{
-    Token_Invalid = 0,
-    
-    Token_Plus,
-    Token_Minus,
-    Token_Asterisk,
-    Token_Slash,
-    Token_Percentage,
-    Token_Exclamation,
-    Token_Ampersand,
-    Token_Equal,
-    Token_Pipe,
-    Token_Tilde,
-    Token_Colon,
-    Token_Less,
-    Token_Greater,
-    
-    Token_AmpersandAmpersand,
-    Token_PipePipe,
-    Token_LessLess,
-    Token_GreaterGreater,
-    
-    Token_PlusEqual,
-    Token_MinusEqual,
-    Token_AsteriskEqual,
-    Token_SlashEqual,
-    Token_PercentageEqual,
-    Token_ExclamationEqual,
-    Token_EqualEqual,
-    Token_TildeEqual,
-    Token_ColonEqual,
-    Token_AmpersandEqual,
-    Token_PipeEqual,
-    Token_LessEqual,
-    Token_GreaterEqual,
-    
-    Token_LessLessEqual,
-    Token_GreaterGreaterEqual,
-    
-    Token_Period,
-    Token_PeriodPeriod,
-    
-    Token_At,
-    Token_Cash,
-    Token_Hash,
-    Token_QuestionMark,
-    Token_Hat,
-    Token_Quote,
-    Token_Comma,
-    Token_Semicolon,
-    Token_OpenParen,
-    Token_CloseParen,
-    Token_OpenBracket,
-    Token_CloseBracket,
-    Token_OpenBrace,
-    Token_CloseBrace,
-    Token_Underscore,
-    
-    Token_Number,
-    Token_String,
-    Token_Identifier,
-    
-    Token_EndOfStream,
-    
-    TOKEN_KIND_COUNT
-};
-
-enum KEYWORD_KIND
-{
-    Keyword_Invalid = 0,
-    
-    Keyword_Package,
-    Keyword_Import,
-    Keyword_As,
-    Keyword_Defer,
-    Keyword_Return,
-    Keyword_Using,
-    Keyword_Proc,
-    Keyword_Where,
-    Keyword_Struct,
-    Keyword_Union,
-    Keyword_Enum,
-    Keyword_If,
-    Keyword_Else,
-    Keyword_When,
-    Keyword_While,
-    Keyword_For,
-    Keyword_Break,
-    Keyword_Continue,
-    Keyword_Inline,
-    Keyword_In,
-    Keyword_NotIn,
-    Keyword_Do,
-    
-    KEYWORD_KIND_COUNT
-};
-
-typedef struct Token
-{
-    Text_Interval text;
-    
-    union
-    {
-        Number number;
-        
-        struct
-        {
-            String string;
-            Enum8(KEYWORD_KIND) keyword;
-        };
-    };
-    
-    Enum8(TOKEN_KIND) kind;
-    
-} Token;
-
 //////////////////////////////////////////
 
 enum EXPR_KIND
@@ -257,6 +140,12 @@ enum EXPR_KIND
     Expr_BitAnd,
     Expr_BitOr,
     Expr_Member,
+    Expr_IsEqual,
+    Expr_IsNotEqual,
+    Expr_IsLess,
+    Expr_IsGreater,
+    Expr_IsLessOrEqual,
+    Expr_IsGreaterOrEqual,
     
     // Unary
     Expr_Neg,
@@ -264,10 +153,12 @@ enum EXPR_KIND
     Expr_BitNot,
     Expr_Reference,
     Expr_Dereference,
+    Expr_Spread,
     
-    // Special
+    // Postfix
     Expr_Cast,
     Expr_Call,
+    Expr_Subscript,
     
     // Types
     Expr_Slice,
@@ -285,14 +176,17 @@ enum EXPR_KIND
     Expr_Identifier,
     Expr_StructLiteral,
     Expr_ArrayLiteral,
+    
+    // Invisible to metaprogram
+    Expr_CallButMaybeCastOrSpecialization,
+    Expr_SubscriptButMaybeLiteral,
 };
 
 enum AST_NODE_KIND
 {
     AST_Invalid = 0,
     
-    AST_Empty, // Usefull for @note; statements
-    
+    AST_Empty,
     AST_Expression,
     
     AST_ImportDecl,
@@ -302,7 +196,7 @@ enum AST_NODE_KIND
     AST_Scope,
     
     AST_If,
-    AST_When, // #if
+    AST_When,
     AST_While,
     AST_For,
     AST_Break,
@@ -333,12 +227,45 @@ typedef struct Named_Argument
     String name;
 } Named_Argument;
 
+typedef struct Parameter
+{
+    Dynamic_Array(Attribute) attributes;
+    struct AST_Node* name;
+    struct AST_Node* type;
+    struct AST_Node* value;
+    bool is_using;
+    bool is_const;
+} Parameter;
+
+typedef struct Return_Value
+{
+    Dynamic_Array(Attribute) attributes;
+    struct AST_Node* type;
+    String name;
+} Return_Value;
+
+typedef struct Struct_Member
+{
+    Dynamic_Array(Attribute) attributes;
+    struct AST_Node* name;
+    struct AST_Node* type;
+    bool is_using;
+} Struct_Member;
+
+typedef struct Enum_Member
+{
+    Dynamic_Array(Attribute) attributes;
+    struct AST_Node* value;
+    struct AST_Node* name;
+} Enum_Member;
+
 typedef struct AST_Node
 {
     Enum8(AST_NODE_KIND) kind;
     Enum8(AST_EXPR_KIND) expr_kind;
     Text_Interval text;
     Dynamic_Array(Attribute) attributes;
+    Dynamic_Array(String) directives;
     
     union
     {
@@ -349,7 +276,7 @@ typedef struct AST_Node
             String alias;
             Package_ID package_id;
             bool is_using;
-        } import;
+        } import_declaration;
         
         struct
         {
@@ -401,30 +328,105 @@ typedef struct AST_Node
             Dynamic_Array(Named_Argument) arguments;
         } return_statement;
         
-        // IMPORTANT TODO(soimn): Multiple
         struct
         {
-            struct AST_Node* type;
-            struct AST_Node* value;
-            String name;
+            Dynamic_Array(AST_Node*) types;
+            Dynamic_Array(AST_Node*) values;
+            Dynamic_Array(String) names;
             bool is_uninitialized;
-            bool is_using;
         } variable_declaration;
         
         struct
         {
-            struct AST_Node* type;
-            struct AST_Node* value;
-            String name;
-            bool is_using;
+            Dynamic_Array(AST_Node*) types;
+            Dynamic_Array(AST_Node*) values;
+            Dynamic_Array(String) names;
+            bool is_distinct;
         } constant_declaration;
         
         struct
         {
             Enum8(AST_EXPR_KIND) op;
-            struct AST_Node* left_side;
-            struct AST_Node* right_side;
+            Dynamic_Array(AST_Node*) left_side;
+            Dynamic_Array(AST_Node*) right_side;
         } assignment_statement;
+        
+        struct
+        {
+            struct AST_Node* condition;
+            struct AST_Node* true_expr;
+            struct AST_Node* false_expr;
+        } ternary_expression;
+        
+        struct
+        {
+            struct AST_Node* left;
+            struct AST_Node* right;
+        } binary_expression;
+        
+        struct
+        {
+            struct AST_Node* operand;
+        } unary_expression;
+        
+        struct
+        {
+            struct AST_Node* operand;
+            struct AST_Node* index;
+            struct AST_Node* length;
+            struct AST_Node* step;
+        } subscript_expression;
+        
+        struct
+        {
+            struct AST_Node* pointer;
+            Dynamic_Array(Named_Argument) arguments;
+        } call_expression;
+        
+        struct
+        {
+            struct AST_Node* size;
+            struct AST_Node* type;
+        } array_type;
+        
+        struct
+        {
+            Dynamic_Array(Parameter) parameters;
+            Dynamic_Array(Return_Value) return_values;
+            struct AST_Node* where_expression;
+            Dynamic_Array(Attributes) body_attributes;
+            struct AST_Node* body;
+        } proc;
+        
+        struct
+        {
+            Dynamic_Array(Parameter) parameters;
+            Dynamic_Array(Struct_Member) members;
+            struct AST_Node* where_expression;
+            Dynamic_Array(Attribute) body_attributes;
+            bool is_union;
+        } structure;
+        
+        struct
+        {
+            struct AST_Node* type;
+            Dynamic_Array(Enum_Member) members;
+        } enumeration;
+        
+        struct
+        {
+            struct AST_Node* type;
+            Dynamic_Array(Named_Argument) arguments;
+        } struct_literal;
+        
+        struct
+        {
+            struct AST_Node* type;
+            Dynamic_Array(AST_Node*) elements;
+        } array_literal;
+        
+        String string;
+        Number number;
     };
 } AST_Node;
 
@@ -461,3 +463,4 @@ typedef struct Workspace
 // Declarations must be stored such that lookup, creation and deletion is fast without too much fragmentation
 // Idea: Store declaration data and all child nodes in one contigous(?) region of memory, such that tree traversal may be faster and memory can be freed with a single free list entry
 // Idea: The parser uses the TempArena, until an entire top-level declaration is parsed, then the declaration is copied into persistent memory
+// Solution: Nodes are directly committed to persistent memory on creation, arrays are built on temporary memory and flattened into persistent memory, all AST nodes related to a statement is stored directly after the statement node, but may span several memory blocks. Freeing statements must create several free list entries. Temporary memory is cleared once per top level statement, transient memory is cleared once per file.

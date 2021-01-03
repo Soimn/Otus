@@ -71,6 +71,7 @@ typedef struct Memory_Arena
     Memory_Block* first;
     Memory_Block* current;
     Memory_Free_Entry* free_list;
+    bool dont_use_free_list;
 } Memory_Arena;
 
 #define ARENA_INIT(a) {.allocator = a}
@@ -94,21 +95,56 @@ Arena_FreeAll(Memory_Arena* arena)
 void
 Arena_FreeSize(Memory_Arena* arena, void* ptr, umm size)
 {
-#if OTUS_DEBUG_MODE
-    for (Memory_Block* scan = arena->first; scan != 0; scan = scan->next)
+    if (arena->dont_use_free_list == false)
     {
-        if ((u8*)ptr >= (u8*)(scan + 1) && (u8*)ptr + size <= (u8*)MEMORY_BLOCK_CURSOR(scan)) break;
-    }
-    ASSERT(scan != 0);
-#endif
-    
-    umm offset = AlignOffset(ptr, ALIGNOF(u64));
-    if (size >= offset + sizeof(Memory_Free_Entry))
-    {
-        Memory_Free_Entry* entry = (Memory_Free_Entry*)((u8*)ptr + offset);
-        entry->next   = arena->free_list;
-        entry->offset = offset;
-        entry->size  = size - entry->offset;
+        Memory_Block* scan = arena->first;
+        for (; scan != 0; scan = scan->next)
+        {
+            if ((u8*)ptr >= (u8*)(scan + 1) &&
+                (u8*)ptr <= (u8*)MEMORY_BLOCK_CURSOR(scan))
+            {
+                break;
+            }
+        }
+        
+        ASSERT(scan != 0);
+        
+        umm offset = AlignOffset(ptr, ALIGNOF(Memory_Free_Entry));
+        
+        if (size >= sizeof(Memory_Free_Entry) + offset)
+        {
+            umm first_block_size = (u8*)scan + scan->offset - (u8*)ptr + size;
+            umm first_block_bite = MIN(size, first_block_size);
+            
+            if (first_block_bite >= sizeof(Memory_Free_Entry) + offset)
+            {
+                Memory_Free_Entry* entry = (Memory_Free_Entry*)((u8*)ptr + offset);
+                entry->next   = arena->free_list;
+                entry->offset = offset;
+                entry->size   = first_block_bite - offset;
+                
+                arena->free_list = entry;
+            }
+            
+            size -= first_block_bite;
+            
+            while (size != 0)
+            {
+                scan = scan->next;
+                ASSERT(scan != 0);
+                
+                umm bite = MIN(size, scan->offset - sizeof(Memory_Block));
+                
+                Memory_Free_Entry* entry = (Memory_Free_Entry*)(scan + 1);
+                entry->next   = arena->free_list;
+                entry->offset = 0;
+                entry->size   = bite;
+                
+                arena->free_list = entry;
+                
+                size -= bite;
+            }
+        }
     }
 }
 
@@ -203,25 +239,14 @@ Arena_Allocate(Memory_Arena* arena, umm size, u8 alignment)
             
             else
             {
-                // NOTE(soimn): Deciding whether to discard the free space in the current or new block.
-                //              Since the arena does not possess a free list, and the works like a
-                //              stack, only the current block can keep track of free space.
-                if (block->space > arena->current->space)
-                {
-                    block->next          = arena->current->next;
-                    arena->current->next = block;
-                    
-                    arena->current = block;
-                }
+                block->next          = arena->current->next;
+                arena->current->next = block;
                 
-                else
-                {
-                    prev_block = arena->first;
-                    while (prev_block->next != arena->current) prev_block = prev_block->next;
-                    
-                    prev_block->next = block;
-                    block->next      = arena->current;
-                }
+                Arena_FreeSize(arena, MEMORY_BLOCK_CURSOR(arena->current), arena->current->space);
+                arena->current->offset += arena->current->space;
+                arena->current->space   = 0;
+                
+                arena->current = block;
             }
         }
         
@@ -300,6 +325,22 @@ umm
 BucketArray_ElementCount(Bucket_Array* array)
 {
     return (array->bucket_count - 1) * array->bucket_size + array->current_bucket_size;
+}
+
+inline void*
+BucketArray_ElementAt(Bucket_Array* array, umm index)
+{
+    umm bucket_index  = index / array->bucket_size;
+    umm bucket_offset = index % array->bucket_size;
+    
+    void* result = 0;
+    
+    void* bucket = array->first;
+    for (umm i = 0; i < bucket_index && bucket != 0; i += 1, bucket = *(void**)bucket);
+    
+    if (bucket != 0) result = (u8*)bucket + sizeof(u64) + bucket_offset * array->element_size;
+    
+    return result;
 }
 
 Slice
