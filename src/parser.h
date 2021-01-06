@@ -73,6 +73,8 @@ AddExpressionNode(Parser_State* state, Enum8(AST_EXPR_KIND) expr_kind)
     result->kind      = AST_Expression;
     result->expr_kind = expr_kind;
     
+    *(AST_Node**)BucketArray_AppendElement(&state->scope_builder.expressions) = result;
+    
     return result;
 }
 
@@ -258,66 +260,86 @@ ParseParameterList(Parser_State* state, Bucket_Array(Parameter)* parameters)
             Parameter* parameter = BucketArray_AppendElement(parameters);
             
             token = GetToken(state);
-            if (token.kind == Token_Identifier && token.keyword == Keyword_Using)
+            if (token.kind == Token_At)
             {
-                SkipToNextToken(state);
-                parameter->is_using = true;
-            }
-            
-            token = GetToken(state);
-            if (token.kind == Token_Cash)
-            {
-                parameter->is_const = true;
+                Bucket_Array attributes = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Attribute, 10);
                 
-                SkipToNextToken(state);
-            }
-            
-            if (!ParseExpression(state, &parameter->name)) encountered_errors = true;
-            else
-            {
-                token = GetToken(state);
-                
-                if (token.kind != Token_Colon)
-                {
-                    //// ERROR: Missing type of parameter
-                    encountered_errors = true;
-                }
-                
+                if (!ParseAttributes(state, &attributes)) encountered_errors = true;
                 else
                 {
+                    Slice attribute_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &attributes);
+                    parameter->attributes = SLICE_TO_DYNAMIC_ARRAY(attribute_slice);
+                }
+            }
+            
+            if (!encountered_errors)
+            {
+                token = GetToken(state);
+                if (token.kind == Token_Identifier && token.keyword == Keyword_Using)
+                {
                     SkipToNextToken(state);
+                    parameter->is_using = true;
+                }
+                
+                AST_Node* expression;
+                if (!ParseExpression(state, &expression)) encountered_errors = true;
+                else
+                {
                     token = GetToken(state);
                     
-                    if (token.kind != Token_Equal)
+                    if (token.kind == Token_Colon || token.kind == Token_ColonEqual)
                     {
-                        if (!ParseExpression(state, &parameter->type))
-                        {
-                            encountered_errors = true;
-                        }
-                    }
-                    
-                    if (!encountered_errors)
-                    {
-                        token = GetToken(state);
+                        parameter->name = expression;
                         
-                        if (token.kind == Token_Equal)
+                        if (token.kind == Token_Colon)
                         {
                             SkipToNextToken(state);
                             
-                            if (!ParseExpression(state, &parameter->value))
+                            if (!ParseExpression(state, &parameter->type))
                             {
                                 encountered_errors = true;
                             }
                         }
                         
-                        if (!encountered_errors)
+                        token = GetToken(state);
+                        if (token.kind == Token_ColonEqual || token.kind == Token_Equal)
                         {
-                            token = GetToken(state);
+                            if (parameter->type != 0 && token.kind == Token_ColonEqual)
+                            {
+                                //// ERROR: Invalid use if inferred type declaration operator
+                                encountered_errors = true;
+                            }
                             
-                            if (token.kind == Token_Comma) SkipToNextToken(state);
-                            else break;
+                            else
+                            {
+                                SkipToNextToken(state);
+                                
+                                if (!ParseExpression(state, &parameter->value))
+                                {
+                                    encountered_errors = true;
+                                }
+                            }
                         }
                     }
+                    
+                    else
+                    {
+                        parameter->type = expression;
+                        
+                        if (token.kind == Token_Equal)
+                        {
+                            //// ERROR: Cannot assign default value to parameter without name
+                            encountered_errors = true;
+                        }
+                    }
+                }
+                
+                if (!encountered_errors)
+                {
+                    token = GetToken(state);
+                    
+                    if (token.kind == Token_Comma) SkipToNextToken(state);
+                    else break;
                 }
             }
         }
@@ -338,7 +360,7 @@ ParseParameterList(Parser_State* state, Bucket_Array(Parameter)* parameters)
 }
 
 bool
-ParseNamedArgumentList(Parser_State* state, Bucket_Array(AST_Node)* arguments, Enum8(TOKEN_KIND) terminating_token)
+ParseNamedArgumentList(Parser_State* state, Bucket_Array(AST_Node)* arguments)
 {
     bool encountered_errors = false;
     
@@ -346,67 +368,46 @@ ParseNamedArgumentList(Parser_State* state, Bucket_Array(AST_Node)* arguments, E
     {
         Named_Argument* argument = BucketArray_AppendElement(arguments);
         
-        Token token = GetToken(state);
-        Token peek  = PeekNextToken(state);
-        
-        if (peek.kind == Token_Equal)
+        AST_Node* expression;
+        if (!ParseExpression(state, &expression)) encountered_errors = true;
+        else
         {
-            if (token.kind == Token_Identifier)
+            Token token = GetToken(state);
+            if (token.kind == Token_Equal)
             {
-                if (token.keyword != Keyword_Invalid)
+                if (expression->kind != Expr_Identifier && IsAssignment(token.kind))
                 {
-                    //// ERROR: Invalid use of keyword as argument name
+                    //// ERROR: Illegal use of assignment operator in expression context
+                    encountered_errors = true;
+                }
+                
+                else if (expression->string.size == 0)
+                {
+                    //// ERROR: Illegal use of blank identifier as argument name
                     encountered_errors = true;
                 }
                 
                 else
                 {
-                    argument->name = token.string;
+                    argument->name = expression;
                     
                     SkipToNextToken(state);
-                    SkipToNextToken(state);
+                    
+                    if (!ParseExpression(state, &argument->value))
+                    {
+                        encountered_errors = true;
+                    }
                 }
-            }
-            
-            else if (token.kind == Token_Underscore)
-            {
-                //// ERROR: Blank identifier cannot be used in as names in named argument lists
-                encountered_errors = true;
             }
             
             else
             {
-                if (terminating_token == Token_Semicolon)
-                {
-                    //// ERROR: Missing semicolon after named argument list
-                }
-                
-                else if (terminating_token == Token_CloseParen)
-                {
-                    //// ERROR: Missing matching closing parenthesis
-                }
-                
-                else if (terminating_token == Token_CloseBrace)
-                {
-                    //// ERROR: Missing matching closing brace
-                }
-                
-                else INVALID_CODE_PATH;
-                
-                encountered_errors = true;
+                argument->value = expression;
             }
-        }
-        
-        if (!encountered_errors)
-        {
-            if (!ParseExpression(state, &argument->value)) encountered_errors = true;
-            else
-            {
-                token = GetToken(state);
-                
-                if (token.kind == Token_Comma) SkipToNextToken(state);
-                else break;
-            }
+            
+            token = GetToken(state);
+            if (token.kind == Token_Comma) SkipToNextToken(state);
+            else break;
         }
     }
     
@@ -414,7 +415,7 @@ ParseNamedArgumentList(Parser_State* state, Bucket_Array(AST_Node)* arguments, E
 }
 
 bool
-ParsePrimaryExpression(Parser_State* state, AST_Node** result, bool in_type_context, AST_Node** parent)
+ParsePrimaryExpression(Parser_State* state, AST_Node** result, bool in_type_context, AST_Node** parent, bool tolerate_missing_primary)
 {
     bool encountered_errors = false;
     
@@ -559,29 +560,30 @@ ParsePrimaryExpression(Parser_State* state, AST_Node** result, bool in_type_cont
                     Slice attribute_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &attributes);
                     return_value->attributes = SLICE_TO_DYNAMIC_ARRAY(attribute_slice);
                     
-                    token      = GetToken(state);
-                    Token peek = PeekNextToken(state);
-                    
-                    if (token.kind == Token_Identifier && peek.kind == Token_Colon)
+                    AST_Node* expression;
+                    if (!ParseExpression(state, &expression)) encountered_errors = true;
+                    else
                     {
-                        if (token.keyword != Keyword_Invalid)
+                        token = GetToken(state);
+                        if (expression->kind == Expr_Identifier && token.kind == Token_Colon)
                         {
-                            //// ERROR: Illegal use of keyword as name of return value
-                            encountered_errors = true;
+                            return_value->name = expression;
+                            
+                            SkipToNextToken(state);
+                            
+                            if (!ParseExpression(state, &return_value->type))
+                            {
+                                encountered_errors = true;
+                            }
                         }
                         
                         else
                         {
-                            return_value->name = token.string;
-                            
-                            SkipToNextToken(state);
-                            SkipToNextToken(state);
+                            return_value->type = expression;
                         }
                     }
                     
-                    if (!ParseExpression(state, &return_value->type))
-                        
-                        if (!encountered_errors)
+                    if (!encountered_errors)
                     {
                         token = GetToken(state);
                         if (token.kind != Token_Comma || !multiple_return_values) break;
@@ -1001,7 +1003,7 @@ ParsePrimaryExpression(Parser_State* state, AST_Node** result, bool in_type_cont
             token = GetToken(state);
             if (token.kind != Token_CloseParen)
             {
-                if (!ParseNamedArgumentList(state, &arguments, Token_CloseParen))
+                if (!ParseNamedArgumentList(state, &arguments))
                 {
                     encountered_errors = true;
                 }
@@ -1172,7 +1174,7 @@ ParsePrimaryExpression(Parser_State* state, AST_Node** result, bool in_type_cont
                 token = GetToken(state);
                 if (token.kind != Token_CloseBrace)
                 {
-                    if (!ParseNamedArgumentList(state, &arguments, Token_CloseBrace))
+                    if (!ParseNamedArgumentList(state, &arguments))
                     {
                         encountered_errors = true;
                     }
@@ -1206,14 +1208,22 @@ ParsePrimaryExpression(Parser_State* state, AST_Node** result, bool in_type_cont
             
             if (missing_primary)
             {
-                //// ERROR: Missing primary expression
-                encountered_errors = true;
+                if (tolerate_missing_primary)
+                {
+                    *result = AddExpressionNode(state, Expr_Empty);
+                }
+                
+                else
+                {
+                    //// ERROR: Missing primary expression
+                    encountered_errors = true;
+                }
             }
         }
     }
     
     // NOTE(soimn): Postfix
-    while (!encountered_errors)
+    while (!missing_primary && !encountered_errors)
     {
         token = GetToken(state);
         
@@ -1259,13 +1269,20 @@ ParsePrimaryExpression(Parser_State* state, AST_Node** result, bool in_type_cont
         
         else if (token.kind == Token_OpenParen)
         {
+            Bucket_Array arguments = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Named_Argument, 10);
+            
             SkipToNextToken(state);
             token = GetToken(state);
             
-            Bucket_Array arguments = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Named_Argument, 10);
+            if (token.kind != Token_CloseParen)
+            {
+                if (!ParseNamedArgumentList(state, &arguments))
+                {
+                    encountered_errors = true;
+                }
+            }
             
-            if (!ParseNamedArgumentList(state, &arguments, Token_CloseParen)) encountered_errors = true;
-            else
+            if (!encountered_errors)
             {
                 token = GetToken(state);
                 
@@ -1382,7 +1399,15 @@ ParseType(Parser_State* state, AST_Node** result)
     {
         Token token = GetToken(state);
         
-        if (token.kind == Token_Hat)
+        if (token.kind == Token_Cash)
+        {
+            SkipToNextToken(state);
+            
+            *result = AddExpressionNode(state, Expr_Polymorphic);
+            result  = &(*result)->unary_expression.operand;
+        }
+        
+        else if (token.kind == Token_Hat)
         {
             SkipToNextToken(state);
             
@@ -1470,8 +1495,25 @@ ParseType(Parser_State* state, AST_Node** result)
             
             else
             {
-                if (!ParsePrimaryExpression(state, result, true, parent)) encountered_errors = true;
-                else break;
+                if (!ParsePrimaryExpression(state, result, true, parent, false)) encountered_errors = true;
+                else
+                {
+                    token = GetToken(state);
+                    
+                    if (token.kind != Token_Slash) break;
+                    else
+                    {
+                        SkipToNextToken(state);
+                        
+                        AST_Node* left = *parent;
+                        
+                        *parent = AddExpressionNode(state, Expr_PolymorphicAlias);
+                        (*parent)->binary_expression.left = left;
+                        
+                        if (!ParseType(state, &(*parent)->binary_expression.right)) encountered_errors = true;
+                        else break;
+                    }
+                }
             }
         }
     }
@@ -1514,7 +1556,8 @@ ParsePrefixExpression(Parser_State* state, AST_Node** result)
             {
                 *result = AddExpressionNode(state, kind);
                 (*result)->directives = SLICE_TO_DYNAMIC_ARRAY(directive_slice);
-                result  = &(*result)->unary_expression.operand;
+                
+                result = &(*result)->unary_expression.operand;
             }
         }
         
@@ -1523,7 +1566,7 @@ ParsePrefixExpression(Parser_State* state, AST_Node** result)
             Token peek      = PeekNextToken(state);
             Token peek_next = PeekNextToken(state);
             
-            if (token.kind == Token_Hat ||
+            if (token.kind == Token_Cash || token.kind == Token_Hat ||
                 token.kind == Token_OpenBracket && peek.kind == Token_CloseBracket ||
                 token.kind == Token_OpenBracket && peek.kind == Token_PeriodPeriod && peek_next.kind == Token_CloseBracket)
             {
@@ -1562,7 +1605,7 @@ ParsePrefixExpression(Parser_State* state, AST_Node** result)
             
             else
             {
-                if (!ParsePrimaryExpression(state, result, false, result)) encountered_errors = true;
+                if (!ParsePrimaryExpression(state, result, false, result, (directive_slice.size == 1))) encountered_errors = true;
                 else
                 {
                     (*result)->directives = SLICE_TO_DYNAMIC_ARRAY(directive_slice);
@@ -2510,7 +2553,7 @@ ParseStatement(Parser_State* state, AST_Node* result)
             token = GetToken(state);
             if (token.kind != Token_Semicolon)
             {
-                if (!ParseNamedArgumentList(state, &arguments, Token_Semicolon))
+                if (!ParseNamedArgumentList(state, &arguments))
                 {
                     encountered_errors = true;
                 }
@@ -2888,7 +2931,31 @@ ParseFile(Compiler_State* compiler_state, File_ID file_id)
         state.token_it = BucketArray_CreateIterator(&state.tokens);
         state.peek_it  = BucketArray_CreateIterator(&state.tokens);
         
-        NOT_IMPLEMENTED;
+        Bucket_Array statements = BUCKET_ARRAY_INIT(&state.compiler_state->transient_memory, AST_Node*, 100);
+        
+        while (!encountered_errors)
+        {
+            Arena_ClearAll(&compiler_state->temp_memory);
+            
+            Token token = GetToken(&state);
+            
+            if (token.kind == Token_EndOfStream) break;
+            else
+            {
+                if (!ParseStatement(&state, BucketArray_AppendElement(&statements)))
+                {
+                    encountered_errors = true;
+                }
+            }
+        }
+        
+        if (!encountered_errors)
+        {
+            Slice statement_slice = BucketArray_FlattenContent(&state.compiler_state->persistent_memory, &statements);
+            
+            (void)statement_slice;
+            NOT_IMPLEMENTED;
+        }
     }
     
     return !encountered_errors;

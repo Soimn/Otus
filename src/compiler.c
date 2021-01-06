@@ -139,15 +139,17 @@ TextInterval_FromEndpoints(Text_Pos p0, Text_Pos p1)
 typedef struct Compiler_State
 {
     Workspace* workspace;
-    Memory_Arena persistent_memory;  // is never cleared
-    Memory_Arena transient_memory;   // is cleared between every file
-    Memory_Arena temp_memory;        // is often cleared
+    Memory_Arena persistent_memory;  // NOTE(soimn): is never cleared
+    Memory_Arena transient_memory;   // NOTE(soimn): is cleared between every file
+    Memory_Arena temp_memory;        // NOTE(soimn): is often cleared
 } Compiler_State;
 
 #include "lexer.h"
 #include "parser.h"
 
 #if 0
+OLD
+
 ParseEverything -> ParsedStack
 
 while decl_pile != empty
@@ -170,4 +172,28 @@ BytecodeStack
 Runnable
 
 GenerateBinary
+#endif
+
+#if 0
+NEW
+
+OpenWorkspace
+
+ParseFile
+
+while statement_pile != empty
+{
+    FetchStatement;
+    TypeCheckStatement;
+    
+    ResubmitStatement;
+    SubmitNewStatement;
+    
+    CommitDeclaration;
+}
+
+GenerateBinary
+
+CloseWorkspace
+
 #endif

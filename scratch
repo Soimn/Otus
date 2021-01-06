@@ -669,3 +669,123 @@ Child c = {.member = 0};
 
 // pointer to temporary
 in c you can always do (int[]){{3}} which is more portable than &(int){3}
+
+
+
+
+
+Package system, syntax, type rules and AST format is core to the language
+everything else is custom
+
+The reason for the package system being core, and not custom, is to ensure different code bases have a well defined interface
+
+
+
+
+
+
+
+
+
+
+																	TODO: Should 'attributes' be used to markup expressions?
+                                                                          What about compiler directives?
+
+
+if      (StringCompare(token.string, CONST_STRING("include"))) directive->kind = Directive_Include;
+        else if (StringCompare(token.string, CONST_STRING("load")))    directive->kind = Directive_Load;
+        else if (StringCompare(token.string, CONST_STRING("code")))    directive->kind = Directive_Code;
+        else if (StringCompare(token.string, CONST_STRING("insert")))  directive->kind = Directive_Insert;
+        else if (StringCompare(token.string, CONST_STRING("run")))     directive->kind = Directive_Run;
+        else if (StringCompare(token.string, CONST_STRING("bake")))    directive->kind = Directive_Bake;
+
+
+@attribute(1 + 2);
+
+** Solution #1: Whitespace matters (@attribute(1 + 2); != @attribute (1 + 2);)
+Solution #2: No arguments
+Solution #3: Wierd braces, brackets or parens
+
+
+
+Correction after metaprogram parse
+  - should sema be run?
+  - should the correction be visible to the metaprogram?
+
+Debug info
+  - need existing/generated text + info about origin
+  - how to handle interleaved existing and generated when it comes to the generated text?
+
+Type checking
+  - How free should custom type checking be?
+
+When statements needs to be resolved before complete type checking
+Finished programs only have a notion of symbol info, data and procedures
+
+Parsed statements -> Meta -> Committed Declarations -> Bytecode
+*** The metaprogram can only commit declarations* ***
+  - can only commit constant and variable declarations
+
+
+structs ----- This is metaprogram stuff, can easily be changed in the symbol table after type checking
+ - ordered
+ - packed
+ - alignment
+
+calling convention -
+inlining           - must support force inline/no_inline of bytecode
+loop unrolling     - probably better to do after bytecode gen
+intrinsics         - provide procedures to fall back on, handle when translating bytecode, maybe?
+
+
+
+The context system is core to the language
+There are two main calling conventions: context and context-less
+Foreign procedures support any c calling convention
+
+Bytecode is a metaprogram level concept
+ - The compiler only understands AST, symbol info, symbol info gen and text -> AST transformations
+ - The bytecode can only change values in the AST
+
+To produce a binary the AST is used NOT the bytecode
+Start with generating C code from AST, maybe custom backend later
+
+
+
+
+Open -> Parse -> Check -> Modify -> Commit ----------> Close
+         ^        ^ Recheck |              |          ^
+		 |        |---------<              v          |
+         |    AddNewDecl    |                Generate
+		 -------------------<
+
+Statement #1: The language's rules apply in the parsing and commit stage. The modify and check stage is free to do whatever
+Statement #2: The generate stage is optional
+Statement #3: The compiler-side parser remains focused on parsing files, the metaprogram-side parser will be used for smaller tasks
+
+Question #1: Should the metaprogram __change__ the ast, or just inspect it and apply textual diffs?
+Question #2: How to deal with interleaved source and generated code when adding debug info?
+Question #3: If the metaprogram modifies the AST with text, should the text be parsed, or parsed and checked?
+Question #4: Should the calling convention (context/context-less) be decided by whether the context is used or not?
+Question #5: How to handle polymorphic declarations? Should the metaprogram be responsible for instantiation?
+
+SerializeEntity :: proc(entity: $T)
+@body_text {
+	type_info := type_info_of(T);
+	assert(type_info.kind == .Struct);
+
+	b: String_Builder;
+
+	for field, index in type_info.structure.fields
+	{
+		tprint(b, "\nprint(%: %%);", field.name, field.value, (index != type_info.structure.fields.size - 1 ? '\n' : ''));
+	}
+
+	return FinalizeString(b);
+}
+
+
+--- Question #5: How to handle polymorphic declarations? Should the metaprogram be responsible for instantiation? ---
+Polymorphism is core to the language, meaning the compiler should handle it. There should be a default solver in the
+default type checking procedure, and generation of specialized declarations should be handled by the compiler.
+Specializations are generated on demand and added to the "statement pile"

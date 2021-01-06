@@ -169,6 +169,8 @@ enum EXPR_KIND
     Expr_Union,
     Expr_Enum,
     Expr_Proc,
+    Expr_Polymorphic,
+    Expr_PolymorphicAlias,
     
     // Literals
     Expr_Number,
@@ -176,8 +178,9 @@ enum EXPR_KIND
     Expr_Identifier,
     Expr_StructLiteral,
     Expr_ArrayLiteral,
+    Expr_Empty,
     
-    // Invisible to metaprogram
+    // Ambiguities
     Expr_CallButMaybeCastOrSpecialization,
     Expr_SubscriptButMaybeLiteral,
 };
@@ -224,7 +227,7 @@ typedef struct Scope
 typedef struct Named_Argument
 {
     struct AST_Node* value;
-    String name;
+    struct AST_Node* name;
 } Named_Argument;
 
 typedef struct Parameter
@@ -234,14 +237,13 @@ typedef struct Parameter
     struct AST_Node* type;
     struct AST_Node* value;
     bool is_using;
-    bool is_const;
 } Parameter;
 
 typedef struct Return_Value
 {
     Dynamic_Array(Attribute) attributes;
     struct AST_Node* type;
-    String name;
+    struct AST_Node* name;
 } Return_Value;
 
 typedef struct Struct_Member
@@ -450,17 +452,3 @@ typedef struct Workspace
     Slice(Package) packages;
     Slice(Path_Prefix) path_prefixes;
 } Workspace;
-
-//////////////////////////////////////////
-
-
-// IMPORTANT
-// Memory compatibility
-// Bucket_Array vs Slice vs Dynamic_Array, how to interface?
-
-
-// Problem: How to store declarations
-// Declarations must be stored such that lookup, creation and deletion is fast without too much fragmentation
-// Idea: Store declaration data and all child nodes in one contigous(?) region of memory, such that tree traversal may be faster and memory can be freed with a single free list entry
-// Idea: The parser uses the TempArena, until an entire top-level declaration is parsed, then the declaration is copied into persistent memory
-// Solution: Nodes are directly committed to persistent memory on creation, arrays are built on temporary memory and flattened into persistent memory, all AST nodes related to a statement is stored directly after the statement node, but may span several memory blocks. Freeing statements must create several free list entries. Temporary memory is cleared once per top level statement, transient memory is cleared once per file.
