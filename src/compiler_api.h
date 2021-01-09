@@ -153,10 +153,8 @@ enum EXPR_KIND
     Expr_BitNot,
     Expr_Reference,
     Expr_Dereference,
-    Expr_Spread,
     
     // Postfix
-    Expr_Cast,
     Expr_Call,
     Expr_Subscript,
     
@@ -178,100 +176,173 @@ enum EXPR_KIND
     Expr_Identifier,
     Expr_StructLiteral,
     Expr_ArrayLiteral,
+    Expr_Range,
+    
+    // Special
+    Expr_NamedArgument,
     Expr_Empty,
     
     // Ambiguities
-    Expr_CallButMaybeCastOrSpecialization,
     Expr_SubscriptButMaybeLiteral,
-};
-
-enum AST_NODE_KIND
-{
-    AST_Invalid = 0,
-    
-    AST_Empty,
-    AST_Expression,
-    
-    AST_ImportDecl,
-    AST_VariableDecl,
-    AST_ConstantDecl,
-    
-    AST_Scope,
-    
-    AST_If,
-    AST_When,
-    AST_While,
-    AST_For,
-    AST_Break,
-    AST_Continue,
-    
-    AST_Return,
-    AST_Using,
-    AST_Defer,
-    
-    AST_Assignment,
+    Expr_CallButMaybeSpecialization,
 };
 
 typedef struct Attribute
 {
     String name;
-    Dynamic_Array(AST_Node*) arguments;
+    Slice(Expression*) arguments;
 } Attribute;
 
-typedef struct Scope
+typedef struct Directive
 {
-    Dynamic_Array(AST_Node*) expressions;
-    Dynamic_Array(AST_Node*) statements;
-} Scope;
+    String name;
+    Slice(Expression*) arguments;
+} Directive;
 
-typedef struct Named_Argument
+typedef struct Expression
 {
-    struct AST_Node* value;
-    struct AST_Node* name;
-} Named_Argument;
-
-typedef struct Parameter
-{
-    Dynamic_Array(Attribute) attributes;
-    struct AST_Node* name;
-    struct AST_Node* type;
-    struct AST_Node* value;
-    bool is_using;
-} Parameter;
-
-typedef struct Return_Value
-{
-    Dynamic_Array(Attribute) attributes;
-    struct AST_Node* type;
-    struct AST_Node* name;
-} Return_Value;
-
-typedef struct Struct_Member
-{
-    Dynamic_Array(Attribute) attributes;
-    struct AST_Node* name;
-    struct AST_Node* type;
-    bool is_using;
-} Struct_Member;
-
-typedef struct Enum_Member
-{
-    Dynamic_Array(Attribute) attributes;
-    struct AST_Node* value;
-    struct AST_Node* name;
-} Enum_Member;
-
-typedef struct AST_Node
-{
-    Enum8(AST_NODE_KIND) kind;
-    Enum8(AST_EXPR_KIND) expr_kind;
+    Enum8(AST_EXPR_KIND) kind;
     Text_Interval text;
-    Dynamic_Array(Attribute) attributes;
-    Dynamic_Array(String) directives;
+    Slice(Directive) directives;
     
     union
     {
-        Scope scope;
+        struct
+        {
+            struct Expression* condition;
+            struct Expression* true_expr;
+            struct Expression* false_expr;
+        } ternary_expression;
+        
+        struct
+        {
+            struct Expression* left;
+            struct Expression* right;
+        } binary_expression;
+        
+        struct
+        {
+            struct Expression* operand;
+        } unary_expression;
+        
+        struct
+        {
+            struct Expression* pointer;
+            struct Expression* index;
+            struct Expression* length;
+            struct Expression* step;
+        } subscript_expression;
+        
+        struct
+        {
+            struct Expression* pointer;
+            Slice(Expression*) arguments;
+        } call_expression;
+        
+        struct
+        {
+            struct Expression* size;
+            struct Expression* type;
+        } array_type;
+        
+        struct
+        {
+            struct Statement* parameters;
+            struct Statement* return_values;
+            struct Expression* where_expression;
+            struct Statement* body;
+        } proc;
+        
+        struct
+        {
+            struct Statement* parameters;
+            struct Expression* where_expression;
+            struct Statement* members;
+            bool is_union;
+        } structure;
+        
+        struct
+        {
+            struct Expression* type;
+            struct Statement* members;
+        } enumeration;
+        
+        struct
+        {
+            struct Expression* type;
+            Slice(Expression*) arguments;
+        } struct_literal;
+        
+        struct
+        {
+            struct Expression* type;
+            Slice(Expression*) elements;
+        } array_literal;
+        
+        struct
+        {
+            struct Expression* min;
+            struct Expression* max;
+            bool is_open;
+        } range_literal;
+        
+        String string;
+        Number number;
+        
+        struct
+        {
+            struct Expression* name;
+            struct Expression* value;
+        } named_argument;
+        
+    };
+    
+} Expression;
+
+enum STATEMENT_KIND
+{
+    Statement_Invalid = 0,
+    
+    Statement_Empty,
+    Statement_Block,
+    Statement_Expression,
+    
+    Statement_ImportDecl,
+    Statement_VariableDecl,
+    Statement_ConstantDecl,
+    
+    Statement_If,
+    Statement_When,
+    Statement_While,
+    Statement_Break,
+    Statement_Continue,
+    
+    Statement_Return,
+    Statement_Using,
+    Statement_Defer,
+    
+    Statement_Assignment,
+    
+    Statement_Parameter,
+    Statement_ReturnValue,
+    Statement_StructMember,
+    Statement_EnumMember,
+};
+
+typedef struct Statement
+{
+    Enum8(STATEMENT_KIND) kind;
+    Text_Interval text;
+    Slice(Attribute) attributes;
+    
+    union
+    {
+        struct
+        {
+            Expression* label;
+            Slice(Expression*) expressions;
+            Slice(Statement*) statements;
+        } block;
         
         struct
         {
@@ -282,155 +353,178 @@ typedef struct AST_Node
         
         struct
         {
-            struct AST_Node* init;
-            struct AST_Node* condition;
-            struct AST_Node* true_body;
-            struct AST_Node* false_body;
+            Expression* label;
+            struct Statement* init;
+            Expression* condition;
+            struct Statement* true_body;
+            struct Statement* false_body;
         } if_statement;
         
         struct
         {
-            struct AST_Node* condition;
-            struct AST_Node* true_body;
-            struct AST_Node* false_body;
+            Expression* label;
+            Expression* condition;
+            struct Statement* true_body;
+            struct Statement* false_body;
         } when_statement;
         
         struct
         {
-            struct AST_Node* init;
-            struct AST_Node* condition;
-            struct AST_Node* step;
-            struct AST_Node* body;
-            String label;
+            Expression* label;
+            struct Statement* init;
+            Expression* condition;
+            struct Statement* step;
+            struct Statement* body;
         } while_statement;
         
         struct
         {
-            String label;
-        } for_statement;
-        
-        struct
-        {
-            String label;
+            Expression* label;
         } break_statement, continue_statement;
         
         struct
         {
-            struct AST_Node* scope;
+            struct Statement* statement;
         } defer_statement;
         
         struct
         {
-            struct AST_Node* symbol_path;
-            String alias;
+            Expression* symbol_path;
+            Expression* alias;
         } using_statement;
         
         struct
         {
-            Dynamic_Array(Named_Argument) arguments;
+            Slice(Expression*) arguments;
         } return_statement;
         
         struct
         {
-            Dynamic_Array(AST_Node*) types;
-            Dynamic_Array(AST_Node*) values;
-            Dynamic_Array(String) names;
+            Slice(Expression*) types;
+            Slice(Expression*) values;
+            Slice(Expression*) names;
             bool is_uninitialized;
         } variable_declaration;
         
         struct
         {
-            Dynamic_Array(AST_Node*) types;
-            Dynamic_Array(AST_Node*) values;
-            Dynamic_Array(String) names;
+            Slice(Expression*) types;
+            Slice(Expression*) values;
+            Slice(Expression*) names;
             bool is_distinct;
         } constant_declaration;
         
         struct
         {
             Enum8(AST_EXPR_KIND) op;
-            Dynamic_Array(AST_Node*) left_side;
-            Dynamic_Array(AST_Node*) right_side;
+            Slice(Expression*) left_side;
+            Slice(Expression*) right_side;
         } assignment_statement;
         
-        struct
-        {
-            struct AST_Node* condition;
-            struct AST_Node* true_expr;
-            struct AST_Node* false_expr;
-        } ternary_expression;
+        Expression* expression;
         
         struct
         {
-            struct AST_Node* left;
-            struct AST_Node* right;
-        } binary_expression;
+            struct Expression* name;
+            struct Expression* type;
+            struct Expression* default_value;
+            bool is_using;
+        } parameter;
         
         struct
         {
-            struct AST_Node* operand;
-        } unary_expression;
+            struct Expression* name;
+            struct Expression* type;
+        } return_value;
         
         struct
         {
-            struct AST_Node* operand;
-            struct AST_Node* index;
-            struct AST_Node* length;
-            struct AST_Node* step;
-        } subscript_expression;
+            struct Expression* name;
+            struct Expression* type;
+            bool is_using;
+        } struct_member;
         
         struct
         {
-            struct AST_Node* pointer;
-            Dynamic_Array(Named_Argument) arguments;
-        } call_expression;
-        
-        struct
-        {
-            struct AST_Node* size;
-            struct AST_Node* type;
-        } array_type;
-        
-        struct
-        {
-            Dynamic_Array(Parameter) parameters;
-            Dynamic_Array(Return_Value) return_values;
-            struct AST_Node* where_expression;
-            Dynamic_Array(Attributes) body_attributes;
-            struct AST_Node* body;
-        } proc;
-        
-        struct
-        {
-            Dynamic_Array(Parameter) parameters;
-            Dynamic_Array(Struct_Member) members;
-            struct AST_Node* where_expression;
-            Dynamic_Array(Attribute) body_attributes;
-            bool is_union;
-        } structure;
-        
-        struct
-        {
-            struct AST_Node* type;
-            Dynamic_Array(Enum_Member) members;
-        } enumeration;
-        
-        struct
-        {
-            struct AST_Node* type;
-            Dynamic_Array(Named_Argument) arguments;
-        } struct_literal;
-        
-        struct
-        {
-            struct AST_Node* type;
-            Dynamic_Array(AST_Node*) elements;
-        } array_literal;
-        
-        String string;
-        Number number;
+            struct Expression* name;
+            struct Expression* value;
+        } enum_member;
     };
-} AST_Node;
+} Statement;
+
+//////////////////////////////////////////
+
+typedef i32 Symbol_ID;
+typedef i32 Type_ID;
+
+enum TYPE_KIND
+{
+    Type_Invalid = 0,
+    
+    Type_Int,
+    Type_Float,
+    Type_Bool,
+    Type_Any,
+    // distinct alias
+    
+    Type_Struct,
+    Type_Union,
+    Type_Enum,
+    Type_Proc,
+    
+    Type_Pointer,
+    Type_Array,
+    Type_Slice,
+    Type_DynamicArray,
+};
+
+typedef struct Type
+{
+    Enum8(TYPE_KIND) kind;
+} Type;
+
+enum SYMBOL_KIND
+{
+    Symbol_Invalid = 0,
+    
+    Symbol_Variable,
+    Symbol_Constant,
+    Symbol_Package,
+    Symbol_Alias,
+    Symbol_Type,
+    Symbol_Procedure,
+};
+
+typedef struct Symbol
+{
+    Enum8(SYMBOL_KIND) kind;
+} Symbol;
+
+enum TOP_LEVEL_KIND
+{
+    _Invalid = 0,
+    
+    _Procedure,
+    _Structure,
+    _Enumeration,
+    _Variable,
+    _Constant,
+    _Import,
+    _Statement,
+} TOP_LEVEL_KIND;
+
+typedef struct Top_Level
+{
+    Enum8(TOP_LEVEL_KIND) kind;
+    Package_ID package;
+    Symbol_ID symbol;
+    Statement* statement;
+    bool is_private;  // NOTE(soimn): Private or public, package level
+    bool is_exported; // NOTE(soimn): Shared library, exported or "hidden"
+} Top_Level;
+
+// TODO(soimn): Function that takes a top level AST Node and generates symbol data for it
+// TODO(soimn): The sema stage rips apart multiple * declarations if possible
 
 //////////////////////////////////////////
 

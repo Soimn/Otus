@@ -671,7 +671,24 @@ Child c = {.member = 0};
 in c you can always do (int[]){{3}} which is more portable than &(int){3}
 
 
+Attribute - @name(param0, param1)
+Directive - #name
 
+[attribute] statement
+[directive] expr
+
+[attribute] Name :: [directive] struct([attribute] [directive] name: [directive] type, ) where [directive] expr [attribute]
+{
+	[directive] name: [directive] type [attribute],
+}
+
+[attribute]
+Name :: [directive] enum [directive] type
+{
+	[directive] name = [directive] value [attribute],
+}
+
+[attribute] Name :: [directive] proc([attribute] [directive] name: [directive] type, ) -> ([attribute] name: [directive] type, ) where [directive] expr [attribute] {}
 
 
 Package system, syntax, type rules and AST format is core to the language
@@ -789,3 +806,10 @@ SerializeEntity :: proc(entity: $T)
 Polymorphism is core to the language, meaning the compiler should handle it. There should be a default solver in the
 default type checking procedure, and generation of specialized declarations should be handled by the compiler.
 Specializations are generated on demand and added to the "statement pile"
+
+for loop syntax
+
+Proposed syntax: for symbol_0, symbol_1, symbol_2 in iterator body
+Problems:
+  - No ability to specify types explicitly
+  - Use of keyword 'in' but not the 'in' operator

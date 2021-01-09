@@ -214,22 +214,3 @@ Expressions:
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-Attribute - @name(param0, param1)
-Directive - #name
-
-[attribute] statement
-[directive] expr
-
-[attribute] Name :: [directive] struct([attribute] [directive] name: [directive] type, ) where [directive] expr [attribute]
-{
-	[directive] name: [directive] type [attribute],
-}
-
-[attribute]
-Name :: [directive] enum [directive] type
-{
-	[directive] name = [directive] value [attribute],
-}
-
-[attribute] Name :: [directive] proc([attribute] [directive] name: [directive] type, ) -> ([attribute] name: [directive] type, ) where [directive] expr [attribute] {}

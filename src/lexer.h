@@ -125,7 +125,7 @@ enum KEYWORD_KIND
 {
     Keyword_Invalid = 0,
     
-    Keyword_Package,
+    //Keyword_Package,
     Keyword_Import,
     Keyword_Foreign,
     Keyword_As,
@@ -154,7 +154,7 @@ enum KEYWORD_KIND
 };
 
 String KeywordStrings[KEYWORD_KIND_COUNT] = {
-    [Keyword_Package]  = CONST_STRING("package"),
+    //[Keyword_Package]  = CONST_STRING("package"),
     [Keyword_Import]   = CONST_STRING("import"),
     [Keyword_Foreign]  = CONST_STRING("foreign"),
     [Keyword_As]       = CONST_STRING("as"),
