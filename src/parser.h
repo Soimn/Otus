@@ -1,7 +1,7 @@
 typedef struct Scope_Builder
 {
-    Bucket_Array(AST_Node*) expressions;
-    Bucket_Array(AST_Node*) statements;
+    Bucket_Array(Expression*) expressions;
+    Bucket_Array(Statement*) statements;
 } Scope_Builder;
 
 typedef struct Parser_State
@@ -9,6 +9,10 @@ typedef struct Parser_State
     Compiler_State* compiler_state;
     
     Scope_Builder scope_builder;
+    Scope_Builder top_scope_builder;
+    
+    Memory_Arena* temp_memory;
+    Memory_Arena* decl_memory;
     
     Bucket_Array(Token) tokens;
     Bucket_Array_Iterator token_it;
@@ -17,7 +21,7 @@ typedef struct Parser_State
     umm peek_index;
 } Parser_State;
 
-inline Token
+Token
 GetToken(Parser_State* state)
 {
     Token* token = (Token*)state->token_it.current;
@@ -28,7 +32,7 @@ GetToken(Parser_State* state)
     return *token;
 }
 
-inline Token
+Token
 PeekNextToken(Parser_State* state)
 {
     if (state->peek_index == 0) state->peek_it = state->token_it;
@@ -39,7 +43,7 @@ PeekNextToken(Parser_State* state)
     return *(Token*)state->peek_it.current;
 }
 
-inline void
+void
 SkipToNextToken(Parser_State* state)
 {
     BucketArray_AdvanceIterator(&state->tokens, &state->token_it);
@@ -59,8 +63,8 @@ IsAssignment(Enum8(TOKEN_KIND) kind)
 Statement*
 AddStatement(Parser_State* state)
 {
-    Statement* result = Arena_Allocate(&state->compiler_state->persistent_memory, sizeof(Statement), ALIGNOF(Statement));
-    Zero(result, sizeof(Statement));
+    Statement* result = Arena_Allocate(state->decl_memory, sizeof(Statement), ALIGNOF(Statement));
+    ZeroStruct(result);
     
     return result;
 }
@@ -68,12 +72,12 @@ AddStatement(Parser_State* state)
 Expression*
 AddExpression(Parser_State* state, Enum8(EXPR_KIND) kind)
 {
-    Expression* result = Arena_Allocate(&state->compiler_state->persistent_memory, sizeof(Expression), ALIGNOF(Expression));
+    Expression* result = Arena_Allocate(state->decl_memory, sizeof(Expression), ALIGNOF(Expression));
     
-    Zero(result, sizeof(Expression));
+    ZeroStruct(result);
     result->kind = kind;
     
-    *(Expression**)BucketArray_AppendElement(&state->scope_builder.expressions) = result;
+    *(Expression**)BucketArray_AppendElement(&state->scope_builder.expressions)     = result;
     
     return result;
 }
@@ -84,8 +88,8 @@ PushNewScopeBuilder(Parser_State* state)
     Scope_Builder prev = state->scope_builder;
     
     state->scope_builder = (Scope_Builder){
-        .expressions = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Expression*, 10),
-        .statements  = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Statement*, 10),
+        .expressions = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 10),
+        .statements  = BUCKET_ARRAY_INIT(state->temp_memory, Statement*, 10),
     };
     
     return prev;
@@ -102,83 +106,6 @@ AddStatementToCurrentScope(Parser_State* state, Enum8(STATEMENT_KIND) kind)
     return statement;
 }
 
-bool
-ResolvePathString(Parser_State* state, String path_string, String* resolved_path)
-{
-    bool encountered_errors = false;
-    
-    String prefix_name = {
-        .data = path_string.data,
-        .size = 0
-    };
-    
-    for (umm i = 0; !encountered_errors && i < path_string.size; ++i)
-    {
-        if (path_string.data[i] == ':' && prefix_name.size == 0)
-        {
-            prefix_name.size = i;
-        }
-        
-        else if (path_string.data[i] == '\\' ||
-                 path_string.data[i] == ':')
-        {
-            //// ERROR: Wrong path separator
-            encountered_errors = true;
-        }
-        
-        else if (path_string.data[i] == '.')
-        {
-            //// ERROR: Path to directory should not have an extension
-            encountered_errors = true;
-        }
-    }
-    
-    if (!encountered_errors)
-    {
-        String prefix_path = {.size = 0};
-        String file_path   = path_string;
-        
-        if (prefix_name.size != 0)
-        {
-            file_path.data += prefix_path.size + 1;
-            file_path.size -= prefix_path.size + 1;
-            
-            Path_Prefix* found_prefix = 0;
-            for (umm i = 0; i < state->compiler_state->workspace->path_prefixes.size; ++i)
-            {
-                Path_Prefix* prefix = (Path_Prefix*)DynamicArray_ElementAt(&state->compiler_state->workspace->path_prefixes, Path_Prefix, i);
-                
-                if (StringCompare(prefix_name, prefix->name))
-                {
-                    found_prefix = prefix;
-                    break;
-                }
-            }
-            
-            if (found_prefix != 0) prefix_path = found_prefix->path;
-            else
-            {
-                //// ERROR: No path prefix with the name ''
-                encountered_errors = true;
-            }
-        }
-        
-        if (!encountered_errors)
-        {
-            resolved_path->data = Arena_Allocate(&state->compiler_state->temp_memory, prefix_path.size + file_path.size, ALIGNOF(u8));
-            resolved_path->size = prefix_path.size + file_path.size;
-            
-            Copy(prefix_path.data, resolved_path->data, prefix_path.size);
-            Copy(file_path.data, resolved_path->data + prefix_path.size, file_path.size);
-        }
-    }
-    
-    // TODO(soimn): Verify directory existence and construct absolute path
-    NOT_IMPLEMENTED;
-    
-    return !encountered_errors;
-}
-
 //////////////////////////////////////////
 
 bool ParsePrimaryExpression(Parser_State* state, Expression** result, bool in_type_context, Expression** parent, bool tolerate_missing_primary);
@@ -191,7 +118,7 @@ ParseAttributes(Parser_State* state, Slice(Attribute)* attribute_slice)
 {
     bool encountered_errors = false;
     
-    Bucket_Array attributes = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Attribute, 10);
+    Bucket_Array attributes = BUCKET_ARRAY_INIT(state->temp_memory, Attribute, 10);
     
     Token token = GetToken(state);
     
@@ -224,7 +151,7 @@ ParseAttributes(Parser_State* state, Slice(Attribute)* attribute_slice)
                     SkipToNextToken(state);
                     token = GetToken(state);
                     
-                    Bucket_Array arguments = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Expression*, 10);
+                    Bucket_Array arguments = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 10);
                     
                     if (token.kind != Token_CloseParen)
                     {
@@ -255,7 +182,7 @@ ParseAttributes(Parser_State* state, Slice(Attribute)* attribute_slice)
                         
                         else
                         {
-                            attribute->arguments = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &arguments);
+                            attribute->arguments = BucketArray_FlattenContent(state->decl_memory, &arguments);
                         }
                     }
                 }
@@ -268,7 +195,7 @@ ParseAttributes(Parser_State* state, Slice(Attribute)* attribute_slice)
         }
     }
     
-    *attribute_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &attributes);
+    *attribute_slice = BucketArray_FlattenContent(state->decl_memory, &attributes);
     
     return !encountered_errors;
 }
@@ -399,7 +326,7 @@ ParseNamedArgumentList(Parser_State* state, Slice(Expression*)* argument_slice)
 {
     bool encountered_errors = false;
     
-    Bucket_Array arguments = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Expression*, 10);
+    Bucket_Array arguments = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 10);
     
     while (!encountered_errors)
     {
@@ -449,7 +376,7 @@ ParseNamedArgumentList(Parser_State* state, Slice(Expression*)* argument_slice)
         }
     }
     
-    *argument_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &arguments);
+    *argument_slice = BucketArray_FlattenContent(state->decl_memory, &arguments);
     
     return !encountered_errors;
 }
@@ -753,9 +680,9 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool in_type_co
                     }
                 }
                 
-                Slice expression_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory,
+                Slice expression_slice = BucketArray_FlattenContent(state->decl_memory,
                                                                     &state->scope_builder.expressions);
-                Slice statement_slice  = BucketArray_FlattenContent(&state->compiler_state->persistent_memory,
+                Slice statement_slice  = BucketArray_FlattenContent(state->decl_memory,
                                                                     &state->scope_builder.statements);
                 
                 (*result)->proc.return_values = AddStatement(state);
@@ -915,9 +842,9 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool in_type_co
                         }
                     }
                     
-                    Slice expression_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory,
+                    Slice expression_slice = BucketArray_FlattenContent(state->decl_memory,
                                                                         &state->scope_builder.expressions);
-                    Slice statement_slice  = BucketArray_FlattenContent(&state->compiler_state->persistent_memory,
+                    Slice statement_slice  = BucketArray_FlattenContent(state->decl_memory,
                                                                         &state->scope_builder.statements);
                     
                     (*result)->structure.members = AddStatement(state);
@@ -1045,9 +972,9 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool in_type_co
                         }
                     }
                     
-                    Slice expression_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory,
+                    Slice expression_slice = BucketArray_FlattenContent(state->decl_memory,
                                                                         &state->scope_builder.expressions);
-                    Slice statement_slice  = BucketArray_FlattenContent(&state->compiler_state->persistent_memory,
+                    Slice statement_slice  = BucketArray_FlattenContent(state->decl_memory,
                                                                         &state->scope_builder.statements);
                     
                     (*result)->enumeration.members = AddStatement(state);
@@ -1162,7 +1089,7 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool in_type_co
                     {
                         is_slice_subscript = false;
                         
-                        Bucket_Array elements = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Expression*, 10);
+                        Bucket_Array elements = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 10);
                         *(Expression**)BucketArray_AppendElement(&elements) = index;
                         
                         if (token.kind == Token_Comma)
@@ -1182,7 +1109,7 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool in_type_co
                             }
                         }
                         
-                        element_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &elements);
+                        element_slice = BucketArray_FlattenContent(state->decl_memory, &elements);
                     }
                     
                     else if (token.kind == Token_Colon)
@@ -1473,11 +1400,11 @@ ParsePrefixExpression(Parser_State* state, Expression** result)
 {
     bool encountered_errors = false;
     
-    Bucket_Array directives = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Directive, 10);
+    Bucket_Array directives = BUCKET_ARRAY_INIT(state->temp_memory, Directive, 10);
     
     while (!encountered_errors)
     {
-        Slice directive_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &directives);
+        Slice directive_slice = BucketArray_FlattenContent(state->decl_memory, &directives);
         BucketArray_Clear(&directives);
         
         Token token = GetToken(state);
@@ -1547,7 +1474,7 @@ ParsePrefixExpression(Parser_State* state, Expression** result)
                         
                         if (ended_with_space && token.kind == Token_OpenParen)
                         {
-                            Bucket_Array arguments = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory,
+                            Bucket_Array arguments = BUCKET_ARRAY_INIT(state->temp_memory,
                                                                        Expression*, 10);
                             
                             while(!encountered_errors)
@@ -1563,7 +1490,7 @@ ParsePrefixExpression(Parser_State* state, Expression** result)
                             
                             if (!encountered_errors)
                             {
-                                directive->arguments = BucketArray_FlattenContent(&state->compiler_state->persistent_memory,
+                                directive->arguments = BucketArray_FlattenContent(state->decl_memory,
                                                                                   &arguments);
                                 
                                 token = GetToken(state);
@@ -1882,7 +1809,7 @@ ParseDeclarationOrAssignment(Parser_State* state, Expression* first_expr, Statem
 {
     bool encountered_errors = false;
     
-    Bucket_Array lhs = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Expression*, 3);
+    Bucket_Array lhs = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 3);
     *(Expression**)BucketArray_AppendElement(&lhs) = first_expr;
     
     Token token = GetToken(state);
@@ -1908,8 +1835,8 @@ ParseDeclarationOrAssignment(Parser_State* state, Expression* first_expr, Statem
     {
         token = GetToken(state);
         
-        Bucket_Array types  = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Expression*, 3);
-        Bucket_Array values = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Expression*, 3);
+        Bucket_Array types  = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 3);
+        Bucket_Array values = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 3);
         bool is_uninitialized = false;
         bool is_constant      = false;
         
@@ -2019,9 +1946,9 @@ ParseDeclarationOrAssignment(Parser_State* state, Expression* first_expr, Statem
             
             if (!encountered_errors)
             {
-                Slice name_slice  = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &lhs);
-                Slice type_slice  = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &types);
-                Slice value_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &values);
+                Slice name_slice  = BucketArray_FlattenContent(state->decl_memory, &lhs);
+                Slice type_slice  = BucketArray_FlattenContent(state->decl_memory, &types);
+                Slice value_slice = BucketArray_FlattenContent(state->decl_memory, &values);
                 
                 if (is_constant)
                 {
@@ -2056,7 +1983,7 @@ ParseDeclarationOrAssignment(Parser_State* state, Expression* first_expr, Statem
             {
                 result->kind = Statement_Assignment;
                 
-                Bucket_Array rhs = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Expression*, 3);
+                Bucket_Array rhs = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 3);
                 
                 switch (token.kind)
                 {
@@ -2109,8 +2036,8 @@ ParseDeclarationOrAssignment(Parser_State* state, Expression* first_expr, Statem
                         {
                             SkipToNextToken(state);
                             
-                            Slice lhs_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &lhs);
-                            Slice rhs_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &rhs);
+                            Slice lhs_slice = BucketArray_FlattenContent(state->decl_memory, &lhs);
+                            Slice rhs_slice = BucketArray_FlattenContent(state->decl_memory, &rhs);
                             
                             result->assignment_statement.left_side  = lhs_slice;
                             result->assignment_statement.right_side = rhs_slice;
@@ -2132,8 +2059,8 @@ ParseBlock(Parser_State* state, Statement* block, bool is_single_line)
     Scope_Builder prev_builder = state->scope_builder;
     
     state->scope_builder = (Scope_Builder){
-        .expressions = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Expression*, 10),
-        .statements  = BUCKET_ARRAY_INIT(&state->compiler_state->temp_memory, Statement*, 10),
+        .expressions = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 10),
+        .statements  = BUCKET_ARRAY_INIT(state->temp_memory, Statement*, 10),
     };
     
     do
@@ -2166,8 +2093,8 @@ ParseBlock(Parser_State* state, Statement* block, bool is_single_line)
     } while (!encountered_errors && !is_single_line);
     
     
-    Slice expression_slice = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &state->scope_builder.expressions);
-    Slice statement_slice  = BucketArray_FlattenContent(&state->compiler_state->persistent_memory, &state->scope_builder.statements);
+    Slice expression_slice = BucketArray_FlattenContent(state->decl_memory, &state->scope_builder.expressions);
+    Slice statement_slice  = BucketArray_FlattenContent(state->decl_memory, &state->scope_builder.statements);
     
     block->kind              = Statement_Block;
     block->block.expressions = expression_slice;
@@ -2322,9 +2249,9 @@ ParseStatement(Parser_State* state, Statement* result, bool check_for_semicolon)
                 
                 else
                 {
-                    String resolved_path;
-                    if (!ResolvePathString(state, token.string, &resolved_path)) encountered_errors = true;
-                    else
+                    //String resolved_path;
+                    /*if (!ResolvePathString(state->compiler_state, token.string, &resolved_path)) encountered_errors = true;
+                    else*/
                     {
                         if (is_foreign)
                         {
@@ -2333,22 +2260,7 @@ ParseStatement(Parser_State* state, Statement* result, bool check_for_semicolon)
                         
                         else
                         {
-                            result->import_declaration.package_id = INVALID_PACKAGE_ID;
-                            
-                            for (umm i = 0; i < state->compiler_state->workspace->packages.size; ++i)
-                            {
-                                Package* package = DynamicArray_ElementAt(&state->compiler_state->workspace->packages, Package, i);
-                                
-                                if (StringCompare(resolved_path, package->path))
-                                {
-                                    result->import_declaration.package_id = i;
-                                }
-                            }
-                            
-                            if (result->import_declaration.package_id == INVALID_PACKAGE_ID)
-                            {
-                                NOT_IMPLEMENTED;
-                            }
+                            NOT_IMPLEMENTED;
                         }
                         
                         if (!encountered_errors)
@@ -2889,16 +2801,20 @@ ParseStatement(Parser_State* state, Statement* result, bool check_for_semicolon)
 }
 
 bool
-ParseFile(Compiler_State* compiler_state, File_ID file_id)
+ParseFile(Compiler_State* compiler_state, Package_ID package_id, File_ID file_id)
 {
     bool encountered_errors = false;
     
-    Arena_ClearAll(&compiler_state->transient_memory);
     Arena_ClearAll(&compiler_state->temp_memory);
     
     Parser_State state = {};
     state.compiler_state = compiler_state;
-    state.tokens         = BUCKET_ARRAY_INIT(&compiler_state->transient_memory, Token, 256);
+    state.tokens         = BUCKET_ARRAY_INIT(&compiler_state->temp_memory, Token, 256);
+    
+    state.scope_builder = (Scope_Builder){
+        .expressions = BUCKET_ARRAY_INIT(&compiler_state->temp_memory, Expression*, 10),
+        .statements  = BUCKET_ARRAY_INIT(&compiler_state->temp_memory, Statement*, 10),
+    };
     
     if (!LexFile(compiler_state, file_id, &state.tokens)) encountered_errors = true;
     else
@@ -2906,7 +2822,38 @@ ParseFile(Compiler_State* compiler_state, File_ID file_id)
         state.token_it = BucketArray_CreateIterator(&state.tokens);
         state.peek_it  = BucketArray_CreateIterator(&state.tokens);
         
-        NOT_IMPLEMENTED;
+        while (!encountered_errors)
+        {
+            Memory_Arena temp_memory = Arena_BeginTempMemory(&compiler_state->temp_memory);
+            state.temp_memory = &temp_memory;
+            state.decl_memory = &compiler_state->persistent_memory;
+            
+            Token token = GetToken(&state);
+            
+            if (token.kind == Token_EndOfStream) break;
+            else
+            {
+                Statement* statement = AddStatement(&state);
+                
+                if (!ParseStatement(&state, statement, true))
+                {
+                    encountered_errors = true;
+                }
+            }
+            
+            Arena_EndTempMemory(&compiler_state->temp_memory, &temp_memory);
+        }
+    }
+    
+    if (!encountered_errors)
+    {
+        for (Bucket_Array_Iterator it = BucketArray_CreateIterator(&state.scope_builder.statements);
+             it.current != 0;
+             BucketArray_AdvanceIterator(&state.scope_builder.statements, &it))
+        {
+            Statement* statement = it.current;
+            Workspace_CheckinDeclaration(&compiler_state->workspace, (Declaration){.package = package_id, .ast = statement});
+        }
     }
     
     return !encountered_errors;

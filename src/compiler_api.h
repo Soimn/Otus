@@ -1,7 +1,10 @@
 #ifdef _WIN32
 
-#define EXPORT __declspec(dllexport)
-#define IMPORT __declspec(dllimport)
+#ifdef OTUS_DLL_EXPORTS
+# define API_FUNC __declspec(dllexport)
+#else
+# define API_FUNC __declspec(dllimport)
+#endif
 
 typedef signed __int8  i8;
 typedef signed __int16 i16;
@@ -15,8 +18,11 @@ typedef unsigned __int64 u64;
 
 #elif __linux__
 
-#define EXPORT __attribute__((__visible__))
-#define IMPORT
+#ifdef OTUS_DLL_EXPORTS
+# define API_FUNC __attribute__ ((visibility("default")))
+#else
+# define API_FUNC __attribute__ ((visibility("default")))
+#endif
 
 typedef __INT8_TYPE__  i8;
 typedef __INT16_TYPE__ i16;
@@ -87,10 +93,13 @@ typedef struct Dynamic_Array
 //////////////////////////////////////////
 
 typedef i32 File_ID;
-typedef i32 Package_ID;
+typedef u32 Package_ID;
+typedef u32 Scope_ID;
+typedef u32 Type_ID;
+typedef struct Symbol_ID { Scope_ID scope; u32 index; } Symbol_ID;
+
 
 #define INVALID_FILE_ID -1
-#define INVALID_PACKAGE_ID -1
 
 //////////////////////////////////////////
 
@@ -201,7 +210,7 @@ typedef struct Directive
 
 typedef struct Expression
 {
-    Enum8(AST_EXPR_KIND) kind;
+    Enum8(EXPR_KIND) kind;
     Text_Interval text;
     Slice(Directive) directives;
     
@@ -339,6 +348,7 @@ typedef struct Statement
     {
         struct
         {
+            Scope_ID scope_id;
             Expression* label;
             Slice(Expression*) expressions;
             Slice(Statement*) statements;
@@ -400,17 +410,17 @@ typedef struct Statement
         
         struct
         {
+            Slice(Expression*) names;
             Slice(Expression*) types;
             Slice(Expression*) values;
-            Slice(Expression*) names;
             bool is_uninitialized;
         } variable_declaration;
         
         struct
         {
+            Slice(Expression*) names;
             Slice(Expression*) types;
             Slice(Expression*) values;
-            Slice(Expression*) names;
             bool is_distinct;
         } constant_declaration;
         
@@ -454,9 +464,6 @@ typedef struct Statement
 
 //////////////////////////////////////////
 
-typedef i32 Symbol_ID;
-typedef i32 Type_ID;
-
 enum TYPE_KIND
 {
     Type_Invalid = 0,
@@ -465,10 +472,9 @@ enum TYPE_KIND
     Type_Float,
     Type_Bool,
     Type_Any,
-    // distinct alias
+    Type_Alias,
     
     Type_Struct,
-    Type_Union,
     Type_Enum,
     Type_Proc,
     
@@ -478,9 +484,126 @@ enum TYPE_KIND
     Type_DynamicArray,
 };
 
+typedef struct Value
+{
+    Enum8(TYPE_KIND) kind;
+    
+    union
+    {
+        i64 int64;
+        u64 uint64;
+        f32 float32;
+        f64 float64;
+        bool boolean;
+        
+        struct
+        {
+            u64 type_info; // TODO(soimn): type_info* or typeid?
+            u64 data;
+        } any;
+        
+        struct
+        {
+            Slice(Value) members;
+        } structure;
+        
+        struct
+        {
+            Slice(Value) members;
+        } enumeration;
+        
+        u64 pointer;
+        
+        struct
+        {
+            Slice(Value) elements;
+            // TODO(soimn): u64 size?
+        } array;
+        
+        struct
+        {
+            u64 pointer;
+            u64 size;
+        } slice;
+        
+        struct
+        {
+            u64 allocator;
+            u64 pointer;
+            u64 size;
+            u64 capacity;
+        } dynamic_array;
+    };
+} Value;
+
+typedef struct Type_Field_Info
+{
+    String name;
+    Type_ID type;
+    Value defaul_value;
+} Type_Field_Info;
+
 typedef struct Type
 {
     Enum8(TYPE_KIND) kind;
+    
+    union
+    {
+        struct
+        {
+            u8 size;
+            bool is_signed;
+        } integer;
+        
+        struct
+        {
+            u8 size;
+        } floating;
+        
+        struct
+        {
+            Type_ID type;
+            bool is_distinct;
+        } alias;
+        
+        struct
+        {
+            Slice(Type_Field_Info) members;
+            bool is_union;
+        } structure;
+        
+        struct
+        {
+            Slice(Type_Field_Info) members;
+        } enumeration;
+        
+        struct
+        {
+            Slice(Type_Field_Info) parameters;
+            Slice(Type_Field_Info) return_values;
+        } procedure;
+        
+        struct
+        {
+            Type_ID type;
+        } pointer;
+        
+        struct
+        {
+            Type_ID type;
+            u64 size;
+        } array;
+        
+        struct
+        {
+            Type_ID type;
+        } slice;
+        
+        struct
+        {
+            Type_ID type;
+        } dynamic_array;
+    };
 } Type;
 
 enum SYMBOL_KIND
@@ -489,48 +612,87 @@ enum SYMBOL_KIND
     
     Symbol_Variable,
     Symbol_Constant,
-    Symbol_Package,
     Symbol_Alias,
     Symbol_Type,
     Symbol_Procedure,
+    Symbol_Package,
 };
 
 typedef struct Symbol
 {
+    String name;
+    
+    union
+    {
+        Type_ID type;
+        Symbol_ID aliased_symbol;
+        Package_ID package;
+    };
+    
     Enum8(SYMBOL_KIND) kind;
+    bool is_public;
 } Symbol;
 
-enum TOP_LEVEL_KIND
+typedef struct Scope
 {
-    _Invalid = 0,
+    Dynamic_Array(Symbol) symbols;
+    Dynamic_Array(Expression*) expressions;
+    Dynamic_Array(Statement*) statements;
+} Scope;
+
+//////////////////////////////////////////
+
+enum DECLARATION_KIND
+{
+    Declaration_Invalid = 0,
     
-    _Procedure,
-    _Structure,
-    _Enumeration,
-    _Variable,
-    _Constant,
-    _Import,
-    _Statement,
-} TOP_LEVEL_KIND;
+    Declaration_Procedure,
+    Declaration_Structure,
+    Declaration_Enumeration,
+    Declaration_Variable,
+    Declaration_Constant,
+    Declaration_Import,
+} DECLARATION_KIND;
 
-typedef struct Top_Level
+typedef struct Declaration
 {
-    Enum8(TOP_LEVEL_KIND) kind;
+    Enum8(DECLARATION_KIND) kind;
+    
     Package_ID package;
-    Symbol_ID symbol;
-    Statement* statement;
-    bool is_private;  // NOTE(soimn): Private or public, package level
-    bool is_exported; // NOTE(soimn): Shared library, exported or "hidden"
-} Top_Level;
+    Statement* ast;
+    Dynamic_Array(Scope) scopes;
+    
+    u64 user_data;
+} Declaration;
 
-// TODO(soimn): Function that takes a top level AST Node and generates symbol data for it
-// TODO(soimn): The sema stage rips apart multiple * declarations if possible
+typedef struct Declaration_Pool_Block
+{
+    struct Declaration_Pool_Block* next;
+    u64 free_map;
+    Slice(Declaration) declarations;
+} Declaration_Pool_Block;
+
+typedef struct Declaration_Pool
+{
+    Declaration_Pool_Block* first;
+    Declaration_Pool_Block* current;
+} Declaration_Pool;
+
+typedef struct Declaration_Iterator
+{
+    Declaration_Pool_Block* block;
+    u64 index;
+    Declaration* current;
+} Declaration_Iterator;
 
 //////////////////////////////////////////
 
 typedef struct Package
 {
+    String name;
     String path;
+    Slice(File_ID) files;
+    Dynamic_Array(Symbol) symbols;
 } Package;
 
 typedef struct Path_Prefix
@@ -541,8 +703,20 @@ typedef struct Path_Prefix
 
 typedef struct Workspace
 {
-    void* compiler_state;
-    Slice(String) file_paths;
-    Slice(Package) packages;
+    Dynamic_Array(String) file_paths;
+    Dynamic_Array(Package) packages;
     Slice(Path_Prefix) path_prefixes;
+    
+    Declaration_Pool check_pool;
+    Declaration_Pool commit_pool;
 } Workspace;
+
+//////////////////////////////////////////
+
+API_FUNC Workspace* Workspace_Open(Slice(Path_Prefix) path_prefixes, String main_file);
+API_FUNC void Workspace_Close(Workspace* workspace);
+API_FUNC Declaration_Iterator Workspace_IterateDeclarations(Workspace* workspace);
+API_FUNC void Workspace_AdvanceIterator(Workspace* workspace, Declaration_Iterator* it, bool should_loop);
+API_FUNC Declaration Workspace_CheckoutDeclaration(Workspace* workspace, Declaration_Iterator it);
+API_FUNC void Workspace_CheckinDeclaration(Workspace* workspace, Declaration declaration);
+API_FUNC void Workpace_CommitDeclaration(Workspace* workspace, Declaration declaration);

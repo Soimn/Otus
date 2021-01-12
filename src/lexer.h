@@ -203,7 +203,7 @@ typedef struct Token
 void
 ReportLexerError(Compiler_State* compiler_state, Text_Interval text, Text_Interval highlight, const char* message, ...)
 {
-    String* path = Slice_ElementAt(&compiler_state->workspace->file_paths, String, highlight.pos.file);
+    String* path = DynamicArray_ElementAt(&compiler_state->workspace.file_paths, String, highlight.pos.file);
     
     Print("%S(%u:%u): ", *path, highlight.pos.line, highlight.pos.column);
     
@@ -218,7 +218,7 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
 {
     bool encountered_errors = false;
     
-    String* path = Slice_ElementAt(&compiler_state->workspace->file_paths, String, file_id);
+    String* path = DynamicArray_ElementAt(&compiler_state->workspace.file_paths, String, file_id);
     
     String file_content;
     if (!System_ReadEntireFile(*path, &compiler_state->temp_memory, &file_content))
@@ -833,6 +833,7 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                             token->string = (String){0};
                             if (raw_string.size != 0)
                             {
+                                // TODO(soimn): Find out where to store strings
                                 token->string.data = Arena_Allocate(&compiler_state->persistent_memory, raw_string.size, ALIGNOF(u8));
                                 token->string.size = 0;
                                 

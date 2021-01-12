@@ -1,4 +1,4 @@
-inline u8
+u8
 AlignOffset(void* ptr, u8 alignment)
 {
     umm overshot     = (umm)ptr + (alignment - 1);
@@ -7,13 +7,13 @@ AlignOffset(void* ptr, u8 alignment)
     return (u8)((u8*)rounded_down - (u8*)ptr);
 }
 
-inline void*
+void*
 Align(void* ptr, u8 alignment)
 {
     return (u8*)ptr + AlignOffset(ptr, alignment);
 }
 
-inline void
+void
 Copy(void* src, void* dst, umm size)
 {
     u8* bsrc = (u8*)src;
@@ -36,7 +36,7 @@ Copy(void* src, void* dst, umm size)
     }
 }
 
-inline void
+void
 Zero(void* ptr, umm size)
 {
     u8* bptr = (u8*)ptr;
@@ -71,7 +71,6 @@ typedef struct Memory_Arena
     Memory_Block* first;
     Memory_Block* current;
     Memory_Free_Entry* free_list;
-    bool dont_use_free_list;
 } Memory_Arena;
 
 #define ARENA_INIT(a) {.allocator = a}
@@ -95,56 +94,28 @@ Arena_FreeAll(Memory_Arena* arena)
 void
 Arena_FreeSize(Memory_Arena* arena, void* ptr, umm size)
 {
-    if (arena->dont_use_free_list == false)
+    Memory_Block* scan = arena->first;
+    for (; scan != 0; scan = scan->next)
     {
-        Memory_Block* scan = arena->first;
-        for (; scan != 0; scan = scan->next)
+        if ((u8*)ptr >= (u8*)(scan + 1) &&
+            (u8*)ptr + size <= (u8*)MEMORY_BLOCK_CURSOR(scan))
         {
-            if ((u8*)ptr >= (u8*)(scan + 1) &&
-                (u8*)ptr <= (u8*)MEMORY_BLOCK_CURSOR(scan))
-            {
-                break;
-            }
+            break;
         }
+    }
+    
+    ASSERT(scan != 0);
+    
+    umm offset = AlignOffset(ptr, ALIGNOF(Memory_Free_Entry));
+    
+    if (size >= sizeof(Memory_Free_Entry) + offset)
+    {
+        Memory_Free_Entry* entry = (Memory_Free_Entry*)((u8*)ptr + offset);
+        entry->next   = arena->free_list;
+        entry->offset = offset;
+        entry->size   = size - offset;
         
-        ASSERT(scan != 0);
-        
-        umm offset = AlignOffset(ptr, ALIGNOF(Memory_Free_Entry));
-        
-        if (size >= sizeof(Memory_Free_Entry) + offset)
-        {
-            umm first_block_size = (u8*)scan + scan->offset - (u8*)ptr + size;
-            umm first_block_bite = MIN(size, first_block_size);
-            
-            if (first_block_bite >= sizeof(Memory_Free_Entry) + offset)
-            {
-                Memory_Free_Entry* entry = (Memory_Free_Entry*)((u8*)ptr + offset);
-                entry->next   = arena->free_list;
-                entry->offset = offset;
-                entry->size   = first_block_bite - offset;
-                
-                arena->free_list = entry;
-            }
-            
-            size -= first_block_bite;
-            
-            while (size != 0)
-            {
-                scan = scan->next;
-                ASSERT(scan != 0);
-                
-                umm bite = MIN(size, scan->offset - sizeof(Memory_Block));
-                
-                Memory_Free_Entry* entry = (Memory_Free_Entry*)(scan + 1);
-                entry->next   = arena->free_list;
-                entry->offset = 0;
-                entry->size   = bite;
-                
-                arena->free_list = entry;
-                
-                size -= bite;
-            }
-        }
+        arena->free_list = entry;
     }
 }
 
@@ -162,7 +133,7 @@ Arena_ClearAll(Memory_Arena* arena)
     arena->current = arena->first;
 }
 
-inline bool
+bool
 Arena_IsCleared(Memory_Arena* arena)
 {
     return (arena->current == arena->first &&
@@ -260,6 +231,48 @@ Arena_Allocate(Memory_Arena* arena, umm size, u8 alignment)
     return result;
 }
 
+Memory_Arena
+Arena_BeginTempMemory(Memory_Arena* source_arena)
+{
+    Memory_Block* new_block = source_arena->first;
+    
+    while (new_block != 0)
+    {
+        if (new_block->offset == sizeof(Memory_Block)) break;
+        else new_block = new_block->next;
+    }
+    
+    if (new_block == 0)
+    {
+        new_block         = System_AllocateMemory(MEMORY_ARENA_DEFAULT_BLOCK_SIZE);
+        new_block->next   = 0;
+        new_block->offset = sizeof(Memory_Block);
+        new_block->space  = MEMORY_ARENA_DEFAULT_BLOCK_SIZE;
+        
+        if (source_arena->current) source_arena->current->next = new_block;
+        else
+        {
+            source_arena->first   = new_block;
+            source_arena->current = new_block;
+        }
+    }
+    
+    Memory_Arena temp_arena = {
+        .first     = new_block,
+        .current   = new_block,
+        .free_list = 0,
+    };
+    
+    return temp_arena;
+}
+
+void
+Arena_EndTempMemory(Memory_Arena* source_arena, Memory_Arena* temp_arena)
+{
+    Arena_ClearAll(temp_arena);
+    ZeroStruct(temp_arena);
+}
+
 //////////////////////////////////////////
 
 typedef struct Bucket_Array
@@ -327,7 +340,7 @@ BucketArray_ElementCount(Bucket_Array* array)
     return (array->bucket_count - 1) * array->bucket_size + array->current_bucket_size;
 }
 
-inline void*
+void*
 BucketArray_ElementAt(Bucket_Array* array, umm index)
 {
     umm bucket_index  = index / array->bucket_size;
@@ -380,7 +393,7 @@ typedef struct Bucket_Array_Iterator
     umm index;
 } Bucket_Array_Iterator;
 
-inline Bucket_Array_Iterator
+Bucket_Array_Iterator
 BucketArray_CreateIterator(Bucket_Array* array)
 {
     Bucket_Array_Iterator it = {
@@ -392,7 +405,7 @@ BucketArray_CreateIterator(Bucket_Array* array)
     return it;
 }
 
-inline void
+void
 BucketArray_AdvanceIterator(Bucket_Array* array, Bucket_Array_Iterator* it)
 {
     ASSERT(it->current != 0);

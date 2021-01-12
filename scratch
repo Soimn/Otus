@@ -813,3 +813,11 @@ Proposed syntax: for symbol_0, symbol_1, symbol_2 in iterator body
 Problems:
   - No ability to specify types explicitly
   - Use of keyword 'in' but not the 'in' operator
+
+
+Todo
+ - Generate missing symbol info from partial declaration
+ - Symbol id that can reference both symbols in scope chain and package tables
+
+What happens to package symbol entry when
+ a decl is checked out?

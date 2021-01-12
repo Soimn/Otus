@@ -1,4 +1,4 @@
-inline char
+char
 ToUpper(char c)
 {
     if (c >= 'a' && c <= 'z')
@@ -9,7 +9,7 @@ ToUpper(char c)
     return c;
 }
 
-inline char
+char
 ToLower(char c)
 {
     if (c >= 'A' && c <= 'Z')
@@ -20,19 +20,19 @@ ToLower(char c)
     return c;
 }
 
-inline bool
+bool
 IsAlpha(char c)
 {
     return (c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z');
 }
 
-inline bool
+bool
 IsDigit(char c)
 {
     return (c >= '0' && c <= '9');
 }
 
-inline bool
+bool
 StringCompare(String s0, String s1)
 {
     while (s0.size && s1.size && *s0.data == *s1.data)
