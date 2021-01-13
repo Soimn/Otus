@@ -821,3 +821,21 @@ Todo
 
 What happens to package symbol entry when
  a decl is checked out?
+What about the type info from proc headers?
+
+Parser problems
+ - Should package declarations be a thing?
+
+What to do about error handling in the meta program?
+
+
+
+
+
+
+
+
+
+
+
+

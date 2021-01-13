@@ -148,6 +148,7 @@ enum EXPR_KIND
     Expr_Or,
     Expr_BitAnd,
     Expr_BitOr,
+    Expr_BitXor,
     Expr_Member,
     Expr_IsEqual,
     Expr_IsNotEqual,
@@ -177,7 +178,6 @@ enum EXPR_KIND
     Expr_Enum,
     Expr_Proc,
     Expr_Polymorphic,
-    Expr_PolymorphicAlias,
     
     // Literals
     Expr_Number,
@@ -185,15 +185,11 @@ enum EXPR_KIND
     Expr_Identifier,
     Expr_StructLiteral,
     Expr_ArrayLiteral,
-    Expr_Range,
+    Expr_Interval,
     
     // Special
     Expr_NamedArgument,
     Expr_Empty,
-    
-    // Ambiguities
-    Expr_SubscriptButMaybeLiteral,
-    Expr_CallButMaybeSpecialization,
 };
 
 typedef struct Attribute
@@ -233,6 +229,13 @@ typedef struct Expression
         {
             struct Expression* operand;
         } unary_expression;
+        
+        struct
+        {
+            struct Expression* min;
+            struct Expression* max;
+            bool is_open;
+        } interval_expression;
         
         struct
         {
@@ -288,13 +291,6 @@ typedef struct Expression
             Slice(Expression*) elements;
         } array_literal;
         
-        struct
-        {
-            struct Expression* min;
-            struct Expression* max;
-            bool is_open;
-        } range_literal;
-        
         String string;
         Number number;
         
@@ -334,8 +330,6 @@ enum STATEMENT_KIND
     
     Statement_Parameter,
     Statement_ReturnValue,
-    Statement_StructMember,
-    Statement_EnumMember,
 };
 
 typedef struct Statement
@@ -410,25 +404,71 @@ typedef struct Statement
         
         struct
         {
-            Slice(Expression*) names;
-            Slice(Expression*) types;
-            Slice(Expression*) values;
+            union
+            {
+                struct
+                {
+                    Slice(Expression*) names;
+                    Slice(Expression*) types;
+                    Slice(Expression*) values;
+                };
+                
+                struct
+                {
+                    Expression* name;
+                    Expression* type;
+                    Expression* value;
+                };
+            };
+            
+            bool is_multi;
             bool is_uninitialized;
+            bool is_using;
         } variable_declaration;
         
         struct
         {
-            Slice(Expression*) names;
-            Slice(Expression*) types;
-            Slice(Expression*) values;
+            union
+            {
+                struct
+                {
+                    Slice(Expression*) names;
+                    Slice(Expression*) types;
+                    Slice(Expression*) values;
+                };
+                
+                struct
+                {
+                    Expression* name;
+                    Expression* type;
+                    Expression* value;
+                };
+            };
+            
+            bool is_multi;
             bool is_distinct;
+            bool is_using;
         } constant_declaration;
         
         struct
         {
+            union
+            {
+                struct
+                {
+                    Slice(Expression*) left_exprs;
+                    Slice(Expression*) right_exprs;
+                };
+                
+                struct
+                {
+                    struct Expression* left_expr;
+                    struct Expression* right_expr;
+                };
+            };
+            
             Enum8(AST_EXPR_KIND) op;
-            Slice(Expression*) left_side;
-            Slice(Expression*) right_side;
+            bool is_multi;
         } assignment_statement;
         
         Expression* expression;
@@ -446,19 +486,6 @@ typedef struct Statement
             struct Expression* name;
             struct Expression* type;
         } return_value;
-        
-        struct
-        {
-            struct Expression* name;
-            struct Expression* type;
-            bool is_using;
-        } struct_member;
-        
-        struct
-        {
-            struct Expression* name;
-            struct Expression* value;
-        } enum_member;
     };
 } Statement;
 
@@ -498,8 +525,8 @@ typedef struct Value
         
         struct
         {
-            u64 type_info; // TODO(soimn): type_info* or typeid?
             u64 data;
+            Type_ID type;
         } any;
         
         struct
@@ -517,7 +544,6 @@ typedef struct Value
         struct
         {
             Slice(Value) elements;
-            // TODO(soimn): u64 size?
         } array;
         
         struct
@@ -540,7 +566,7 @@ typedef struct Type_Field_Info
 {
     String name;
     Type_ID type;
-    Value defaul_value;
+    Value default_value;
 } Type_Field_Info;
 
 typedef struct Type
@@ -635,9 +661,9 @@ typedef struct Symbol
 
 typedef struct Scope
 {
-    Dynamic_Array(Symbol) symbols;
-    Dynamic_Array(Expression*) expressions;
-    Dynamic_Array(Statement*) statements;
+    Slice(Symbol) symbols;
+    Slice(Expression*) expressions;
+    Slice(Statement*) statements;
 } Scope;
 
 //////////////////////////////////////////
@@ -652,15 +678,22 @@ enum DECLARATION_KIND
     Declaration_Variable,
     Declaration_Constant,
     Declaration_Import,
-} DECLARATION_KIND;
+};
+
+enum DECLARATION_STAGE_KIND
+{
+    DeclarationStage_Parsed,
+    DeclarationStage_SemaChecked,
+    DeclarationStage_TypeChecked,
+};
 
 typedef struct Declaration
 {
     Enum8(DECLARATION_KIND) kind;
+    Enum8(DECLARATION_STAGE_KIND) stage;
     
     Package_ID package;
     Statement* ast;
-    Dynamic_Array(Scope) scopes;
     
     u64 user_data;
 } Declaration;
@@ -687,12 +720,88 @@ typedef struct Declaration_Iterator
 
 //////////////////////////////////////////
 
+Declaration_Iterator
+DeclarationPool_CreateIterator(Declaration_Pool* pool)
+{
+    Declaration_Iterator it = {
+        .block   = pool->first,
+        .index   = 0,
+        .current = 0
+    };
+    
+    while (it.block != 0 && it.block->free_map == 0)
+    {
+        it.index += 64;
+        it.block  = it.block->next;
+    }
+    
+    if (it.block != 0)
+    {
+        u64 first_decl = (~it.block->free_map + 1) & it.block->free_map;
+        
+        // NOTE(soimn): index += log_2(first_decl)
+        //              the bit pattern of a float is proportional to its log
+        f32 f     = first_decl;
+        it.index += *(u32*)&f / (1 << 23) - 127;
+        
+        it.current = (Declaration*)it.block->declarations.data + it.index % 64;
+    }
+    
+    return it;
+}
+
+void
+DeclarationPool_AdvanceIterator(Declaration_Pool* pool, Declaration_Iterator* it, bool should_loop)
+{
+    if (pool->first == 0) it->current = 0;
+    else
+    {
+        it->index  += 1;
+        it->current = 0;
+        if (it->index % 64 == 0) it->block = it->block->next;
+        
+        bool looped_once = false;
+        for (;;)
+        {
+            if (it->block == 0)
+            {
+                it->block = pool->first;
+                
+                if (!should_loop || looped_once) break;
+                else looped_once = true;
+            }
+            
+            u64 free_map = it->block->free_map & (~0ULL << (it->index % 64));
+            
+            if (free_map != 0)
+            {
+                u64 first_decl = (~it->block->free_map + 1) & it->block->free_map;
+                
+                // NOTE(soimn): index += log_2(first_decl)
+                //              the bit pattern of a float is proportional to its log
+                f32 f      = first_decl;
+                it->index += *(u32*)&f / (1 << 23) - 127;
+                
+                it->current = (Declaration*)it->block->declarations.data + it->index % 64;
+            }
+            
+            else
+            {
+                it->index += 64 - it->index % 64;
+                it->block  = it->block->next;
+            }
+        }
+    }
+}
+
+//////////////////////////////////////////
+
 typedef struct Package
 {
     String name;
     String path;
     Slice(File_ID) files;
-    Dynamic_Array(Symbol) symbols;
+    //Dynamic_Array(Symbol) symbols;
 } Package;
 
 typedef struct Path_Prefix
@@ -707,7 +816,7 @@ typedef struct Workspace
     Dynamic_Array(Package) packages;
     Slice(Path_Prefix) path_prefixes;
     
-    Declaration_Pool check_pool;
+    Declaration_Pool meta_pool;
     Declaration_Pool commit_pool;
 } Workspace;
 
@@ -715,8 +824,6 @@ typedef struct Workspace
 
 API_FUNC Workspace* Workspace_Open(Slice(Path_Prefix) path_prefixes, String main_file);
 API_FUNC void Workspace_Close(Workspace* workspace);
-API_FUNC Declaration_Iterator Workspace_IterateDeclarations(Workspace* workspace);
-API_FUNC void Workspace_AdvanceIterator(Workspace* workspace, Declaration_Iterator* it, bool should_loop);
-API_FUNC Declaration Workspace_CheckoutDeclaration(Workspace* workspace, Declaration_Iterator it);
-API_FUNC void Workspace_CheckinDeclaration(Workspace* workspace, Declaration declaration);
-API_FUNC void Workpace_CommitDeclaration(Workspace* workspace, Declaration declaration);
+API_FUNC bool Workspace_PopDeclaration(Workspace* workspace, Declaration* declaration);
+API_FUNC bool Workspace_PushDeclaration(Workspace* workspace, Declaration declaration, Enum8(DECLARATION_STAGE_KIND) stage);
+API_FUNC bool Workspace_CommitDeclaration(Workspace* workspace, Declaration declaration);

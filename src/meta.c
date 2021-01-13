@@ -15,11 +15,24 @@ main()
     Workspace* workspace = Workspace_Open((Slice){.data = path_prefixes, .size = ARRAY_COUNT(path_prefixes)},
                                           STRING("../examples/demo.os"));
     
-    for (Declaration_Iterator it = Workspace_IterateDeclarations(workspace);
+#if 0
+    for (Declaration_Iterator it = DeclarationPool_CreateIterator(pool);
          it.current != 0;
-         Workspace_AdvanceIterator(workspace, &it, false))
+         DeclarationPool_AdvanceIterator(pool, &it, false))
     {
         // ...
+    }
+    
+    for (Declaration_Iterator it = DeclarationPool_CreateIterator(pool);
+         DeclarationPool_AdvanceIterator(pool, &it, false);)
+    {
+        // ...
+    }
+#endif
+    
+    for (Declaration declaration; Workspace_PopDeclaration(workspace, &declaration); )
+    {
+        Workspace_CommitDeclaration(workspace, declaration);
     }
     
     Workspace_Close(workspace);

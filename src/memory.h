@@ -420,3 +420,50 @@ BucketArray_AdvanceIterator(Bucket_Array* array, Bucket_Array_Iterator* it)
         it->current = (u8*)it->current_bucket + sizeof(u64) + offset * array->element_size;
     }
 }
+
+//////////////////////////////////////////
+
+#define DynamicArray_Reserve(arena, array, T, capacity) _DynamicArray_Reserve((arena), (array), sizeof(T), (capacity))
+void
+_DynamicArray_Reserve(Memory_Arena* arena, Dynamic_Array* array, umm element_size, umm capacity)
+{
+    if (array->capacity < capacity)
+    {
+        void* memory = Arena_Allocate(arena, capacity * element_size, ALIGNOF(u64));
+        
+        Copy(array->data, memory, array->size * element_size);
+        Zero((u8*)memory + array->size * element_size, (capacity - array->size) * element_size);
+        
+        Arena_FreeSize(arena, array->data, array->capacity * element_size);
+        array->data     = memory;
+        array->capacity = capacity;
+    }
+}
+
+#define DynamicArray_Append(arena, array, T) _DynamicArray_Append((arena), (array), sizeof(T))
+void*
+_DynamicArray_Append(Memory_Arena* arena, Dynamic_Array* array, umm element_size)
+{
+    if (array->size == array->capacity)
+    {
+        _DynamicArray_Reserve(arena, array, element_size, MAX(10, array->size * 1.5));
+    }
+    
+    void* result = (u8*)array->data + array->size * element_size;
+    Zero(result, element_size);
+    
+    array->size += 1;
+    
+    return result;
+}
+
+#define DynamicArray_FreeAll(arena, array, T) _DynamicArray_FreeAll((arena), (array), sizeof(T))
+void
+_DynamicArray_FreeAll(Memory_Arena* arena, Dynamic_Array* array, umm element_size)
+{
+    Arena_FreeSize(arena, array->data, array->capacity * element_size);
+    
+    array->data     = 0;
+    array->size     = 0;
+    array->capacity = 0;
+}
