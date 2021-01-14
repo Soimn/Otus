@@ -829,6 +829,11 @@ Parser problems
 What to do about error handling in the meta program?
 
 
+Problems:
+	- array literals with one element
+	- casts with only type name
+
+
 
 
 

@@ -706,9 +706,11 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool tolerate_m
     
     else if (token.kind == Token_OpenParen)
     {
+        *result = AddExpression(state, Expr_Compound);
+        
         SkipToNextToken(state);
         
-        if (!ParseExpression(state, result)) encountered_errors = true;
+        if (!ParseExpression(state, (*result)->compound.expression)) encountered_errors = true;
         else
         {
             token = GetToken(state);
@@ -1224,7 +1226,7 @@ ParsePrefixExpression(Parser_State* state, Expression** result)
                     if ((*result)->kind != Expr_Empty)
                     {
                         // HACK(soimn): The passing the "parent" pointer is done to help with precedence fixup later
-                        if (!ParsePostfixExpression(state, (parent != 0 && token.kind != Token_OpenParen ? parent : result)))
+                        if (!ParsePostfixExpression(state, (parent != 0 ? parent : result)))
                         {
                             encountered_errors = true;
                         }

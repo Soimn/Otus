@@ -189,6 +189,7 @@ enum EXPR_KIND
     
     // Special
     Expr_NamedArgument,
+    Expr_Compound,
     Expr_Empty,
 };
 
@@ -300,6 +301,10 @@ typedef struct Expression
             struct Expression* value;
         } named_argument;
         
+        struct
+        {
+            struct Expression* expression;
+        } compound;
     };
     
 } Expression;
