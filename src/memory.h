@@ -112,8 +112,8 @@ Arena_FreeSize(Memory_Arena* arena, void* ptr, umm size)
     {
         Memory_Free_Entry* entry = (Memory_Free_Entry*)((u8*)ptr + offset);
         entry->next   = arena->free_list;
-        entry->offset = offset;
-        entry->size   = size - offset;
+        entry->offset = (u32)offset;
+        entry->size   = (u32)(size - offset);
         
         arena->free_list = entry;
     }
@@ -159,7 +159,7 @@ Arena_Allocate(Memory_Arena* arena, umm size, u8 alignment)
             result = ptr + offset;
             *prev_entry = entry->next;
             
-            Arena_FreeSize(arena, result + size, (entry->offset + entry->size) - (offset + size));
+            Arena_FreeSize(arena, (u8*)result + size, (entry->offset + entry->size) - (offset + size));
             
             break;
         }
@@ -200,7 +200,7 @@ Arena_Allocate(Memory_Arena* arena, umm size, u8 alignment)
                 block         = System_AllocateMemory(block_size);
                 block->next   = 0;
                 block->offset = sizeof(Memory_Block);
-                block->space  = block_size;
+                block->space  = (u32)block_size;
                 
                 if (arena->current) arena->current->next = block;
                 else                arena->first         = block;
@@ -224,8 +224,8 @@ Arena_Allocate(Memory_Arena* arena, umm size, u8 alignment)
         result = Align(MEMORY_BLOCK_CURSOR(arena->current), alignment);
         
         umm advancement = AlignOffset((u8*)arena->current + arena->current->offset, alignment) + size;
-        arena->current->offset += advancement;
-        arena->current->space  -= advancement;
+        arena->current->offset += (u32)advancement;
+        arena->current->space  -= (u32)advancement;
     }
     
     return result;
@@ -446,7 +446,7 @@ _DynamicArray_Append(Memory_Arena* arena, Dynamic_Array* array, umm element_size
 {
     if (array->size == array->capacity)
     {
-        _DynamicArray_Reserve(arena, array, element_size, MAX(10, array->size * 1.5));
+        _DynamicArray_Reserve(arena, array, element_size, (umm)MAX(10, array->size * 1.5));
     }
     
     void* result = (u8*)array->data + array->size * element_size;

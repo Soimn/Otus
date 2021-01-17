@@ -155,12 +155,11 @@ typedef struct Compiler_State
 //////////////////////////////////////////
 
 bool ParseFile(Compiler_State* compiler_state, Package_ID package_id, File_ID file_id);
+bool SemaValidateDeclarationAndGenerateSymbolInfo(Compiler_State* compiler_state, Declaration declaration);
 bool TypeCheckDeclaration(Compiler_State* compiler_state, Declaration declaration);
-bool GenerateSymbolDataForDeclaration(Compiler_State* compiler_state, Declaration declaration);
-bool SemaAnalyzeDeclaration(Compiler_State* compiler_state, Declaration declaration);
 
 API_FUNC Workspace*
-Workspace_Open(Slice(Path_Prefix) path_prefixes, String main_file)
+Workspace_Open(Workspace_Options workspace_options, String main_file)
 {
     Compiler_State* compiler_state = System_AllocateMemory(sizeof(Compiler_State));
     ZeroStruct(compiler_state);
@@ -209,15 +208,16 @@ Workspace_PushDeclaration(Workspace* workspace, Declaration declaration, Enum8(D
     
     Compiler_State* compiler_state = (Compiler_State*)workspace;
     
-    if (stage == DeclarationStage_SemaChecked)
-    {
-        encountered_errors = !SemaAnalyzeDeclaration(compiler_state, declaration);
-    }
+    if (stage < workspace->prep_option) stage = workspace->prep_option;
     
-    else if (stage == DeclarationStage_TypeChecked)
+    if (stage == DeclarationStage_SemaChecked || stage == DeclarationStage_TypeChecked)
     {
-        encountered_errors = !GenerateSymbolDataForDeclaration(compiler_state, declaration);
-        encountered_errors = !TypeCheckDeclaration(compiler_state, declaration);
+        encountered_errors = !SemaValidateDeclarationAndGenerateSymbolInfo(compiler_state, declaration);
+        
+        if (stage == DeclarationStage_TypeChecked)
+        {
+            encountered_errors = !TypeCheckDeclaration(compiler_state, declaration);
+        }
     }
     
     if (!encountered_errors)
@@ -257,7 +257,7 @@ Workspace_PushDeclaration(Workspace* workspace, Declaration declaration, Enum8(D
         
         // NOTE(soimn): free_spot_index = log_2(free_spot)
         //              the bit pattern of a float is proportional to its log
-        f32 f = free_spot;
+        f32 f = (f32)free_spot;
         umm free_spot_index = *(u32*)&f / (1 << 23) - 127;
         
         *((Declaration*)block->declarations.data + free_spot_index) = declaration;
@@ -276,8 +276,7 @@ Workspace_CommitDeclaration(Workspace* workspace, Declaration declaration)
     
     Compiler_State* compiler_state = (Compiler_State*)workspace;
     
-    encountered_errors = (!SemaAnalyzeDeclaration(compiler_state, declaration)           ||
-                          !GenerateSymbolDataForDeclaration(compiler_state, declaration) ||
+    encountered_errors = (!SemaValidateDeclarationAndGenerateSymbolInfo(compiler_state, declaration) ||
                           !TypeCheckDeclaration(compiler_state, declaration));
     
     
@@ -308,7 +307,7 @@ Workspace_CommitDeclaration(Workspace* workspace, Declaration declaration)
         
         // NOTE(soimn): free_spot_index = log_2(free_spot)
         //              the bit pattern of a float is proportional to its log
-        f32 f = free_spot;
+        f32 f = (f32)free_spot;
         umm free_spot_index = *(u32*)&f / (1 << 23) - 127;
         
         *((Declaration*)block->declarations.data + free_spot_index) = declaration;

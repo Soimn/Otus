@@ -101,7 +101,6 @@ enum TOKEN_KIND
     Token_Hash,
     Token_QuestionMark,
     Token_Hat,
-    Token_Quote,
     Token_Comma,
     Token_Semicolon,
     Token_OpenParen,
@@ -114,6 +113,7 @@ enum TOKEN_KIND
     
     Token_Number,
     Token_String,
+    Token_Character,
     Token_Identifier,
     
     Token_EndOfStream,
@@ -125,7 +125,6 @@ enum KEYWORD_KIND
 {
     Keyword_Invalid = 0,
     
-    //Keyword_Package,
     Keyword_Import,
     Keyword_Foreign,
     Keyword_As,
@@ -153,32 +152,33 @@ enum KEYWORD_KIND
     KEYWORD_KIND_COUNT
 };
 
-String KeywordStrings[KEYWORD_KIND_COUNT] = {
-    //[Keyword_Package]  = CONST_STRING("package"),
-    [Keyword_Import]   = CONST_STRING("import"),
-    [Keyword_Foreign]  = CONST_STRING("foreign"),
-    [Keyword_As]       = CONST_STRING("as"),
-    [Keyword_Defer]    = CONST_STRING("defer"),
-    [Keyword_Return]   = CONST_STRING("return"),
-    [Keyword_Using]    = CONST_STRING("using"),
-    [Keyword_Proc]     = CONST_STRING("proc"),
-    [Keyword_Where]    = CONST_STRING("where"),
-    [Keyword_Struct]   = CONST_STRING("struct"),
-    [Keyword_Union]    = CONST_STRING("union"),
-    [Keyword_Enum]     = CONST_STRING("enum"),
-    [Keyword_If]       = CONST_STRING("if"),
-    [Keyword_Else]     = CONST_STRING("else"),
-    [Keyword_When]     = CONST_STRING("when"),
-    [Keyword_While]    = CONST_STRING("while"),
-    [Keyword_For]      = CONST_STRING("for"),
-    [Keyword_Break]    = CONST_STRING("break"),
-    [Keyword_Continue] = CONST_STRING("continue"),
-    [Keyword_In]       = CONST_STRING("in"),
-    [Keyword_NotIn]    = CONST_STRING("not_in"),
-    [Keyword_Do]       = CONST_STRING("do"),
-    [Keyword_True]     = CONST_STRING("true"),
-    [Keyword_False]    = CONST_STRING("false"),
-};
+// NOTE(soimn): This is defined as a macro to circumvent msvc bullshit
+#define EMIT_KEYWORD_STRINGS_TABLE()                   \
+String KeywordStrings[KEYWORD_KIND_COUNT] = {      \
+[Keyword_Import]   = CONST_STRING("import"),   \
+[Keyword_Foreign]  = CONST_STRING("foreign"),  \
+[Keyword_As]       = CONST_STRING("as"),       \
+[Keyword_Defer]    = CONST_STRING("defer"),    \
+[Keyword_Return]   = CONST_STRING("return"),   \
+[Keyword_Using]    = CONST_STRING("using"),    \
+[Keyword_Proc]     = CONST_STRING("proc"),     \
+[Keyword_Where]    = CONST_STRING("where"),    \
+[Keyword_Struct]   = CONST_STRING("struct"),   \
+[Keyword_Union]    = CONST_STRING("union"),    \
+[Keyword_Enum]     = CONST_STRING("enum"),     \
+[Keyword_If]       = CONST_STRING("if"),       \
+[Keyword_Else]     = CONST_STRING("else"),     \
+[Keyword_When]     = CONST_STRING("when"),     \
+[Keyword_While]    = CONST_STRING("while"),    \
+[Keyword_For]      = CONST_STRING("for"),      \
+[Keyword_Break]    = CONST_STRING("break"),    \
+[Keyword_Continue] = CONST_STRING("continue"), \
+[Keyword_In]       = CONST_STRING("in"),       \
+[Keyword_NotIn]    = CONST_STRING("not_in"),   \
+[Keyword_Do]       = CONST_STRING("do"),       \
+[Keyword_True]     = CONST_STRING("true"),     \
+[Keyword_False]    = CONST_STRING("false"),    \
+}
 
 typedef struct Token
 {
@@ -194,6 +194,8 @@ typedef struct Token
             Enum8(KEYWORD_KIND) keyword;
             bool ends_with_space;
         };
+        
+        u32 character;
     };
     
     Enum8(TOKEN_KIND) kind;
@@ -317,7 +319,6 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                 case '#':  token->kind = Token_Hash;         break;
                 case '$':  token->kind = Token_Cash;         break;
                 case '?':  token->kind = Token_QuestionMark; break;
-                case '\'': token->kind = Token_Quote;        break;
                 case '^':  token->kind = Token_Hat;          break;
                 case ',':  token->kind = Token_Comma;        break;
                 case ';':  token->kind = Token_Semicolon;    break;
@@ -364,7 +365,7 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                     }
                     
                     else token->kind = Token_Minus;
-                }
+                } break;
                 
                 default:
                 {
@@ -409,11 +410,14 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                             
                             else
                             {
+                                
+                                EMIT_KEYWORD_STRINGS_TABLE();
+                                
                                 for (umm i = 0; i < KEYWORD_KIND_COUNT; ++i)
                                 {
                                     if (StringCompare(token->string, KeywordStrings[i]))
                                     {
-                                        token->keyword = i;
+                                        token->keyword = (u8)i;
                                         break;
                                     }
                                 }
@@ -604,7 +608,7 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                                                 // IMPORTANT NOTE(soimn): This assumes that integers and floats are
                                                 //                        represented with the same endianess
                                                 // HACK(soimn): Replace this with something more sane
-                                                u32 i = integer;
+                                                u32 i = (u32)integer;
                                                 Copy(&i, &token->number.floating, sizeof(f32));
                                             }
                                             
@@ -791,9 +795,9 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                         }
                     }
                     
-                    else if (c == '"')
+                    else if (c == '"' || c == '\'')
                     {
-                        bool encountered_errors = false;
+                        bool is_character = (c == '\'');
                         
                         String raw_string = {
                             .data = content + offset,
@@ -801,7 +805,7 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                         };
                         
                         while (content[offset] != 0 &&
-                               content[offset] != '"')
+                               content[offset] != c)
                         {
                             if (content[offset] == '\\' &&
                                 content[offset] != 0)
@@ -821,7 +825,7 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                             Text_Interval report_text      = TextInterval(token->text.pos, CURRENT_TOKEN_SIZE(token, offset));
                             Text_Interval report_highlight = report_text;
                             
-                            ReportLexerError(compiler_state, report_text, report_highlight, "Unterminated string");
+                            ReportLexerError(compiler_state, report_text, report_highlight, "Unterminated %s literal", (is_character ? "character" : "string"));
                             
                             encountered_errors = true;
                         }
@@ -830,12 +834,12 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                         {
                             offset += 1;
                             
-                            token->string = (String){0};
+                            String resolved_string = {0};
+                            
                             if (raw_string.size != 0)
                             {
                                 // TODO(soimn): Find out where to store strings
-                                token->string.data = Arena_Allocate(&compiler_state->persistent_memory, raw_string.size, ALIGNOF(u8));
-                                token->string.size = 0;
+                                resolved_string.data = Arena_Allocate(&compiler_state->persistent_memory, raw_string.size, ALIGNOF(u8));
                                 
                                 for (umm i = 0; i < raw_string.size; )
                                 {
@@ -846,14 +850,13 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                                         ASSERT(raw_string.size > i);
                                         
                                         // TODO(soimn): Should ansi escape codes be supported?
-                                        if      (c == 'a') token->string.data[token->string.size++] = '\a';
-                                        else if (c == 'b') token->string.data[token->string.size++] = '\b';
-                                        else if (c == 'e') token->string.data[token->string.size++] = '\e';
-                                        else if (c == 'f') token->string.data[token->string.size++] = '\f';
-                                        else if (c == 'n') token->string.data[token->string.size++] = '\n';
-                                        else if (c == 'r') token->string.data[token->string.size++] = '\r';
-                                        else if (c == 't') token->string.data[token->string.size++] = '\t';
-                                        else if (c == 'v') token->string.data[token->string.size++] = '\v';
+                                        if      (c == 'a') resolved_string.data[resolved_string.size++] = '\a';
+                                        else if (c == 'b') resolved_string.data[resolved_string.size++] = '\b';
+                                        else if (c == 'f') resolved_string.data[resolved_string.size++] = '\f';
+                                        else if (c == 'n') resolved_string.data[resolved_string.size++] = '\n';
+                                        else if (c == 'r') resolved_string.data[resolved_string.size++] = '\r';
+                                        else if (c == 't') resolved_string.data[resolved_string.size++] = '\t';
+                                        else if (c == 'v') resolved_string.data[resolved_string.size++] = '\v';
                                         else if (c == 'u' || c == 'x')
                                         {
                                             u32 codepoint = 0;
@@ -889,28 +892,28 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                                             {
                                                 if (codepoint <= U8_MAX)
                                                 {
-                                                    token->string.data[token->string.size++] = (u8)codepoint;
+                                                    resolved_string.data[resolved_string.size++] = (u8)codepoint;
                                                 }
                                                 
                                                 else if (codepoint <= 0x7FF)
                                                 {
-                                                    token->string.data[token->string.size++] = 0xC0 | (codepoint & 0x7C0) >> 6;
-                                                    token->string.data[token->string.size++] = 0x80 | (codepoint & 0x03F) >> 0;
+                                                    resolved_string.data[resolved_string.size++] = (u8)(0xC0 | (codepoint & 0x7C0) >> 6);
+                                                    resolved_string.data[resolved_string.size++] = (u8)(0x80 | (codepoint & 0x03F) >> 0);
                                                 }
                                                 
                                                 else if (codepoint <= 0xFFFF)
                                                 {
-                                                    token->string.data[token->string.size++] = 0xE0 | (codepoint & 0xF000) >> 12;
-                                                    token->string.data[token->string.size++] = 0x80 | (codepoint & 0x0FC0) >> 6;
-                                                    token->string.data[token->string.size++] = 0x80 | (codepoint & 0x003F) >> 0;
+                                                    resolved_string.data[resolved_string.size++] = (u8)(0xE0 | (codepoint & 0xF000) >> 12);
+                                                    resolved_string.data[resolved_string.size++] = (u8)(0x80 | (codepoint & 0x0FC0) >> 6);
+                                                    resolved_string.data[resolved_string.size++] = (u8)(0x80 | (codepoint & 0x003F) >> 0);
                                                 }
                                                 
                                                 else if (codepoint <= 0x10FFFF)
                                                 {
-                                                    token->string.data[token->string.size++] = 0xF0 | (codepoint & 0x1C0000) >> 18;
-                                                    token->string.data[token->string.size++] = 0x80 | (codepoint & 0x03F000) >> 12;
-                                                    token->string.data[token->string.size++] = 0x80 | (codepoint & 0x000FC0) >> 6;
-                                                    token->string.data[token->string.size++] = 0x80 | (codepoint & 0x00003F) >> 0;
+                                                    resolved_string.data[resolved_string.size++] = (u8)(0xF0 | (codepoint & 0x1C0000) >> 18);
+                                                    resolved_string.data[resolved_string.size++] = (u8)(0x80 | (codepoint & 0x03F000) >> 12);
+                                                    resolved_string.data[resolved_string.size++] = (u8)(0x80 | (codepoint & 0x000FC0) >> 6);
+                                                    resolved_string.data[resolved_string.size++] = (u8)(0x80 | (codepoint & 0x00003F) >> 0);
                                                 }
                                                 
                                                 else
@@ -930,16 +933,57 @@ LexFile(Compiler_State* compiler_state, File_ID file_id, Bucket_Array(Token)* to
                                         
                                         else
                                         {
-                                            token->string.data[token->string.size++] = c;
+                                            resolved_string.data[resolved_string.size++] = c;
                                         }
                                     }
                                     
                                     else
                                     {
-                                        token->string.data[token->string.size++] = raw_string.data[i];
+                                        resolved_string.data[resolved_string.size++] = raw_string.data[i];
                                         i += 1;
                                     }
                                 }
+                            }
+                            
+                            if (!encountered_errors)
+                            {
+                                if (is_character)
+                                {
+                                    if (resolved_string.size == 0)
+                                    {
+                                        //// ERROR
+                                        
+                                        Text_Interval report_text = TextInterval(token->text.pos, CURRENT_TOKEN_SIZE(token, offset));
+                                        Text_Interval report_highlight = report_text;
+                                        
+                                        ReportLexerError(compiler_state, report_text, report_highlight, "Character literals must contain one character");
+                                        
+                                        encountered_errors = true;
+                                    }
+                                    
+                                    else if (resolved_string.size > 4                                             ||
+                                             resolved_string.size > 3 && (resolved_string.data[0] & 0xF0) != 0xF0 ||
+                                             resolved_string.size > 2 && (resolved_string.data[0] & 0xF0) != 0xE0 ||
+                                             resolved_string.size > 1 && (resolved_string.data[0] & 0xF0) != 0xC0)
+                                    {
+                                        //// ERROR
+                                        
+                                        Text_Interval report_text = TextInterval(token->text.pos, CURRENT_TOKEN_SIZE(token, offset));
+                                        Text_Interval report_highlight = report_text;
+                                        
+                                        ReportLexerError(compiler_state, report_text, report_highlight, "Character literals cannot contain more than one character");
+                                        
+                                        encountered_errors = true;
+                                    }
+                                    
+                                    else
+                                    {
+                                        // TODO(soimn): This does not account for endianess, is this a problem?
+                                        Copy(resolved_string.data, &token->character, resolved_string.size);
+                                    }
+                                }
+                                
+                                else token->string = resolved_string;
                             }
                         }
                     }

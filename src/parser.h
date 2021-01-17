@@ -114,6 +114,61 @@ bool ParseStatement(Parser_State* state, Statement* result, bool check_for_semic
 bool ParseScope(Parser_State* state, Statement** block);
 
 bool
+ParseNamedArgumentList(Parser_State* state, Slice(Expression*)* argument_slice, Expression* first_element)
+{
+    bool encountered_errors = false;
+    
+    Bucket_Array arguments = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 10);
+    
+    if (first_element != 0)
+    {
+        *(Expression**)BucketArray_AppendElement(&arguments) = first_element;
+    }
+    
+    Token token = GetToken(state);
+    
+    if (first_element == 0 || first_element != 0 && token.kind == Token_Comma)
+    {
+        while (!encountered_errors)
+        {
+            Expression** argument = BucketArray_AppendElement(&arguments);
+            *argument = AddExpression(state, Expr_NamedArgument);
+            
+            Expression* expression;
+            if (!ParseExpression(state, &expression)) encountered_errors = true;
+            else
+            {
+                token = GetToken(state);
+                if (token.kind == Token_Equal)
+                {
+                    (*argument)->named_argument.name = expression;
+                    
+                    SkipToNextToken(state);
+                    
+                    if (!ParseExpression(state, &(*argument)->named_argument.value))
+                    {
+                        encountered_errors = true;
+                    }
+                }
+                
+                else
+                {
+                    (*argument)->named_argument.value = expression;
+                }
+                
+                token = GetToken(state);
+                if (token.kind == Token_Comma) SkipToNextToken(state);
+                else break;
+            }
+        }
+    }
+    
+    *argument_slice = BucketArray_FlattenContent(state->decl_memory, &arguments);
+    
+    return !encountered_errors;
+}
+
+bool
 ParseAttributes(Parser_State* state, Slice(Attribute)* attribute_slice)
 {
     bool encountered_errors = false;
@@ -155,18 +210,9 @@ ParseAttributes(Parser_State* state, Slice(Attribute)* attribute_slice)
                     
                     if (token.kind != Token_CloseParen)
                     {
-                        while (!encountered_errors)
+                        if (!ParseNamedArgumentList(state, &attribute->arguments, 0))
                         {
-                            Expression** argument = BucketArray_AppendElement(&arguments);
-                            
-                            if (!ParseExpression(state, argument)) encountered_errors = true;
-                            else
-                            {
-                                token = GetToken(state);
-                                
-                                if (token.kind == Token_Comma) SkipToNextToken(state);
-                                else break;
-                            }
+                            encountered_errors = true;
                         }
                     }
                     
@@ -322,66 +368,6 @@ ParseParameterList(Parser_State* state, Statement** parameters)
 }
 
 bool
-ParseNamedArgumentList(Parser_State* state, Slice(Expression*)* argument_slice)
-{
-    bool encountered_errors = false;
-    
-    Bucket_Array arguments = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 10);
-    
-    while (!encountered_errors)
-    {
-        Expression** argument = BucketArray_AppendElement(&arguments);
-        *argument = AddExpression(state, Expr_NamedArgument);
-        
-        Expression* expression;
-        if (!ParseExpression(state, &expression)) encountered_errors = true;
-        else
-        {
-            Token token = GetToken(state);
-            if (token.kind == Token_Equal)
-            {
-                if (expression->kind != Expr_Identifier && IsAssignment(token.kind))
-                {
-                    //// ERROR: Illegal use of assignment operator in expression context
-                    encountered_errors = true;
-                }
-                
-                else if (expression->string.size == 0)
-                {
-                    //// ERROR: Illegal use of blank identifier as argument name
-                    encountered_errors = true;
-                }
-                
-                else
-                {
-                    (*argument)->named_argument.name = expression;
-                    
-                    SkipToNextToken(state);
-                    
-                    if (!ParseExpression(state, &(*argument)->named_argument.value))
-                    {
-                        encountered_errors = true;
-                    }
-                }
-            }
-            
-            else
-            {
-                (*argument)->named_argument.value= expression;
-            }
-            
-            token = GetToken(state);
-            if (token.kind == Token_Comma) SkipToNextToken(state);
-            else break;
-        }
-    }
-    
-    *argument_slice = BucketArray_FlattenContent(state->decl_memory, &arguments);
-    
-    return !encountered_errors;
-}
-
-bool
 ParsePostfixExpression(Parser_State* state, Expression** result)
 {
     bool encountered_errors = false;
@@ -428,7 +414,7 @@ ParsePostfixExpression(Parser_State* state, Expression** result)
                 
                 if (token.kind != Token_CloseParen)
                 {
-                    if (!ParseNamedArgumentList(state, &(*result)->call_expression.arguments))
+                    if (!ParseNamedArgumentList(state, &(*result)->call_expression.arguments, 0))
                     {
                         encountered_errors = true;
                     }
@@ -447,191 +433,53 @@ ParsePostfixExpression(Parser_State* state, Expression** result)
                 }
             }
             
-            else if (token.kind == Token_OpenBrace)
-            {
-                Expression* type = *result;
-                
-                *result = AddExpression(state, Expr_StructLiteral);
-                (*result)->struct_literal.type = type;
-                
-                SkipToNextToken(state);
-                
-                if (!ParseNamedArgumentList(state, &(*result)->struct_literal.arguments)) encountered_errors = true;
-                else
-                {
-                    token = GetToken(state);
-                    if (token.kind == Token_CloseBrace) SkipToNextToken(state);
-                    else
-                    {
-                        //// ERROR: Missing matching closing brace
-                        encountered_errors = true;
-                    }
-                }
-            }
-            
-            if (token.kind == Token_OpenBracket)
-            {
-                SkipToNextToken(state);
-                token = GetToken(state);
-                
-                Expression* index         = 0;
-                Expression* length        = 0;
-                Expression* step          = 0;
-                Slice(Expression*) element_slice = {0};
-                bool is_array_literal            = false;
-                
-                token = GetToken(state);
-                if (token.kind != Token_Colon)
-                {
-                    if (!ParseExpression(state, &index))
-                    {
-                        encountered_errors = true;
-                    }
-                }
-                
-                if (!encountered_errors)
-                {
-                    token = GetToken(state);
-                    
-                    if (token.kind == Token_Comma || index == 0 && token.kind == Token_CloseBracket)
-                    {
-                        Bucket_Array elements = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 10);
-                        *(Expression**)BucketArray_AppendElement(&elements) = index;
-                        
-                        if (token.kind == Token_Comma)
-                        {
-                            SkipToNextToken(state);
-                            
-                            while (!encountered_errors)
-                            {
-                                if (!ParseExpression(state, BucketArray_AppendElement(&elements))) encountered_errors = true;
-                                else
-                                {
-                                    token = GetToken(state);
-                                    
-                                    if (token.kind == Token_Comma) SkipToNextToken(state);
-                                    else break;
-                                }
-                            }
-                        }
-                        
-                        element_slice = BucketArray_FlattenContent(state->decl_memory, &elements);
-                    }
-                    
-                    else if (token.kind == Token_Colon)
-                    {
-                        SkipToNextToken(state);
-                        token = GetToken(state);
-                        
-                        if (token.kind != Token_CloseBracket)
-                        {
-                            if (token.kind == Token_Colon) SkipToNextToken(state);
-                            else
-                            {
-                                if (!ParseExpression(state, &length))
-                                {
-                                    encountered_errors = true;
-                                }
-                            }
-                            if (!encountered_errors)
-                            {
-                                token = GetToken(state);
-                                if (token.kind != Token_CloseBracket)
-                                {
-                                    if (!ParseExpression(state, &step))
-                                    {
-                                        encountered_errors = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                if (!encountered_errors)
-                {
-                    token = GetToken(state);
-                    
-                    if (token.kind != Token_CloseBracket)
-                    {
-                        //// ERROR: Missing matching closing bracket
-                        encountered_errors = true;
-                    }
-                    
-                    else
-                    {
-                        SkipToNextToken(state);
-                        
-                        if (is_array_literal)
-                        {
-                            Expression* type = *result;
-                            
-                            *result = AddExpression(state, Expr_ArrayLiteral);
-                            (*result)->array_literal.type     = type;
-                            (*result)->array_literal.elements = element_slice;
-                        }
-                        
-                        else
-                        {
-                            Expression* pointer = *result;
-                            
-                            *result = AddExpression(state,  Expr_Subscript);
-                            (*result)->subscript_expression.pointer = pointer;
-                            (*result)->subscript_expression.index   = index;
-                            (*result)->subscript_expression.length  = length;
-                            (*result)->subscript_expression.step    = step;
-                        }
-                    }
-                }
-            }
-            
             else if (token.kind == Token_OpenBracket)
             {
                 SkipToNextToken(state);
                 token = GetToken(state);
                 
-                Expression* index  = 0;
-                Expression* length = 0;
-                Expression* step   = 0;
+                Expression* pointer = *result;
+                Expression* index   = 0;
+                Expression* length  = 0;
+                Expression* step    = 0;
                 
-                if (token.kind == Token_CloseBracket)
-                {
-                    //// ERROR: Invalid use of slice type prefix operator as postfix operator
-                    encountered_errors = true;
-                }
-                
+                token = GetToken(state);
+                if (token.kind == Token_Colon) SkipToNextToken(state);
                 else
                 {
-                    if (token.kind == Token_Colon) SkipToNextToken(state);
-                    else
+                    if (token.kind == Token_CloseBracket)
                     {
-                        if (!ParseExpression(state, &index))
+                        //// ERROR: Missing index in array subscript
+                        encountered_errors = true;
+                    }
+                    
+                    else if (!ParseExpression(state, &index))
+                    {
+                        encountered_errors = true;
+                    }
+                }
+                
+                if (!encountered_errors)
+                {
+                    token = GetToken(state);
+                    if (token.kind == Token_Colon) SkipToNextToken(state);
+                    else if (token.kind != Token_CloseBracket)
+                    {
+                        if (!ParseExpression(state, &length))
                         {
                             encountered_errors = true;
                         }
                     }
-                    
-                    if (!encountered_errors)
+                }
+                
+                if (!encountered_errors)
+                {
+                    token = GetToken(state);
+                    if (token.kind != Token_Colon && token.kind != Token_CloseBracket)
                     {
-                        if (token.kind == Token_Colon) SkipToNextToken(state);
-                        else if (token.kind != Token_CloseBracket)
+                        if (!ParseExpression(state, &step))
                         {
-                            if (!ParseExpression(state, &length))
-                            {
-                                encountered_errors = true;
-                            }
-                        }
-                        
-                        if (!encountered_errors)
-                        {
-                            token = GetToken(state);
-                            if (token.kind != Token_CloseBracket)
-                            {
-                                if (!ParseExpression(state, &step))
-                                {
-                                    encountered_errors = true;
-                                }
-                            }
+                            encountered_errors = true;
                         }
                     }
                 }
@@ -650,20 +498,18 @@ ParsePostfixExpression(Parser_State* state, Expression** result)
                     {
                         SkipToNextToken(state);
                         
-                        Expression* pointer = *result;
-                        
-                        *result = AddExpression(state, Expr_Subscript);
+                        *result = AddExpression(state,  Expr_Subscript);
                         (*result)->subscript_expression.pointer = pointer;
                         (*result)->subscript_expression.index   = index;
                         (*result)->subscript_expression.length  = length;
                         (*result)->subscript_expression.step    = step;
                     }
                 }
-                
-                member_expression_parent = result;
             }
             
             else break;
+            
+            member_expression_parent = result;
         }
     }
     
@@ -676,8 +522,6 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool tolerate_m
     bool encountered_errors = false;
     
     Token token = GetToken(state);
-    
-    bool missing_primary = false;
     
     if (token.kind == Token_Number)
     {
@@ -704,13 +548,21 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool tolerate_m
         SkipToNextToken(state);
     }
     
+    else if (token.kind == Token_Identifier && (token.keyword == Keyword_True || token.keyword == Keyword_False))
+    {
+        *result = AddExpression(state, Expr_Boolean);
+        (*result)->boolean = (token.keyword == Keyword_True);
+        
+        SkipToNextToken(state);
+    }
+    
     else if (token.kind == Token_OpenParen)
     {
         *result = AddExpression(state, Expr_Compound);
         
         SkipToNextToken(state);
         
-        if (!ParseExpression(state, (*result)->compound.expression)) encountered_errors = true;
+        if (!ParseExpression(state, &(*result)->compound.expression)) encountered_errors = true;
         else
         {
             token = GetToken(state);
@@ -1016,15 +868,103 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool tolerate_m
         }
     }
     
+    else if (token.kind == Token_OpenBrace || token.kind == Token_OpenBracket)
+    {
+        bool is_array_literal = (token.kind == Token_OpenBracket);
+        
+        *result = AddExpression(state, (is_array_literal ? Expr_ArrayLiteral : Expr_StructLiteral));
+        
+        SkipToNextToken(state);
+        token = GetToken(state);
+        
+        if (is_array_literal && token.kind != Token_CloseBracket || token.kind != Token_CloseBrace)
+        {
+            Expression* expression;
+            if (!ParseExpression(state, &expression)) encountered_errors = true;
+            else
+            {
+                token = GetToken(state);
+                
+                Expression* first_element;
+                
+                if (token.kind == Token_Colon)
+                {
+                    SkipToNextToken(state);
+                    
+                    if (is_array_literal) (*result)->array_literal.type  = expression;
+                    else                  (*result)->struct_literal.type = expression;
+                    first_element = 0;
+                }
+                
+                else
+                {
+                    token = GetToken(state);
+                    
+                    first_element = AddExpression(state, Expr_NamedArgument);
+                    
+                    if (token.kind == Token_Equal)
+                    {
+                        first_element->named_argument.name = expression;
+                        
+                        SkipToNextToken(state);
+                        
+                        if (!ParseExpression(state, &first_element->named_argument.value))
+                        {
+                            encountered_errors = true;
+                        }
+                    }
+                    
+                    else first_element->named_argument.value = expression;
+                }
+                
+                if (!encountered_errors)
+                {
+                    if (!ParseNamedArgumentList(state, (is_array_literal ? &(*result)->array_literal.elements : &(*result)->struct_literal.arguments), expression))
+                    {
+                        encountered_errors = true;
+                    }
+                }
+            }
+        }
+        
+        if (!encountered_errors)
+        {
+            token = GetToken(state);
+            
+            if (is_array_literal)
+            {
+                if (token.kind == Token_CloseBracket) SkipToNextToken(state);
+                else
+                {
+                    //// ERROR: Missing matching closing bracket
+                    encountered_errors = true;
+                }
+            }
+            
+            else
+            {
+                if (token.kind == Token_CloseBrace) SkipToNextToken(state);
+                else
+                {
+                    //// ERROR: Missing matching closing brace
+                    encountered_errors = true;
+                }
+            }
+        }
+    }
+    
     else
     {
-        if (token.kind == Token_Identifier)
+        if (!tolerate_missing_primary)
         {
-            //// ERROR: Invalid use of keyword in expression
+            //// ERROR: Missing primary expression
             encountered_errors = true;
         }
         
-        else missing_primary = true;
+        else
+        {
+            *result = AddExpression(state, Expr_Empty);
+        }
     }
     
     return !encountered_errors;
@@ -1036,8 +976,6 @@ ParsePrefixExpression(Parser_State* state, Expression** result)
     bool encountered_errors = false;
     
     Bucket_Array directives = BUCKET_ARRAY_INIT(state->temp_memory, Directive, 10);
-    
-    Expression** parent = 0;
     
     while (!encountered_errors)
     {
@@ -1056,6 +994,8 @@ ParsePrefixExpression(Parser_State* state, Expression** result)
             case Token_Exclamation:  kind = Expr_Not;         break;
             case Token_Ampersand:    kind = Expr_Reference;   break;
             case Token_Asterisk:     kind = Expr_Dereference; break;
+            case Token_Cash:         kind = Expr_Polymorphic; break;
+            case Token_Hat:          kind = Expr_Pointer;     break;
         }
         
         if (kind != Expr_Invalid)
@@ -1071,165 +1011,137 @@ ParsePrefixExpression(Parser_State* state, Expression** result)
             }
         }
         
-        else
+        else if (token.kind == Token_OpenBracket)
         {
-            if (token.kind == Token_Cash)
-            {
-                SkipToNextToken(state);
-                
-                *result = AddExpression(state, Expr_Polymorphic);
-                (*result)->directives = directive_slice;
-                
-                if (parent == 0) parent = result;
-                result  = &(*result)->unary_expression.operand;
-            }
+            SkipToNextToken(state);
+            token = GetToken(state);
             
-            else if (token.kind == Token_Hat)
+            Token peek = PeekNextToken(state);
+            
+            if (token.kind == Token_CloseBracket)
             {
                 SkipToNextToken(state);
                 
-                *result = AddExpression(state, Expr_Pointer);
+                *result = AddExpression(state, Expr_Slice);
                 (*result)->directives = directive_slice;
                 
-                if (parent == 0) parent = result;
                 result = &(*result)->unary_expression.operand;
             }
             
-            else if (token.kind == Token_OpenBracket)
+            else if (token.kind == Token_PeriodPeriod && peek.kind == Token_CloseBracket)
+            {
+                SkipToNextToken(state);
+                SkipToNextToken(state);
+                
+                *result = AddExpression(state, Expr_DynamicArray);
+                (*result)->directives = directive_slice;
+                
+                result = &(*result)->unary_expression.operand;
+            }
+            
+            else
+            {
+                *result = AddExpression(state, Expr_Array);
+                (*result)->directives = directive_slice;
+                
+                if (!ParseExpression(state, &(*result)->array_type.size)) encountered_errors = true;
+                else
+                {
+                    token = GetToken(state);
+                    
+                    if (token.kind == Token_CloseBracket)
+                    {
+                        SkipToNextToken(state);
+                        
+                        result = &(*result)->array_type.type;
+                    }
+                    
+                    else
+                    {
+                        //// ERROR: Missing matching closing bracket
+                        encountered_errors = true;
+                    }
+                }
+            }
+        }
+        
+        else if (token.kind == Token_Hash)
+        {
+            while (!encountered_errors)
             {
                 SkipToNextToken(state);
                 token = GetToken(state);
                 
-                Token peek = PeekNextToken(state);
-                
-                if (token.kind == Token_CloseBracket)
+                if (token.kind != Token_Identifier)
                 {
-                    SkipToNextToken(state);
-                    
-                    *result = AddExpression(state, Expr_Slice);
-                    (*result)->directives = directive_slice;
-                    
-                    if (parent == 0) parent = result;
-                    result = &(*result)->unary_expression.operand;
-                }
-                
-                else if (token.kind == Token_PeriodPeriod && peek.kind == Token_CloseBracket)
-                {
-                    SkipToNextToken(state);
-                    SkipToNextToken(state);
-                    
-                    *result = AddExpression(state, Expr_DynamicArray);
-                    (*result)->directives = directive_slice;
-                    
-                    if (parent == 0) parent = result;
-                    result = &(*result)->unary_expression.operand;
+                    //// ERROR: Missing name of directive
+                    encountered_errors = true;
                 }
                 
                 else
                 {
-                    *result = AddExpression(state, Expr_Array);
-                    (*result)->directives = directive_slice;
+                    bool ended_with_space = token.ends_with_space;
                     
-                    if (!ParseExpression(state, &(*result)->array_type.size)) encountered_errors = true;
-                    else
-                    {
-                        token = GetToken(state);
-                        
-                        if (token.kind == Token_CloseBracket)
-                        {
-                            SkipToNextToken(state);
-                            
-                            if (parent == 0) parent = result;
-                            result = &(*result)->array_type.type;
-                        }
-                        
-                        else
-                        {
-                            //// ERROR: Missing matching closing bracket
-                            encountered_errors = true;
-                        }
-                    }
-                }
-            }
-            
-            else if (token.kind == Token_Hash)
-            {
-                while (!encountered_errors)
-                {
+                    Directive* directive = BucketArray_AppendElement(&directives);
+                    
                     SkipToNextToken(state);
                     token = GetToken(state);
                     
-                    if (token.kind != Token_Identifier)
+                    if (ended_with_space && token.kind == Token_OpenParen)
                     {
-                        //// ERROR: Missing name of directive
-                        encountered_errors = true;
-                    }
-                    
-                    else
-                    {
-                        bool ended_with_space = token.ends_with_space;
+                        Bucket_Array arguments = BUCKET_ARRAY_INIT(state->temp_memory,
+                                                                   Expression*, 10);
                         
-                        Directive* directive = BucketArray_AppendElement(&directives);
-                        
-                        SkipToNextToken(state);
-                        token = GetToken(state);
-                        
-                        if (ended_with_space && token.kind == Token_OpenParen)
+                        while(!encountered_errors)
                         {
-                            Bucket_Array arguments = BUCKET_ARRAY_INIT(state->temp_memory,
-                                                                       Expression*, 10);
-                            
-                            while(!encountered_errors)
+                            if (!ParseExpression(state, BucketArray_AppendElement(&arguments))) encountered_errors = true;
+                            else
                             {
-                                if (!ParseExpression(state, BucketArray_AppendElement(&arguments))) encountered_errors = true;
-                                else
-                                {
-                                    token = GetToken(state);
-                                    if (token.kind == Token_Comma) SkipToNextToken(state);
-                                    else break;
-                                }
-                            }
-                            
-                            if (!encountered_errors)
-                            {
-                                directive->arguments = BucketArray_FlattenContent(state->decl_memory,
-                                                                                  &arguments);
-                                
                                 token = GetToken(state);
-                                if (token.kind == Token_CloseParen) SkipToNextToken(state);
-                                else
-                                {
-                                    //// ERROR: Missing matching closing parenthesis
-                                    encountered_errors = true;
-                                }
+                                if (token.kind == Token_Comma) SkipToNextToken(state);
+                                else break;
                             }
                         }
                         
                         if (!encountered_errors)
                         {
+                            directive->arguments = BucketArray_FlattenContent(state->decl_memory,
+                                                                              &arguments);
+                            
                             token = GetToken(state);
-                            if (token.kind == Token_Hash) continue;
-                            else break;
+                            if (token.kind == Token_CloseParen) SkipToNextToken(state);
+                            else
+                            {
+                                //// ERROR: Missing matching closing parenthesis
+                                encountered_errors = true;
+                            }
                         }
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        token = GetToken(state);
+                        if (token.kind == Token_Hash) continue;
+                        else break;
                     }
                 }
             }
+        }
+        
+        else
+        {
+            token = GetToken(state);
             
+            if (!ParsePrimaryExpression(state, result, (directive_slice.size != 0))) encountered_errors = true;
             else
             {
-                token = GetToken(state);
-                if (!ParsePrimaryExpression(state, result, (directive_slice.size == 1))) encountered_errors = true;
-                else
+                (*result)->directives = directive_slice;
+                
+                if ((*result)->kind != Expr_Empty)
                 {
-                    (*result)->directives = directive_slice;
-                    
-                    if ((*result)->kind != Expr_Empty)
+                    if (!ParsePostfixExpression(state, result))
                     {
-                        // HACK(soimn): The passing the "parent" pointer is done to help with precedence fixup later
-                        if (!ParsePostfixExpression(state, (parent != 0 ? parent : result)))
-                        {
-                            encountered_errors = true;
-                        }
+                        encountered_errors = true;
                     }
                     
                     break;
@@ -1278,11 +1190,80 @@ ParseIntervalExpression(Parser_State* state, Expression** result)
 }
 
 bool
-ParseMulLevelExpression(Parser_State* state, Expression** result)
+ParseChainExpression(Parser_State* state, Expression** result)
 {
     bool encountered_errors = false;
     
     if (!ParseIntervalExpression(state, result)) encountered_errors = true;
+    else
+    {
+        while (!encountered_errors)
+        {
+            Token token = GetToken(state);
+            
+            if (token.kind == Token_MinusGreater)
+            {
+                SkipToNextToken(state);
+                
+                Expression* left = *result;
+                
+                *result = AddExpression(state, Expr_Chain);
+                (*result)->binary_expression.left = left;
+                
+                if (!ParsePrefixExpression(state, &(*result)->binary_expression.right))
+                {
+                    encountered_errors = true;
+                }
+            }
+            
+            else break;
+        }
+    }
+    
+    return !encountered_errors;
+}
+
+bool
+ParseSetOpExpression(Parser_State* state, Expression** result)
+{
+    bool encountered_errors = false;
+    
+    if (!ParseChainExpression(state, result)) encountered_errors = true;
+    else
+    {
+        while (!encountered_errors)
+        {
+            Token token = GetToken(state);
+            
+            if (token.kind == Token_Identifier && (token.keyword == Keyword_In || token.keyword == Keyword_NotIn))
+            {
+                
+                Expression* left = *result;
+                
+                *result = AddExpression(state, (token.keyword == Keyword_In ? Expr_IsIn : Expr_IsNotIn));
+                (*result)->binary_expression.left = left;
+                
+                SkipToNextToken(state);
+                
+                if (!ParsePrefixExpression(state, &(*result)->binary_expression.right))
+                {
+                    encountered_errors = true;
+                }
+            }
+            
+            else break;
+        }
+    }
+    
+    return !encountered_errors;
+}
+
+bool
+ParseMulLevelExpression(Parser_State* state, Expression** result)
+{
+    bool encountered_errors = false;
+    
+    if (!ParseSetOpExpression(state, result)) encountered_errors = true;
     else
     {
         while (!encountered_errors)
@@ -1530,16 +1511,9 @@ ParseExpression(Parser_State* state, Expression** result)
 {
     bool encountered_errors = false;
     
-    if (!ParseTernaryExpression(state, result)) encountered_errors = true;
-    else
+    if (!ParseTernaryExpression(state, result))
     {
-        Token token = GetToken(state);
-        
-        if (IsAssignment(token.kind))
-        {
-            //// ERROR: Assignment is statement level, and is not allowed in expressions
-            encountered_errors = true;
-        }
+        encountered_errors = true;
     }
     
     return !encountered_errors;
@@ -1782,7 +1756,7 @@ ParseStatement(Parser_State* state, Statement* result, bool check_for_semicolon)
                         
                         if (!encountered_errors)
                         {
-                            String prefix_string;
+                            String prefix_string = {0};
                             if (prefix_name.data != 0)
                             {
                                 if (prefix_name.size == 0)
@@ -2322,7 +2296,7 @@ ParseStatement(Parser_State* state, Statement* result, bool check_for_semicolon)
                 token = GetToken(state);
                 if (token.kind != Token_Semicolon)
                 {
-                    if (!ParseNamedArgumentList(state, &result->return_statement.arguments))
+                    if (!ParseNamedArgumentList(state, &result->return_statement.arguments, 0))
                     {
                         encountered_errors = true;
                     }
@@ -2407,7 +2381,7 @@ ParseStatement(Parser_State* state, Statement* result, bool check_for_semicolon)
                     Bucket_Array lhs = BUCKET_ARRAY_INIT(state->temp_memory, Expression*, 3);
                     *(Expression**)BucketArray_AppendElement(&lhs) = expression;
                     
-                    Token token = GetToken(state);
+                    token = GetToken(state);
                     
                     if (token.kind == Token_Comma)
                     {
@@ -2524,8 +2498,7 @@ ParseStatement(Parser_State* state, Statement* result, bool check_for_semicolon)
                                     {
                                         Expression* rhs = BucketArray_ElementAt(&values, 0);
                                         
-                                        if (rhs->kind == Expr_Proc  || rhs->kind == Expr_Struct ||
-                                            rhs->kind == Expr_Union || rhs->kind == Expr_Enum)
+                                        if (rhs->kind == Expr_Proc  || rhs->kind == Expr_Struct || rhs->kind == Expr_Enum)
                                         {
                                             does_not_need_semicolon = true;
                                         }
@@ -2719,7 +2692,7 @@ ParseFile(Compiler_State* compiler_state, Package_ID package_id, File_ID file_id
     
     Arena_ClearAll(&compiler_state->temp_memory);
     
-    Parser_State state = {};
+    Parser_State state = {0};
     state.compiler_state = compiler_state;
     state.tokens         = BUCKET_ARRAY_INIT(&compiler_state->temp_memory, Token, 256);
     

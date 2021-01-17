@@ -149,13 +149,16 @@ enum EXPR_KIND
     Expr_BitAnd,
     Expr_BitOr,
     Expr_BitXor,
-    Expr_Member,
     Expr_IsEqual,
     Expr_IsNotEqual,
     Expr_IsLess,
     Expr_IsGreater,
     Expr_IsLessOrEqual,
     Expr_IsGreaterOrEqual,
+    Expr_Chain,
+    Expr_IsIn,
+    Expr_IsNotIn,
+    Expr_Interval,
     
     // Unary
     Expr_Neg,
@@ -164,7 +167,10 @@ enum EXPR_KIND
     Expr_Reference,
     Expr_Dereference,
     
-    // Postfix
+    // Postfix binary
+    Expr_Member,
+    
+    // Postfix unary
     Expr_Call,
     Expr_Subscript,
     
@@ -174,7 +180,6 @@ enum EXPR_KIND
     Expr_DynamicArray,
     Expr_Pointer,
     Expr_Struct,
-    Expr_Union,
     Expr_Enum,
     Expr_Proc,
     Expr_Polymorphic,
@@ -183,9 +188,9 @@ enum EXPR_KIND
     Expr_Number,
     Expr_String,
     Expr_Identifier,
+    Expr_Boolean,
     Expr_StructLiteral,
     Expr_ArrayLiteral,
-    Expr_Interval,
     
     // Special
     Expr_NamedArgument,
@@ -292,8 +297,9 @@ typedef struct Expression
             Slice(Expression*) elements;
         } array_literal;
         
-        String string;
         Number number;
+        String string;
+        bool boolean;
         
         struct
         {
@@ -687,9 +693,9 @@ enum DECLARATION_KIND
 
 enum DECLARATION_STAGE_KIND
 {
-    DeclarationStage_Parsed,
-    DeclarationStage_SemaChecked,
-    DeclarationStage_TypeChecked,
+    DeclarationStage_Parsed      = 0,
+    DeclarationStage_SemaChecked = 1,
+    DeclarationStage_TypeChecked = 2,
 };
 
 typedef struct Declaration
@@ -746,7 +752,7 @@ DeclarationPool_CreateIterator(Declaration_Pool* pool)
         
         // NOTE(soimn): index += log_2(first_decl)
         //              the bit pattern of a float is proportional to its log
-        f32 f     = first_decl;
+        f32 f     = (f32)first_decl;
         it.index += *(u32*)&f / (1 << 23) - 127;
         
         it.current = (Declaration*)it.block->declarations.data + it.index % 64;
@@ -784,7 +790,7 @@ DeclarationPool_AdvanceIterator(Declaration_Pool* pool, Declaration_Iterator* it
                 
                 // NOTE(soimn): index += log_2(first_decl)
                 //              the bit pattern of a float is proportional to its log
-                f32 f      = first_decl;
+                f32 f      = (f32)first_decl;
                 it->index += *(u32*)&f / (1 << 23) - 127;
                 
                 it->current = (Declaration*)it->block->declarations.data + it->index % 64;
@@ -820,6 +826,7 @@ typedef struct Workspace
     Dynamic_Array(String) file_paths;
     Dynamic_Array(Package) packages;
     Slice(Path_Prefix) path_prefixes;
+    bool prep_option;
     
     Declaration_Pool meta_pool;
     Declaration_Pool commit_pool;
@@ -827,7 +834,20 @@ typedef struct Workspace
 
 //////////////////////////////////////////
 
-API_FUNC Workspace* Workspace_Open(Slice(Path_Prefix) path_prefixes, String main_file);
+enum WORKSPACE_PREP_OPTION
+{
+    WorkspacePrep_Parsed                = 0,
+    WorkspacePrep_SemanticallyValidated = 1,
+    WorkspacePrep_TypeChecked           = 2,
+};
+
+typedef struct Workspace_Options
+{
+    Slice(Path_Prefix) path_prefixes;
+    Enum8(WORKSPACE_PREP_OPTION) prep_option;
+} Workspace_Options;
+
+API_FUNC Workspace* Workspace_Open(Workspace_Options workspace_options, String main_file);
 API_FUNC void Workspace_Close(Workspace* workspace);
 API_FUNC bool Workspace_PopDeclaration(Workspace* workspace, Declaration* declaration);
 API_FUNC bool Workspace_PushDeclaration(Workspace* workspace, Declaration declaration, Enum8(DECLARATION_STAGE_KIND) stage);

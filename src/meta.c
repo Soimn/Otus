@@ -12,8 +12,14 @@ main()
         {.name = STRING("core"), .path = STRING("../core/")}
     };
     
-    Workspace* workspace = Workspace_Open((Slice){.data = path_prefixes, .size = ARRAY_COUNT(path_prefixes)},
-                                          STRING("../examples/demo.os"));
+    Path_Prefix* temp = path_prefixes;
+    
+    Workspace_Options workspace_options = {
+        .path_prefixes = (Slice){.data = temp, .size = ARRAY_COUNT(path_prefixes)},
+        .prep_option   = WorkspacePrep_TypeChecked
+    };
+    
+    Workspace* workspace = Workspace_Open(workspace_options, STRING("../examples/demo.os"));
     
 #if 0
     for (Declaration_Iterator it = DeclarationPool_CreateIterator(pool);
