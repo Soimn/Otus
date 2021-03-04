@@ -34,7 +34,7 @@
 #define GIGABYTES(X) (MEGABYTES(X) * 1024ULL)
 
 #ifndef OTUS_DISABLE_ASSERT
-#define ASSERT(EX) ((EX) ? 0 : *(volatile int*)0)
+#define ASSERT(EX) ((EX) ? true : *(volatile int*)0)
 #else
 #define ASSERT(EX)
 #endif
@@ -151,6 +151,102 @@ typedef struct Compiler_State
     Memory_Arena temp_memory;
     Declaration_Iterator declaration_iterator;
 } Compiler_State;
+
+//////////////////////////////////////////
+
+typedef struct Declaration_Pool_Block
+{
+    struct Declaration_Pool_Block* next;
+    u64 free_map;
+    Slice(Declaration) declarations;
+} Declaration_Pool_Block;
+
+typedef struct Declaration_Pool
+{
+    Declaration_Pool_Block* first;
+    Declaration_Pool_Block* current;
+} Declaration_Pool;
+
+typedef struct Declaration_Iterator
+{
+    Declaration_Pool_Block* block;
+    u64 index;
+    Declaration* current;
+} Declaration_Iterator;
+
+Declaration_Iterator
+DeclarationPool_CreateIterator(Declaration_Pool* pool)
+{
+    Declaration_Iterator it = {
+        .block   = pool->first,
+        .index   = 0,
+        .current = 0
+    };
+    
+    while (it.block != 0 && it.block->free_map == 0)
+    {
+        it.index += 64;
+        it.block  = it.block->next;
+    }
+    
+    if (it.block != 0)
+    {
+        u64 first_decl = (~it.block->free_map + 1) & it.block->free_map;
+        
+        // NOTE(soimn): index += log_2(first_decl)
+        //              the bit pattern of a float is proportional to its log
+        f32 f     = (f32)first_decl;
+        it.index += *(u32*)&f / (1 << 23) - 127;
+        
+        it.current = (Declaration*)it.block->declarations.data + it.index % 64;
+    }
+    
+    return it;
+}
+
+void
+DeclarationPool_AdvanceIterator(Declaration_Pool* pool, Declaration_Iterator* it, bool should_loop)
+{
+    if (pool->first == 0) it->current = 0;
+    else
+    {
+        it->index  += 1;
+        it->current = 0;
+        if (it->index % 64 == 0) it->block = it->block->next;
+        
+        bool looped_once = false;
+        for (;;)
+        {
+            if (it->block == 0)
+            {
+                it->block = pool->first;
+                
+                if (!should_loop || looped_once) break;
+                else looped_once = true;
+            }
+            
+            u64 free_map = it->block->free_map & (~0ULL << (it->index % 64));
+            
+            if (free_map != 0)
+            {
+                u64 first_decl = (~it->block->free_map + 1) & it->block->free_map;
+                
+                // NOTE(soimn): index += log_2(first_decl)
+                //              the bit pattern of a float is proportional to its log
+                f32 f      = (f32)first_decl;
+                it->index += *(u32*)&f / (1 << 23) - 127;
+                
+                it->current = (Declaration*)it->block->declarations.data + it->index % 64;
+            }
+            
+            else
+            {
+                it->index += 64 - it->index % 64;
+                it->block  = it->block->next;
+            }
+        }
+    }
+}
 
 //////////////////////////////////////////
 

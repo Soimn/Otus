@@ -829,18 +829,72 @@ Parser problems
 What to do about error handling in the meta program?
 
 
-Problems:
-	- array literals with one element
-	- casts with only type name
+			When should compound expressions be collapsed?
 
 
 
+String :: proc -> typeid do return struct { data: ^u8, length: int };
+
+// these statements are tautologies
+struct { data: ^u8, length: int } == struct { data: ^u8, length: int }
+struct { data: ^u8, length: int } != struct { dat: ^u8, length: int }
+struct { data: ^u8, length: int } != Struct()
+is_memory_compatible(struct { data: ^u8, length: int }, Struct())
+
+a: Struct();
+b: Struct();
+
+typeid_of(a) == typeid_of(b)
+
+Array :: proc(N: int) -> typeid do return struct { a: [N]int };
+
+// these statements are tautologies
+struct { a: [10]int } == struct { a: [10]int }
+struct { a: [10]int } != struct { a: [9]int  }
+struct { a: [10]int } != struct { b: [10]int }
+struct { a: [10]int } != Array(10)
+is_memory_compatible(struct { a: [10]int }, Array(10))
+
+a: Array(10);
+b: Array(10);
+c: Array(9);
+
+// these statements are tautologies
+typeid_of(a) == typeid_of(b)
+typeid_of(a) != typeid_of(c)
 
 
+for m: 1..4 do print(m);                     // 1234
 
+for m in 1..4 do print(m);                   // 1234
 
+while m := 1; m in 1..4; m += 1 do print(m); // 1234
 
+if m := 1; m in 1..4 do print(m);            // true
 
+------------------------------------------------
+     Attribute and directive redesign
+------------------------------------------------
 
+Advantages with old design
+- no ambiguities between whether a "note" belongs to an expression or statement
 
+Disadvantages with old design
+- not clear why it is necessary to distinguish between "notes" that attach to statements, and "notes" that attach to expressions
+- introduced some whitespace hacks in the lexer
+- one more thing to keep track of in the AST, which complicates the entire system
 
+Proposal:
+ditch user specified #directives and rely only on @notes
+
+This has some clear advantages
+- more control is given to the compiler, as #run, #code, #source_location can now be implemented in the language and handled by the compiler, instead of the default meta program
+- cleaner syntax @ declares a note for the meta program, while # is a note for the compiler
+- allows for the possible introduction of #body_text without changing struct and enum syntax
+
+But is also introduces some ambiguities
+- @attribute0 @attribute1 expression = expression; // is attribute0 & -1 attached to the assignment or the lhs expression?
+
+#load - load file and return []u8
+
+// remove using as, replace with using

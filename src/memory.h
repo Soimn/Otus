@@ -334,6 +334,23 @@ BucketArray_AppendElement(Bucket_Array* array)
     return result;
 }
 
+void
+BucketArray_RemoveLastElement(Bucket_Array* array)
+{
+    if (array->current_bucket_size != 0) array->current_bucket_size -= 1;
+    else
+    {
+        if (array->bucket_count > 1)
+        {
+            void* prev_bucket = array->first;
+            for (; *(void**)prev_bucket != array->current; prev_bucket = *(void**)prev_bucket);
+            
+            array->current             = prev_bucket;
+            array->current_bucket_size = array->bucket_size;
+        }
+    }
+}
+
 umm
 BucketArray_ElementCount(Bucket_Array* array)
 {
@@ -361,25 +378,22 @@ BucketArray_FlattenContent(Memory_Arena* arena, Bucket_Array* array)
 {
     Slice result = {0};
     
-    umm size = BucketArray_ElementCount(array) * array->element_size;
+    umm size = BucketArray_ElementCount(array);
     
     if (size != 0)
     {
         result = (Slice){
-            .data = Arena_Allocate(arena, size, ALIGNOF(u64)),
-            .size = size
+            .data = Arena_Allocate(arena, size * array->element_size, ALIGNOF(u64)),
+            .size = 0
         };
         
-        umm cursor = 0;
-        void* scan = array->first;
-        for (umm i = 0; i < array->current_bucket_count; ++i)
+        for (void* bucket = array->first; bucket != 0; bucket = *(void**)bucket)
         {
-            umm bucket_byte_size = (*(void**)scan == 0 ? array->current_bucket_size : array->bucket_size) * array->element_size;
+            umm bucket_size = (*(void**)bucket == 0 ? array->current_bucket_size : array->bucket_size);
             
-            Copy((u8*)scan + sizeof(u64), (u8*)result.data + cursor, bucket_byte_size);
+            Copy((u8*)bucket + sizeof(u64), (u8*)result.data + result.size * array->element_size, bucket_size * array->element_size);
             
-            cursor += bucket_byte_size;
-            scan    = *(void**)scan;
+            result.size += bucket_size;
         }
     }
     

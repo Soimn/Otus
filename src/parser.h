@@ -556,6 +556,64 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool tolerate_m
         SkipToNextToken(state);
     }
     
+    else if (token.kind == Token_Identifier && token.keyword == Keyword_Cast)
+    {
+        SkipToNextToken(state);
+        
+        *result = AddExpression(state, Expr_Cast);
+        
+        Expression* first_expr  = 0;
+        Expression* second_expr = 0;
+        
+        if (!ParsePrimaryExpression(state, &first_expr, false)) encountered_errors = true;
+        else
+        {
+            if (!ParsePrimaryExpression(state, &second_expr, true)) encountered_errors = true;
+            else
+            {
+                if (second_expr == 0)
+                {
+                    (*result)->cast_expression.operand = first_expr;
+                }
+                
+                else
+                {
+                    (*result)->cast_expression.type    = first_expr;
+                    (*result)->cast_expression.operand = second_expr;
+                }
+            }
+        }
+    }
+    
+    else if (token.kind == Token_Identifier && token.keyword == Keyword_Transmute)
+    {
+        SkipToNextToken(state);
+        
+        *result = AddExpression(state, Expr_Transmute);
+        
+        Expression* first_expr  = 0;
+        Expression* second_expr = 0;
+        
+        if (!ParsePrimaryExpression(state, &first_expr, false)) encountered_errors = true;
+        else
+        {
+            if (!ParsePrimaryExpression(state, &second_expr, true)) encountered_errors = true;
+            else
+            {
+                if (second_expr == 0)
+                {
+                    (*result)->transmute_expression.operand = first_expr;
+                }
+                
+                else
+                {
+                    (*result)->transmute_expression.type    = first_expr;
+                    (*result)->transmute_expression.operand = second_expr;
+                }
+            }
+        }
+    }
+    
     else if (token.kind == Token_OpenParen)
     {
         *result = AddExpression(state, Expr_Compound);
@@ -961,10 +1019,7 @@ ParsePrimaryExpression(Parser_State* state, Expression** result, bool tolerate_m
             encountered_errors = true;
         }
         
-        else
-        {
-            *result = AddExpression(state, Expr_Empty);
-        }
+        else *result = 0;
     }
     
     return !encountered_errors;
@@ -1135,17 +1190,16 @@ ParsePrefixExpression(Parser_State* state, Expression** result)
             if (!ParsePrimaryExpression(state, result, (directive_slice.size != 0))) encountered_errors = true;
             else
             {
+                if (*result == 0) *result = AddExpression(state, Expr_Empty);
+                
                 (*result)->directives = directive_slice;
                 
-                if ((*result)->kind != Expr_Empty)
+                if (!ParsePostfixExpression(state, result))
                 {
-                    if (!ParsePostfixExpression(state, result))
-                    {
-                        encountered_errors = true;
-                    }
-                    
-                    break;
+                    encountered_errors = true;
                 }
+                
+                break;
             }
         }
     }

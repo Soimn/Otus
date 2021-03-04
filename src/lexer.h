@@ -148,36 +148,40 @@ enum KEYWORD_KIND
     Keyword_Do,
     Keyword_True,
     Keyword_False,
+    Keyword_Cast,
+    Keyword_Transmute,
     
     KEYWORD_KIND_COUNT
 };
 
 // NOTE(soimn): This is defined as a macro to circumvent msvc bullshit
-#define EMIT_KEYWORD_STRINGS_TABLE()                   \
-String KeywordStrings[KEYWORD_KIND_COUNT] = {      \
-[Keyword_Import]   = CONST_STRING("import"),   \
-[Keyword_Foreign]  = CONST_STRING("foreign"),  \
-[Keyword_As]       = CONST_STRING("as"),       \
-[Keyword_Defer]    = CONST_STRING("defer"),    \
-[Keyword_Return]   = CONST_STRING("return"),   \
-[Keyword_Using]    = CONST_STRING("using"),    \
-[Keyword_Proc]     = CONST_STRING("proc"),     \
-[Keyword_Where]    = CONST_STRING("where"),    \
-[Keyword_Struct]   = CONST_STRING("struct"),   \
-[Keyword_Union]    = CONST_STRING("union"),    \
-[Keyword_Enum]     = CONST_STRING("enum"),     \
-[Keyword_If]       = CONST_STRING("if"),       \
-[Keyword_Else]     = CONST_STRING("else"),     \
-[Keyword_When]     = CONST_STRING("when"),     \
-[Keyword_While]    = CONST_STRING("while"),    \
-[Keyword_For]      = CONST_STRING("for"),      \
-[Keyword_Break]    = CONST_STRING("break"),    \
-[Keyword_Continue] = CONST_STRING("continue"), \
-[Keyword_In]       = CONST_STRING("in"),       \
-[Keyword_NotIn]    = CONST_STRING("not_in"),   \
-[Keyword_Do]       = CONST_STRING("do"),       \
-[Keyword_True]     = CONST_STRING("true"),     \
-[Keyword_False]    = CONST_STRING("false"),    \
+#define EMIT_KEYWORD_STRINGS_TABLE()                     \
+String KeywordStrings[KEYWORD_KIND_COUNT] = {        \
+[Keyword_Import]    = CONST_STRING("import"),    \
+[Keyword_Foreign]   = CONST_STRING("foreign"),   \
+[Keyword_As]        = CONST_STRING("as"),        \
+[Keyword_Defer]     = CONST_STRING("defer"),     \
+[Keyword_Return]    = CONST_STRING("return"),    \
+[Keyword_Using]     = CONST_STRING("using"),     \
+[Keyword_Proc]      = CONST_STRING("proc"),      \
+[Keyword_Where]     = CONST_STRING("where"),     \
+[Keyword_Struct]    = CONST_STRING("struct"),    \
+[Keyword_Union]     = CONST_STRING("union"),     \
+[Keyword_Enum]      = CONST_STRING("enum"),      \
+[Keyword_If]        = CONST_STRING("if"),        \
+[Keyword_Else]      = CONST_STRING("else"),      \
+[Keyword_When]      = CONST_STRING("when"),      \
+[Keyword_While]     = CONST_STRING("while"),     \
+[Keyword_For]       = CONST_STRING("for"),       \
+[Keyword_Break]     = CONST_STRING("break"),     \
+[Keyword_Continue]  = CONST_STRING("continue"),  \
+[Keyword_In]        = CONST_STRING("in"),        \
+[Keyword_NotIn]     = CONST_STRING("not_in"),    \
+[Keyword_Do]        = CONST_STRING("do"),        \
+[Keyword_True]      = CONST_STRING("true"),      \
+[Keyword_False]     = CONST_STRING("false"),     \
+[Keyword_Cast]      = CONST_STRING("cast"),      \
+[Keyword_Transmute] = CONST_STRING("transmute"), \
 }
 
 typedef struct Token

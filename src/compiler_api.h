@@ -195,6 +195,8 @@ enum EXPR_KIND
     // Special
     Expr_NamedArgument,
     Expr_Compound,
+    Expr_Cast,
+    Expr_Transmute,
     Expr_Empty,
 };
 
@@ -311,6 +313,18 @@ typedef struct Expression
         {
             struct Expression* expression;
         } compound;
+        
+        struct
+        {
+            struct Expression* type;
+            struct Expression* operand;
+        } cast_expression;
+        
+        struct
+        {
+            struct Expression* type;
+            struct Expression* operand;
+        } transmute_expression;
     };
     
 } Expression;
@@ -353,7 +367,6 @@ typedef struct Statement
     {
         struct
         {
-            Scope_ID scope_id;
             Expression* label;
             Slice(Expression*) expressions;
             Slice(Statement*) statements;
@@ -502,317 +515,11 @@ typedef struct Statement
 
 //////////////////////////////////////////
 
-enum TYPE_KIND
-{
-    Type_Invalid = 0,
-    
-    Type_Int,
-    Type_Float,
-    Type_Bool,
-    Type_Any,
-    Type_Alias,
-    
-    Type_Struct,
-    Type_Enum,
-    Type_Proc,
-    
-    Type_Pointer,
-    Type_Array,
-    Type_Slice,
-    Type_DynamicArray,
-};
-
-typedef struct Value
-{
-    Enum8(TYPE_KIND) kind;
-    
-    union
-    {
-        i64 int64;
-        u64 uint64;
-        f32 float32;
-        f64 float64;
-        bool boolean;
-        
-        struct
-        {
-            u64 data;
-            Type_ID type;
-        } any;
-        
-        struct
-        {
-            Slice(Value) members;
-        } structure;
-        
-        struct
-        {
-            Slice(Value) members;
-        } enumeration;
-        
-        u64 pointer;
-        
-        struct
-        {
-            Slice(Value) elements;
-        } array;
-        
-        struct
-        {
-            u64 pointer;
-            u64 size;
-        } slice;
-        
-        struct
-        {
-            u64 allocator;
-            u64 pointer;
-            u64 size;
-            u64 capacity;
-        } dynamic_array;
-    };
-} Value;
-
-typedef struct Type_Field_Info
-{
-    String name;
-    Type_ID type;
-    Value default_value;
-} Type_Field_Info;
-
-typedef struct Type
-{
-    Enum8(TYPE_KIND) kind;
-    
-    union
-    {
-        struct
-        {
-            u8 size;
-            bool is_signed;
-        } integer;
-        
-        struct
-        {
-            u8 size;
-        } floating;
-        
-        struct
-        {
-            Type_ID type;
-            bool is_distinct;
-        } alias;
-        
-        struct
-        {
-            Slice(Type_Field_Info) members;
-            bool is_union;
-        } structure;
-        
-        struct
-        {
-            Slice(Type_Field_Info) members;
-        } enumeration;
-        
-        struct
-        {
-            Slice(Type_Field_Info) parameters;
-            Slice(Type_Field_Info) return_values;
-        } procedure;
-        
-        struct
-        {
-            Type_ID type;
-        } pointer;
-        
-        struct
-        {
-            Type_ID type;
-            u64 size;
-        } array;
-        
-        struct
-        {
-            Type_ID type;
-        } slice;
-        
-        struct
-        {
-            Type_ID type;
-        } dynamic_array;
-    };
-} Type;
-
-enum SYMBOL_KIND
-{
-    Symbol_Invalid = 0,
-    
-    Symbol_Variable,
-    Symbol_Constant,
-    Symbol_Alias,
-    Symbol_Type,
-    Symbol_Procedure,
-    Symbol_Package,
-};
-
-typedef struct Symbol
-{
-    String name;
-    
-    union
-    {
-        Type_ID type;
-        Symbol_ID aliased_symbol;
-        Package_ID package;
-    };
-    
-    Enum8(SYMBOL_KIND) kind;
-    bool is_public;
-} Symbol;
-
-typedef struct Scope
-{
-    Slice(Symbol) symbols;
-    Slice(Expression*) expressions;
-    Slice(Statement*) statements;
-} Scope;
-
-//////////////////////////////////////////
-
-enum DECLARATION_KIND
-{
-    Declaration_Invalid = 0,
-    
-    Declaration_Procedure,
-    Declaration_Structure,
-    Declaration_Enumeration,
-    Declaration_Variable,
-    Declaration_Constant,
-    Declaration_Import,
-};
-
-enum DECLARATION_STAGE_KIND
-{
-    DeclarationStage_Parsed      = 0,
-    DeclarationStage_SemaChecked = 1,
-    DeclarationStage_TypeChecked = 2,
-};
-
-typedef struct Declaration
-{
-    Enum8(DECLARATION_KIND) kind;
-    Enum8(DECLARATION_STAGE_KIND) stage;
-    
-    Package_ID package;
-    Statement* ast;
-    
-    u64 user_data;
-} Declaration;
-
-typedef struct Declaration_Pool_Block
-{
-    struct Declaration_Pool_Block* next;
-    u64 free_map;
-    Slice(Declaration) declarations;
-} Declaration_Pool_Block;
-
-typedef struct Declaration_Pool
-{
-    Declaration_Pool_Block* first;
-    Declaration_Pool_Block* current;
-} Declaration_Pool;
-
-typedef struct Declaration_Iterator
-{
-    Declaration_Pool_Block* block;
-    u64 index;
-    Declaration* current;
-} Declaration_Iterator;
-
-//////////////////////////////////////////
-
-Declaration_Iterator
-DeclarationPool_CreateIterator(Declaration_Pool* pool)
-{
-    Declaration_Iterator it = {
-        .block   = pool->first,
-        .index   = 0,
-        .current = 0
-    };
-    
-    while (it.block != 0 && it.block->free_map == 0)
-    {
-        it.index += 64;
-        it.block  = it.block->next;
-    }
-    
-    if (it.block != 0)
-    {
-        u64 first_decl = (~it.block->free_map + 1) & it.block->free_map;
-        
-        // NOTE(soimn): index += log_2(first_decl)
-        //              the bit pattern of a float is proportional to its log
-        f32 f     = (f32)first_decl;
-        it.index += *(u32*)&f / (1 << 23) - 127;
-        
-        it.current = (Declaration*)it.block->declarations.data + it.index % 64;
-    }
-    
-    return it;
-}
-
-void
-DeclarationPool_AdvanceIterator(Declaration_Pool* pool, Declaration_Iterator* it, bool should_loop)
-{
-    if (pool->first == 0) it->current = 0;
-    else
-    {
-        it->index  += 1;
-        it->current = 0;
-        if (it->index % 64 == 0) it->block = it->block->next;
-        
-        bool looped_once = false;
-        for (;;)
-        {
-            if (it->block == 0)
-            {
-                it->block = pool->first;
-                
-                if (!should_loop || looped_once) break;
-                else looped_once = true;
-            }
-            
-            u64 free_map = it->block->free_map & (~0ULL << (it->index % 64));
-            
-            if (free_map != 0)
-            {
-                u64 first_decl = (~it->block->free_map + 1) & it->block->free_map;
-                
-                // NOTE(soimn): index += log_2(first_decl)
-                //              the bit pattern of a float is proportional to its log
-                f32 f      = (f32)first_decl;
-                it->index += *(u32*)&f / (1 << 23) - 127;
-                
-                it->current = (Declaration*)it->block->declarations.data + it->index % 64;
-            }
-            
-            else
-            {
-                it->index += 64 - it->index % 64;
-                it->block  = it->block->next;
-            }
-        }
-    }
-}
-
-//////////////////////////////////////////
-
 typedef struct Package
 {
     String name;
     String path;
     Slice(File_ID) files;
-    //Dynamic_Array(Symbol) symbols;
 } Package;
 
 typedef struct Path_Prefix
@@ -826,29 +533,30 @@ typedef struct Workspace
     Dynamic_Array(String) file_paths;
     Dynamic_Array(Package) packages;
     Slice(Path_Prefix) path_prefixes;
-    bool prep_option;
-    
-    Declaration_Pool meta_pool;
-    Declaration_Pool commit_pool;
 } Workspace;
 
 //////////////////////////////////////////
 
-enum WORKSPACE_PREP_OPTION
-{
-    WorkspacePrep_Parsed                = 0,
-    WorkspacePrep_SemanticallyValidated = 1,
-    WorkspacePrep_TypeChecked           = 2,
-};
-
 typedef struct Workspace_Options
 {
     Slice(Path_Prefix) path_prefixes;
-    Enum8(WORKSPACE_PREP_OPTION) prep_option;
 } Workspace_Options;
 
 API_FUNC Workspace* Workspace_Open(Workspace_Options workspace_options, String main_file);
 API_FUNC void Workspace_Close(Workspace* workspace);
-API_FUNC bool Workspace_PopDeclaration(Workspace* workspace, Declaration* declaration);
-API_FUNC bool Workspace_PushDeclaration(Workspace* workspace, Declaration declaration, Enum8(DECLARATION_STAGE_KIND) stage);
-API_FUNC bool Workspace_CommitDeclaration(Workspace* workspace, Declaration declaration);
+
+typedef struct Declaration
+{
+    Statement* ast;
+    Package_ID package;
+    String link_name; // NOTE(soimn): size 0 to use default
+} Declaration;
+
+API_FUNC void Workspace_CommitDeclaration(Workspace* workspace, Declaration declaration);
+
+// TODO(soimn):
+// * Parsing
+//   - Foreign imports
+//   - "forward" declarations
+// * API
+//   - error reporting
