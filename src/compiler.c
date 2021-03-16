@@ -1,422 +1,51 @@
 #include "compiler_api.h"
 
-// TODO(soimn): Remove these
-#include <stdlib.h> // malloc & free
-#include <stdio.h>  // printf and putc
-#include <stdarg.h> // va_*
-
-#define CONST_STRING(str) (String){.data = (u8*)(str), .size = sizeof(str) - 1}
-
-#define U8_MAX  ((u8)0xFF)
-#define U16_MAX ((u16)0xFFFF)
-#define U32_MAX ((u32)0xFFFFFFFF)
-#define U64_MAX ((u64)0xFFFFFFFFFFFFFFFF)
-
-#define I8_MAX  ((i8)(U8_MAX >> 1))
-#define I16_MAX ((i16)(U16_MAX >> 1))
-#define I32_MAX ((i32)(U32_MAX >> 1))
-#define I64_MAX ((i64)(U64_MAX >> 1))
-
-#define I8_MIN  ((i8) 1 << 7)
-#define I16_MIN ((i16)1 << 15)
-#define I32_MIN ((i32)1 << 31)
-#define I64_MIN ((i64)1 << 63)
-
-#define CONCAT_(x, y) x##y
-#define CONCAT(x, y) CONCAT_(x, y)
-
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
-#define MIN(x, y) ((x) < (y) ? (x) : (y))
-
-#define BYTES(X)     (umm)(X)
-#define KILOBYTES(X) (BYTES(X)     * 1024ULL)
-#define MEGABYTES(X) (KILOBYTES(X) * 1024ULL)
-#define GIGABYTES(X) (MEGABYTES(X) * 1024ULL)
-
-#ifndef OTUS_DISABLE_ASSERT
-#define ASSERT(EX) ((EX) ? true : *(volatile int*)0)
+#ifndef OTUS_DISABLE_ASSERTIONS
+# define ASSERT(EX) ((EX) ? 1 : *(volatile int*)0)
 #else
-#define ASSERT(EX)
+# define ASSERT(EX)
 #endif
 
-#define INVALID_CODE_PATH ASSERT(!"INVALID_CODE_PATH")
-#define INVALID_DEFAULT_CASE default: ASSERT(!"INVALID_DEFAULT_CASE")
 #define NOT_IMPLEMENTED ASSERT(!"NOT_IMPLEMENTED")
+#define INVALID_CODE_PATH ASSERT(!"INVALID_CODE_PATH")
+#define INVALID_DEFAULT_CASE default: ASSERT(!"INVALID_DEFAULT_CASE"); break
 
-#define OFFSETOF(T, E) (umm)&((T*)0)->E
-#define ALIGNOF(T) (u8)OFFSETOF(struct { char c; T type; }, type)
+#define U8_MAX  (u8)0xFF
+#define U16_MAX (u16)0xFFFF
+#define U32_MAX (u32)0xFFFFFFFF
+#define U64_MAX (u64)0xFFFFFFFFFFFFFFFF
 
-#define ARRAY_COUNT(EX) (sizeof(EX) / sizeof((EX)[0]))
+#define S8_MAX  (s8)U8_MAX   >> 1
+#define S16_MAX (s16)U16_MAX >> 1
+#define S32_MAX (s32)U32_MAX >> 1
+#define S64_MAX (s64)U64_MAX >> 1
 
-#define Slice_ElementAt(array, type, index) (type*)((u8*)(array)->data + sizeof(type) * (index))
-#define DynamicArray_ElementAt(array, type, index) (type*)((u8*)(array)->data + sizeof(type) * (index))
-#define SLICE_TO_DYNAMIC_ARRAY(slice) (Dynamic_Array){.data = (slice).data, .size = (slice).size}
+#define CONST_STRING(s) (String){.data = (u8*)(s), .size = sizeof(s) - 1}
 
-//////////////////////////////////////////
+#define OFFSETOF(e, T) (umm)&((T*)0)->e
+#define ALIGNOF(T) OFFSETOF(t, struct { char c; T t; })
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) < (b) ? (b) : (a))
 
 void*
 System_AllocateMemory(umm size)
 {
-    void* result = malloc(size);
-    ASSERT(result != 0 && (((umm)result + 7) & ~7) == (umm)result);
+    void* result = 0;
     
-    for (u8* scan = result; scan < (u8*)result + size; ++scan)
-    {
-        *scan = 0;
-    }
+    NOT_IMPLEMENTED;
     
     return result;
 }
 
 void
-System_FreeMemory(void* memory)
+System_FreeMemory(void* ptr)
 {
-    free(memory);
-}
-
-#define Arg_List va_list
-#define ARG_LIST_START va_start
-#define ARG_LIST_GET_ARG va_arg
-
-void
-System_PrintChar(char c)
-{
-    putchar(c);
-}
-
-void
-System_PrintString(String string)
-{
-    printf("%.*s", (int)string.size, string.data);
-}
-
-struct Memory_Arena;
-bool
-System_ReadEntireFile(String path, struct Memory_Arena* arena, String* content)
-{
-    bool encountered_errors = false;
-    
     NOT_IMPLEMENTED;
-    
-    return !encountered_errors;
 }
-
-//////////////////////////////////////////
-
-Text_Interval
-TextInterval(Text_Pos pos, u32 size)
-{
-    Text_Interval interval = {
-        .pos  = pos,
-        .size = size
-    };
-    
-    return interval;
-}
-
-Text_Interval
-TextInterval_Merge(Text_Interval i0, Text_Interval i1)
-{
-    ASSERT(i0.pos.file == i1.pos.file);
-    ASSERT(i0.pos.offset_to_line + i0.pos.column + i0.size <= i1.pos.offset_to_line + i1.pos.column + i1.size);
-    
-    Text_Interval interval = {
-        .pos  = i0.pos,
-        .size = (i1.size + i1.pos.column + i1.pos.offset_to_line) - (i0.pos.column + i0.pos.offset_to_line)
-    };
-    
-    return interval;
-}
-
-Text_Interval
-TextInterval_FromEndpoints(Text_Pos p0, Text_Pos p1)
-{
-    ASSERT(p0.file == p1.file);
-    ASSERT(p0.offset_to_line + p0.column <= p1.offset_to_line + p1.column);
-    
-    u32 size = (p1.column + p1.offset_to_line) - (p0.column + p0.offset_to_line);
-    
-    return TextInterval(p0, size);
-}
-
-//////////////////////////////////////////
 
 #include "memory.h"
 #include "string.h"
 
-typedef struct Compiler_State
-{
-    Workspace workspace;
-    Memory_Arena persistent_memory;
-    Memory_Arena temp_memory;
-    Declaration_Iterator declaration_iterator;
-} Compiler_State;
-
-//////////////////////////////////////////
-
-typedef struct Declaration_Pool_Block
-{
-    struct Declaration_Pool_Block* next;
-    u64 free_map;
-    Slice(Declaration) declarations;
-} Declaration_Pool_Block;
-
-typedef struct Declaration_Pool
-{
-    Declaration_Pool_Block* first;
-    Declaration_Pool_Block* current;
-} Declaration_Pool;
-
-typedef struct Declaration_Iterator
-{
-    Declaration_Pool_Block* block;
-    u64 index;
-    Declaration* current;
-} Declaration_Iterator;
-
-Declaration_Iterator
-DeclarationPool_CreateIterator(Declaration_Pool* pool)
-{
-    Declaration_Iterator it = {
-        .block   = pool->first,
-        .index   = 0,
-        .current = 0
-    };
-    
-    while (it.block != 0 && it.block->free_map == 0)
-    {
-        it.index += 64;
-        it.block  = it.block->next;
-    }
-    
-    if (it.block != 0)
-    {
-        u64 first_decl = (~it.block->free_map + 1) & it.block->free_map;
-        
-        // NOTE(soimn): index += log_2(first_decl)
-        //              the bit pattern of a float is proportional to its log
-        f32 f     = (f32)first_decl;
-        it.index += *(u32*)&f / (1 << 23) - 127;
-        
-        it.current = (Declaration*)it.block->declarations.data + it.index % 64;
-    }
-    
-    return it;
-}
-
-void
-DeclarationPool_AdvanceIterator(Declaration_Pool* pool, Declaration_Iterator* it, bool should_loop)
-{
-    if (pool->first == 0) it->current = 0;
-    else
-    {
-        it->index  += 1;
-        it->current = 0;
-        if (it->index % 64 == 0) it->block = it->block->next;
-        
-        bool looped_once = false;
-        for (;;)
-        {
-            if (it->block == 0)
-            {
-                it->block = pool->first;
-                
-                if (!should_loop || looped_once) break;
-                else looped_once = true;
-            }
-            
-            u64 free_map = it->block->free_map & (~0ULL << (it->index % 64));
-            
-            if (free_map != 0)
-            {
-                u64 first_decl = (~it->block->free_map + 1) & it->block->free_map;
-                
-                // NOTE(soimn): index += log_2(first_decl)
-                //              the bit pattern of a float is proportional to its log
-                f32 f      = (f32)first_decl;
-                it->index += *(u32*)&f / (1 << 23) - 127;
-                
-                it->current = (Declaration*)it->block->declarations.data + it->index % 64;
-            }
-            
-            else
-            {
-                it->index += 64 - it->index % 64;
-                it->block  = it->block->next;
-            }
-        }
-    }
-}
-
-//////////////////////////////////////////
-
-bool ParseFile(Compiler_State* compiler_state, Package_ID package_id, File_ID file_id);
-bool SemaValidateDeclarationAndGenerateSymbolInfo(Compiler_State* compiler_state, Declaration declaration);
-bool TypeCheckDeclaration(Compiler_State* compiler_state, Declaration declaration);
-
-API_FUNC Workspace*
-Workspace_Open(Workspace_Options workspace_options, String main_file)
-{
-    Compiler_State* compiler_state = System_AllocateMemory(sizeof(Compiler_State));
-    ZeroStruct(compiler_state);
-    
-    NOT_IMPLEMENTED;
-    
-    return &compiler_state->workspace;
-}
-
-API_FUNC void
-Workspace_Close(Workspace* workspace)
-{
-    Compiler_State* compiler_state = (Compiler_State*)workspace;
-    
-    Arena_FreeAll(&compiler_state->persistent_memory);
-    Arena_FreeAll(&compiler_state->temp_memory);
-    
-    NOT_IMPLEMENTED;
-}
-
-API_FUNC bool
-Workspace_PopDeclaration(Workspace* workspace, Declaration* declaration)
-{
-    bool is_empty = false;
-    
-    Compiler_State* compiler_state = (Compiler_State*)workspace;
-    
-    DeclarationPool_AdvanceIterator(&workspace->meta_pool, &compiler_state->declaration_iterator, true);
-    
-    if (compiler_state->declaration_iterator.current == 0) is_empty = true;
-    else
-    {
-        Declaration_Iterator* it = &compiler_state->declaration_iterator;
-        
-        *declaration = *it->current;
-        it->block->free_map &= ~(1 << (it->index % 64));
-    }
-    
-    return !is_empty;
-}
-
-API_FUNC bool
-Workspace_PushDeclaration(Workspace* workspace, Declaration declaration, Enum8(DECLARATION_STAGE_KIND) stage)
-{
-    bool encountered_errors = false;
-    
-    Compiler_State* compiler_state = (Compiler_State*)workspace;
-    
-    if (stage < workspace->prep_option) stage = workspace->prep_option;
-    
-    if (stage == DeclarationStage_SemaChecked || stage == DeclarationStage_TypeChecked)
-    {
-        encountered_errors = !SemaValidateDeclarationAndGenerateSymbolInfo(compiler_state, declaration);
-        
-        if (stage == DeclarationStage_TypeChecked)
-        {
-            encountered_errors = !TypeCheckDeclaration(compiler_state, declaration);
-        }
-    }
-    
-    if (!encountered_errors)
-    {
-        Declaration_Pool_Block* block = workspace->meta_pool.first;
-        while (block != 0)
-        {
-            if (block->free_map != ~(u64)0) break;
-            else block = block->next;
-        }
-        
-        if (block == 0)
-        {
-            void* memory = Arena_Allocate(&compiler_state->persistent_memory,
-                                          sizeof(Declaration_Pool_Block) + sizeof(Declaration) * 64,
-                                          ALIGNOF(u64));
-            
-            Declaration_Pool_Block* new_block = memory;
-            ZeroStruct(new_block);
-            
-            new_block->declarations.data = new_block + 1;
-            new_block->declarations.size = 64;
-            
-            if (workspace->meta_pool.first) workspace->meta_pool.current->next = new_block;
-            else                            workspace->meta_pool.first         = new_block;
-            
-            workspace->meta_pool.current = new_block;
-            block                        = workspace->meta_pool.current;
-            
-            if (workspace->meta_pool.first == new_block)
-            {
-                compiler_state->declaration_iterator = DeclarationPool_CreateIterator(&workspace->meta_pool);
-            }
-        }
-        
-        u64 free_spot = (block->free_map + 1) & ~block->free_map;
-        
-        // NOTE(soimn): free_spot_index = log_2(free_spot)
-        //              the bit pattern of a float is proportional to its log
-        f32 f = (f32)free_spot;
-        umm free_spot_index = *(u32*)&f / (1 << 23) - 127;
-        
-        *((Declaration*)block->declarations.data + free_spot_index) = declaration;
-        
-        block->free_map |= free_spot;
-    }
-    
-    return !encountered_errors;
-}
-
-API_FUNC
-bool
-Workspace_CommitDeclaration(Workspace* workspace, Declaration declaration)
-{
-    bool encountered_errors = false;
-    
-    Compiler_State* compiler_state = (Compiler_State*)workspace;
-    
-    encountered_errors = (!SemaValidateDeclarationAndGenerateSymbolInfo(compiler_state, declaration) ||
-                          !TypeCheckDeclaration(compiler_state, declaration));
-    
-    
-    if (!encountered_errors)
-    {
-        Declaration_Pool_Block* block = workspace->commit_pool.current;
-        
-        if (block == 0)
-        {
-            void* memory = Arena_Allocate(&compiler_state->persistent_memory,
-                                          sizeof(Declaration_Pool_Block) + sizeof(Declaration) * 64,
-                                          ALIGNOF(u64));
-            
-            Declaration_Pool_Block* new_block = memory;
-            ZeroStruct(new_block);
-            
-            new_block->declarations.data = new_block + 1;
-            new_block->declarations.size = 64;
-            
-            if (workspace->meta_pool.first) workspace->meta_pool.current->next = new_block;
-            else                            workspace->meta_pool.first         = new_block;
-            
-            workspace->meta_pool.current = new_block;
-            block                        = workspace->meta_pool.current;
-        }
-        
-        umm free_spot = block->free_map + 1;
-        
-        // NOTE(soimn): free_spot_index = log_2(free_spot)
-        //              the bit pattern of a float is proportional to its log
-        f32 f = (f32)free_spot;
-        umm free_spot_index = *(u32*)&f / (1 << 23) - 127;
-        
-        *((Declaration*)block->declarations.data + free_spot_index) = declaration;
-        
-        block->free_map <<= 1;
-        block->free_map += 1;
-    }
-    
-    return !encountered_errors;
-}
-
-//////////////////////////////////////////
-
 #include "lexer.h"
 #include "parser.h"
-#include "checker.h"

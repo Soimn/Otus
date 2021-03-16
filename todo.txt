@@ -1,9 +1,0 @@
-- What about two files who want to share the same local
-  namespace, but cannot be part of the same file for
-  some reason
-
-- Pointer vs intervall (unbounded, increment)
-
-- When should strings be resovled?
-
-- Should there be a distinction between static arrays and intervals

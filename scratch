@@ -897,4 +897,23 @@ But is also introduces some ambiguities
 
 #load - load file and return []u8
 
-// remove using as, replace with using
+// remove using as, replace with using¨
+// what to do about character literals? ' or ` ?
+
+source_location
+caller_location
+packed
+padded
+ordered
+unordered
+code_block{}
+run
+insert
+import
+load
+foreign
+inject
+distinct
+
+
+Is there a way to make "for a in b do x;" a macro?
