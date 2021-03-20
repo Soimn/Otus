@@ -917,3 +917,37 @@ distinct
 
 
 Is there a way to make "for a in b do x;" a macro?
+
+------------------------------------------------
+            Metaprogramming API
+------------------------------------------------
+
+To limit complexity:
+ - No custom parsing. If a user wants custom parsing, they can implement the parser themselves and pass the AST to a
+   metaprogram.
+ - No rechecking of declarations. If a declaration is checked and committed as finished, it cannot be changed.
+
+The metaprogram opens a workspace, which initializes the compiler. If a main file is supplied during this initialization, it, and all its dependencies, are parsed. The metaprogram is ten able to access these parsed declarations, process them, and commit any declaration (parsed by the compiler or created by the metaprogam). When a declaration is committed, it is type checked by the compiler and is then available for type and symbol queries. When the metaprogram decides to stop committing declarations, it can ask the compiler to build a binary from the committed declarations.
+
+A workspace is a struct containing state that is exposed from the compiler about the current "compilation"
+
+Open
+Close
+Query*
+CommitDeclaration
+BuildBinary
+
+Idea:
+ - errors are written to a buffer in the workspace
+ - Commit, Build and Open only return whether an error has occurred, or not
+
+Procedure :: proc -> (a: int, b: int) do return 0, 0;
+
+x := Procedure(); // Should this be legal? Should x become a []any?
+
+x := Procedure()[1]; // Should something like this be possible?
+x := Procedure().b; // Or maybe this?
+
+a, b, _, d = Procedure();
+
+How to deal with import "../" and load "./file.os" in "file.os"?

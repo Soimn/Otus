@@ -47,5 +47,10 @@ System_FreeMemory(void* ptr)
 #include "memory.h"
 #include "string.h"
 
+typedef struct Compiler_State
+{
+    Workspace workspace;
+} Compiler_State;
+
 #include "lexer.h"
 #include "parser.h"

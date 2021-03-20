@@ -125,6 +125,12 @@ typedef struct Token
     };
 } Token;
 
+void
+LexerError(File_ID file, u32 line, u32 column, u32 text_length, Enum32(ERROR_CODE) code, const char* message, ...)
+{
+    NOT_IMPLEMENTED;
+}
+
 Bucket_Array(Token)
 LexFile(String file_contents, Memory_Arena* token_arena, Memory_Arena* string_arena)
 {
