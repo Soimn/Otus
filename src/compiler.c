@@ -29,6 +29,26 @@ CloseWorkspace(Workspace* workspace)
     NOT_IMPLEMENTED;
 }
 
+API_FUNC File_ID
+ParseFile(Workspace* workspace, Package_ID package_id, String name, String path, String contents)
+{
+    File_ID file_id = INVALID_ID;
+    
+    NOT_IMPLEMENTED;
+    
+    return file_id;
+}
+
+API_FUNC File_ID
+LoadAndParseFile(Workspace* workspace, Package_ID package_id, String path)
+{
+    File_ID file_id = INVALID_ID;
+    
+    NOT_IMPLEMENTED;
+    
+    return file_id;
+}
+
 API_FUNC void
 CommitDeclarationByID(Workspace* workspace, Declaration_ID id)
 {

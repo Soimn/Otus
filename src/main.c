@@ -20,8 +20,7 @@ main(int argc, const char** argv)
         
         Workspace* workspace    = OpenWorkspace((Workspace_Options){});
         Package_ID main_package = AddNewPackage(workspace, CONST_STRING("main"));
-        
-        ParseFile(main_file, main_package);
+        LoadAndParseFile(workspace, main_package, main_file);
         
         Memory_Arena scratch_arena = {0};
         

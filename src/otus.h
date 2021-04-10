@@ -193,23 +193,10 @@ typedef struct Workspace_Options
 API_FUNC Workspace* OpenWorkspace(Workspace_Options options);
 API_FUNC void CloseWorkspace(Workspace* workspace);
 
+API_FUNC File_ID ParseFile(Workspace* workspace, Package_ID package_id, String name, String path, String contents);
+API_FUNC File_ID LoadAndParseFile(Workspace* workspace, Package_ID package_id, String path);
+
 API_FUNC void CommitDeclarationByID(Workspace* workspace, Declaration_ID id);
-
-/// Memory management
-/////////////////////////////////////////////////////
-
-typedef struct Memory_Block
-{
-    struct Memory_Block* next;
-    u32 offset;
-    u32 space;
-} Memory_Block;
-
-typedef struct Memory_Arena
-{
-    Memory_Block* first;
-    Memory_Block* current;
-} Memory_Arena;
 
 /// Helper functions
 /////////////////////////////////////////////////////
@@ -267,3 +254,20 @@ Declaration_ID
 AddNewDeclaration(Workspace* workspace, Package_ID package, ...)
 {
 }*/
+
+/// Memory management utilities
+/////////////////////////////////////////////////////
+
+typedef struct Memory_Block
+{
+    struct Memory_Block* next;
+    u32 offset;
+    u32 space;
+} Memory_Block;
+
+typedef struct Memory_Arena
+{
+    Memory_Block* first;
+    Memory_Block* current;
+    
+} Memory_Arena;
