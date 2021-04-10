@@ -12,10 +12,10 @@ typedef unsigned __int64 u64;
 
 #elif __linux__
 
-typedef __INT8_TYPE__  i8;
-typedef __INT16_TYPE__ i16;
-typedef __INT32_TYPE__ i32;
-typedef __INT64_TYPE__ i64;
+typedef __INT8_TYPE__  s8;
+typedef __INT16_TYPE__ s16;
+typedef __INT32_TYPE__ s32;
+typedef __INT64_TYPE__ s64;
 
 typedef __UINT8_TYPE__  u8;
 typedef __UINT16_TYPE__ u16;
@@ -84,10 +84,14 @@ typedef struct Number
 
 /////////////////////////////////////////////
 
+#define INVALID_ID (s64)-1
+typedef s64 Package_ID;
+typedef s64 File_ID;
+
+typedef u64 Declaration_ID;
 typedef u64 Scope_ID;
 typedef u64 Type_ID;
-typedef u64 File_ID;
-typedef u64 Package_ID;
+typedef u64 Symbol_ID;
 
 /////////////////////////////////////////////
 
@@ -107,6 +111,7 @@ typedef struct Code_Note
 enum EXPRESSION_KIND
 {
     Expression_Invalid = 0,
+    Expression_None,
     
     // unary - arithmetic, bitwise and logical
     Expression_Plus,
@@ -119,9 +124,10 @@ enum EXPRESSION_KIND
     Expression_Sub,
     Expression_Mul,
     Expression_Div,
-    Expression_Mod,
+    Expression_Remainder,
     Expression_BitAnd,
     Expression_BitOr,
+    Expression_BitXor,
     Expression_BitShiftLeft,
     Expression_BitShiftRight,
     Expression_And,
@@ -140,7 +146,8 @@ enum EXPRESSION_KIND
     Expression_Chain,
     Expression_In,
     Expression_NotIn,
-    Expression_Interval,
+    Expression_ClosedInterval,
+    Expression_HalfOpenInterval,
     
     // unary
     Expression_Reference,
@@ -153,7 +160,6 @@ enum EXPRESSION_KIND
     // unary - types
     Expression_SliceType,
     Expression_ArrayType,
-    Expression_DynamicArrayType,
     Expression_PointerType,
     Expression_PolymorphicType,
     
@@ -172,23 +178,18 @@ enum EXPRESSION_KIND
     Expression_Character,
     Expression_String,
     Expression_Boolean,
+    
+    // Sema
+    Expression_ResolvedIdentifier,
 };
-
-typedef struct Struct_Member
-{
-    Slice(Code_Note) notes;
-    struct Expression* name;
-    struct Expression* type;
-} Struct_Member;
 
 typedef struct Proc_Parameter
 {
     Slice(Code_Note) notes;
-    struct Expression* name;
+    Slice(Expression) names;
     struct Expression* type;
     struct Expression* value;
     bool is_using;
-    bool is_const;
 } Proc_Parameter;
 
 typedef struct Expression
@@ -217,6 +218,7 @@ typedef struct Expression
             struct Expression* pointer;
             struct Expression* start;
             struct Expression* end;
+            struct Expression* step;
         } slice_expression;
         
         struct
@@ -239,14 +241,14 @@ typedef struct Expression
         struct
         {
             Slice(Named_Value) parameters;
-            Slice(Struct_Member) members;
-            bool is_uninitialized;
+            Slice(AST_Node) members;
+            bool is_declaration;
         } struct_expression;
         
         struct
         {
             Slice(Named_Value) members;
-            bool is_uninitialized;
+            bool is_declaration;
         } enum_expression;
         
         struct
@@ -255,10 +257,7 @@ typedef struct Expression
             Slice(Proc_Parameter) return_values;
             struct Expression* where_expression;
             struct AST_Node* body;
-            
-            // NOTE(soimn): Valid state is !(is_type && is_uninitialized)
-            bool is_type;
-            bool is_uninitialized;
+            bool is_declaration;
         } proc_expression;
         
         struct
@@ -266,7 +265,7 @@ typedef struct Expression
             Slice(Proc_Parameter) parameters;
             struct Expression* where_expression;
             struct AST_Node* body;
-            bool is_uninitialized;
+            bool is_declaration;
         } macro_expression;
         
         struct Expression* compound_expression;
@@ -282,6 +281,8 @@ typedef struct Expression
         u32 character;
         String string;
         bool boolean;
+        
+        Symbol_ID symbol;
     };
 } Expression;
 
@@ -305,6 +306,7 @@ enum AST_NODE_KIND
     AST_Variable,
     AST_Import,
     AST_Load,
+    AST_Foreign,
 };
 
 typedef struct AST_Node
@@ -318,14 +320,15 @@ typedef struct AST_Node
         
         struct
         {
-            struct Expression* label;
+            Expression* label;
             Scope_ID scope_id;
             Slice(AST_Node) nodes;
+            bool is_do_block;
         } block_statement;
         
         struct
         {
-            struct Expression* label;
+            Expression* label;
             struct AST_Node* init;
             Expression* condition;
             struct AST_Node* true_body;
@@ -334,7 +337,7 @@ typedef struct AST_Node
         
         struct
         {
-            struct Expression* label;
+            Expression* label;
             struct AST_Node* init;
             Expression* condition;
             struct AST_Node* step;
@@ -343,8 +346,8 @@ typedef struct AST_Node
         
         struct
         {
-            struct Expression* label;
-            Slice(Expression*) iterator_symbols;
+            Expression* label;
+            Slice(Expression) iterator_symbols;
             Expression* iterator;
             struct AST_Node* body;
         } for_statement;
@@ -372,29 +375,30 @@ typedef struct AST_Node
         struct
         {
             Enum8(EXPRESSION_KIND) operation;
-            Slice(Expression*) lhs, rhs;
+            Slice(Expression) lhs, rhs;
         } assignment_statement;
         
         struct
         {
-            Slice(Expression*) names;
-            Slice(Expression*) types;
-            Slice(Expression*) values;
-            bool is_uninitialized;
+            Slice(Expression) names;
+            Slice(Expression) types;
+            Slice(Expression) values;
+            bool is_declaration;
             bool is_using;
         } constant_declaration, variable_declaration;
         
         struct
         {
-            Package_ID package;
-            String alias;
-            bool is_foreign;
+            Expression* path;
+            Expression* alias;
         } import_declaration;
         
         struct
         {
-            File_ID file;
+            Expression* path;
         } load_declaration;
+        
+        struct AST_Node* foreign_declaration;
     };
 } AST_Node;
 
@@ -402,7 +406,7 @@ typedef struct AST_Node
 
 enum ERROR_CODE
 {
-    Error_Invalid = 0,
+    Error_Success = 0,
     
     Error_LexerErrorsStart,
     Error_FailedToLoadFile = Error_LexerErrorsStart,
@@ -438,18 +442,69 @@ enum ERROR_CODE
 */
 };
 
-typedef struct Error
+/////////////////////////////////////////////
+
+// What about local functions and polymorphism?
+// What about "which decls belong to this package/file queries"?
+// How should the symbol tables be organized?
+// What kinds of symbols are there?
+
+typedef struct Declaration
 {
+    Declaration_ID id;
     Package_ID package;
-    File_ID file;
-    u32 line;
-    u32 column;
-    u32 text_length;
-    Enum32(ERROR_CODE) code;
-    String message;
-} Error;
+    u32 flags;
+    AST_Node* ast;
+    Symbol symbol;
+    Symbol_Table symbol_table;
+} Declaration;
+
+typedef struct Declaration_Block
+{
+    u64 committed_map;
+    u64 exists_map;
+    Declaration declarations[64];
+} Declaration_Block;
+
+typedef struct Declaration_Iterator
+{
+    Array(Declaration_Block)* blocks;
+    u32 block_index;
+    u32 block_offset;
+} Declaration_Iterator;
+
+/////////////////////////////////////////////
+
+typedef struct Path_Prefix
+{
+    String name;
+    String path;
+} Path_Prefix;
+
+typedef struct Workspace_Options
+{
+    Slice(Path_Prefix) path_prefixes;
+} Workspace_Options;
 
 typedef struct Workspace
 {
-    Array(Error) error_buffer;
+    Array(Declaration_Block) declaration_blocks;
+    Slice(Path_Prefix) path_prefixes;
+    bool has_errors;
 } Workspace;
+
+/////////////////////////////////////////////
+
+Workspace* OpenWorkspace(Workspace_Options options, String main_file);
+void CloseWorkspace(Workspace* workspace);
+
+ParseString(Workspace* workspace, String string);
+
+bool CommitDeclaration(Workspace* workspace, Declaration_ID declaration_id);
+bool CommitDeclaration(Workspace* workspace, Declaration_Iterator iterator);
+
+AddNewDeclaration(Workspace* workspace, Package_ID package, AST_Node* ast, Symbol_Table symbol_table)
+// decl funcs
+// sym funcs
+// type funcs
+// bc funcs

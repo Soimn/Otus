@@ -951,3 +951,39 @@ x := Procedure().b; // Or maybe this?
 a, b, _, d = Procedure();
 
 How to deal with import "../" and load "./file.os" in "file.os"?
+
+
+
+------------------------------------------------
+			Interval syntax
+------------------------------------------------
+
+[a, b]            /**/   a..b
+[a, b)            /**/   a..<b
+(a, b]            /**/   -----
+(a, b)            /**/   -----
+/**/              /**/
+for i in [a, b]   /**/   for i in a..b
+for i in [a, b)   /**/   for i in a..<b
+for i in (a, b]   /**/   --------------
+for i in (a, b)   /**/   --------------
+/**/              /**/
+[, b]             /**/   ..b
+[, b)             /**/   ..<b
+(, b]             /**/   -----
+(, b)             /**/   -----
+/**/              /**/
+for i in [, b]    /**/   for i in ..b
+for i in [, b)    /**/   for i in ..<b
+for i in (, b]    /**/   --------------
+for i in (, b)    /**/   --------------
+/**/              /**/
+[a, ]             /**/   a..
+[a, )             /**/   a..<
+(a, ]             /**/   -----
+(a, )             /**/   -----
+/**/              /**/
+for i in [a, ]    /**/   for i in a..
+for i in [a, )    /**/   for i in a..<
+for i in (a, ]    /**/   --------------
+for i in (a, )    /**/   --------------

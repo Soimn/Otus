@@ -185,11 +185,11 @@ Keywords:
   - foreign
 
 Control structures:
- - if    // if (init; condition)
- - when  // when (init; condition)
+ - if    // if init; condition
+ - when  // when init; condition
  - else
- - for   // for (symbols in symbol)
- - while // while (init; condition; step)
+ - for   // for symbols in symbol
+ - while // while init; condition; step
 
 Declarations:
   - import declaration

@@ -6,7 +6,7 @@ enum TOKEN_KIND
     Token_Sub,
     Token_Mul,
     Token_Div,
-    Token_Mod,
+    Token_Percent,
     Token_And,
     Token_Or,
     Token_Not,
@@ -28,6 +28,7 @@ enum TOKEN_KIND
     Token_Semicolon,
     Token_Period,
     Token_Elipsis,
+    Token_ElipsisLess,
     Token_Colon,
     Token_ColonColon,
     Token_Underscore,
@@ -38,7 +39,7 @@ enum TOKEN_KIND
     Token_SubEqual,
     Token_MulEqual,
     Token_DivEqual,
-    Token_ModEqual,
+    Token_PercentEqual,
     Token_AndEqual,
     Token_OrEqual,
     Token_NotEqual,
@@ -81,6 +82,7 @@ X(Keyword_Return,   "return"),   \
 X(Keyword_Defer,    "defer"),    \
 X(Keyword_Using,    "using"),    \
 X(Keyword_Proc,     "proc"),     \
+X(Keyword_Macro,    "macro"),    \
 X(Keyword_Where,    "where"),    \
 X(Keyword_Struct,   "struct"),   \
 X(Keyword_Union,    "union"),    \
@@ -88,7 +90,6 @@ X(Keyword_Enum,     "enum"),     \
 X(Keyword_True,     "true"),     \
 X(Keyword_False,    "false"),    \
 X(Keyword_Import,   "import"),   \
-X(Keyword_Foreign,  "foreign"),  \
 X(Keyword_In,       "in"),       \
 X(Keyword_NotIn,    "not_in"),   \
 X(Keyword_Do,       "do"),
@@ -107,6 +108,7 @@ enum KEYWORD_KIND
 typedef struct Token
 {
     Enum8(TOKEN_KIND) kind;
+    bool ends_with_space;
     u32 line;
     u32 column;
     u32 size;
@@ -246,9 +248,12 @@ else token->kind = single_kind;                                                 
 } break                                                                                                    \
             
             SINGLE_DOUBLE_EQUAL_OR_DOUBLE_EQUAL('&', Token_BitAnd, Token_And, Token_BitAndEqual, Token_AndEqual);
-            SINGLE_DOUBLE_EQUAL_OR_DOUBLE_EQUAL('|', Token_BitOr, Token_Or, Token_BitOrEqual, Token_OrEqual);
-            SINGLE_DOUBLE_EQUAL_OR_DOUBLE_EQUAL('<', Token_Less, Token_BitShiftLeft, Token_LessEqual, Token_BitShiftLeftEqual);
-            SINGLE_DOUBLE_EQUAL_OR_DOUBLE_EQUAL('>', Token_Greater, Token_BitShiftRight, Token_GreaterEqual, Token_BitShiftRightEqual);
+            SINGLE_DOUBLE_EQUAL_OR_DOUBLE_EQUAL('|', Token_BitOr,  Token_Or,  Token_BitOrEqual,  Token_OrEqual);
+            
+            SINGLE_DOUBLE_EQUAL_OR_DOUBLE_EQUAL('<', Token_Less,    Token_BitShiftLeft,  Token_LessEqual,
+                                                Token_BitShiftLeftEqual);
+            SINGLE_DOUBLE_EQUAL_OR_DOUBLE_EQUAL('>', Token_Greater, Token_BitShiftRight, Token_GreaterEqual,
+                                                Token_BitShiftRightEqual);
             
 #undef SINGLE_DOUBLE_EQUAL_OR_DOUBLE_EQUAL
             
@@ -263,13 +268,13 @@ token->kind = equal_kind;               \
 else token->kind = single_kind;             \
 }break
             
-            SINGLE_OR_EQUAL('+', Token_Add, Token_AddEqual);
-            SINGLE_OR_EQUAL('*', Token_Mul, Token_MulEqual);
-            SINGLE_OR_EQUAL('/', Token_Div, Token_DivEqual);
-            SINGLE_OR_EQUAL('%', Token_Mod, Token_ModEqual);
-            SINGLE_OR_EQUAL('!', Token_Not, Token_NotEqual);
-            SINGLE_OR_EQUAL('~', Token_BitNot, Token_BitNotEqual);
-            SINGLE_OR_EQUAL('^', Token_Hat, Token_HatEqual);
+            SINGLE_OR_EQUAL('+', Token_Add,     Token_AddEqual);
+            SINGLE_OR_EQUAL('*', Token_Mul,     Token_MulEqual);
+            SINGLE_OR_EQUAL('/', Token_Div,     Token_DivEqual);
+            SINGLE_OR_EQUAL('%', Token_Percent, Token_PercentEqual);
+            SINGLE_OR_EQUAL('!', Token_Not,     Token_NotEqual);
+            SINGLE_OR_EQUAL('~', Token_BitNot,  Token_BitNotEqual);
+            SINGLE_OR_EQUAL('^', Token_Hat,     Token_HatEqual);
 #undef SINGLE_OR_EQUAL
             
             case ':':
@@ -367,8 +372,16 @@ else token->kind = single_kind;             \
                     {
                         if (*current == '.')
                         {
-                            current    += 1;
-                            token->kind = Token_Elipsis;
+                            current += 1;
+                            
+                            if (*current == '<')
+                            {
+                                current += 1;
+                                token->kind = Token_ElipsisLess;
+                            }
+                            
+                            
+                            else token->kind = Token_Elipsis;
                         }
                         
                         else token->kind = Token_Period;
@@ -437,8 +450,9 @@ else token->kind = single_kind;             \
                                 
                                 if (digit_count == 8)
                                 {
+                                    u32 i = (u32)integer;
                                     f32 f = 0;
-                                    Copy(&(u32)integer, &f, sizeof(u32));
+                                    Copy(&i, &f, sizeof(u32));
                                     
                                     token->number.is_float    = true;
                                     token->number.is_negative = false;
@@ -447,8 +461,9 @@ else token->kind = single_kind;             \
                                 
                                 else if (digit_count == 16)
                                 {
+                                    u64 i = integer;
                                     f64 f = 0;
-                                    Copy(&(u32)integer, &f, sizeof(u64));
+                                    Copy(&i, &f, sizeof(u64));
                                     
                                     token->number.is_float    = true;
                                     token->number.is_negative = false;
@@ -644,6 +659,8 @@ else token->kind = single_kind;             \
         }
         
         token->size = (u32)(current - start);
+        
+        token.ends_with_space = (IsWhitespace(*current) || *current == '\n');
         
         if (encountered_errors) token->kind = Token_Invalid;
         if (token->kind == Token_Invalid || token->kind == Token_EndOfStream) break;
