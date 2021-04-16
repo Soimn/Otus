@@ -987,3 +987,367 @@ for i in [a, ]    /**/   for i in a..
 for i in [a, )    /**/   for i in a..<
 for i in (a, ]    /**/   --------------
 for i in (a, )    /**/   --------------
+
+Goals for syntax and semantics redesign
+ * preserve the feeling of C
+ * stay close to the syntax of Jai and Odin
+ * remove all ambiguities that cannot be sanely resolved later down the pipeline
+ * raise higher level abstractions to the metaprogram, unless it results in clunky
+   syntax for syntax for something that is often used
+
+To be decided today (hopefully):
+ * syntax
+ * should name shadowing be allowed?
+   - only procedures may shadow
+ * how should overloading work?
+   - implicit, late additions are warned, countermeasure is to declare earlier
+ * how should metaprograms work with libraries?
+ * what should be done with local procedures? Should they be taken out of their parent and sent throught the pipeline
+   separately?
+
+Basics:
+ * the type should come after the name
+ - this is essentially to allow types to exist in one place, instead of being applied
+   to different sides of a name (like arrays in C). Whether they come before or after
+   is largely up to taste. However, if the type comes after the name, instead of before,
+   is is more consistent with existing languages.
+ * types are read left to right
+ - as in pointer_symbol int, is read as pointer to int, and array_symbol pointer_symbol int,
+   is read as array of pointers to ints.
+
+Opinions:
+ * I don't want name shadowing in the language. However, this introduces some problems
+   with both overloads, and there might be someone who wants to support name shadowing.
+   It is easier to disallow name shadowing than to allow it, so maybe it should be
+   allowed. I can personally then just disallow shadowing in my metaprograms. It has
+   also been pointed out that the := syntax combined with variable name shadowing is
+   somewhat bug prone.
+
+Ideas:
+ * a solution to the overloading problem, at least when it comes to symbol linking, could be
+   to state that all overloads must be registered before any of them are bound to calls. An
+   overload registered after any of the previous overloads are used will then throw an error.
+   The problem with this is: what happens with local procedures that overload global procs, or
+   even other local procs?
+
+Remarks:
+ * I don't want to give up all the custom metaprogramming just because I'm making a library
+
+
+Problem: the result of struct { x: int } == struct { x: int } cannot be decided by the metaprogram, when the compiler
+         type checks at commit
+
+
+Big decision:
+Should all dedclarations passed to the metaprogram be type checked by the compiler?
+ + This simplifies the metaprogram tremendously
+ - But it also removes A LOT of freedom
+ + It also simplifies the idea of metaprogramming, since the metaprogram is much more limited
+ + Problems with symbols and overloading are much simpler
+ + It allows greater control in the design of the language
+ - Custom overloading, custom casting rules, set builder syntax (e.g. {r in u32: r > 3}), and much
+   more is now impossible
+
+What about passing only semantically valid declarations with symbols generated and types resolved?
+ + This allows custom casting rules and set builder syntax, but not statements that are not declarations
+   in the global scope
+
+What about passing only semantically valid declarations with symbols generated and types resolved, but this
+   is implemented in the metaprogram layer?
+ + supports common use case and allows for full control if wanted
+
+Decided: The compiler contains all functionality that relates to the language, but exists as a library. The metaprogram layer
+         sits on top of this and has its own model of the compilation.
+
+Overloading: implicit vs. explicit
+implicit:
+ + low friction when adding or removing overloads
+ + allows use of common names (like iterate)
+ - unclear which procedure a name is resolved to
+ - problematic when it comes to metaprogramming, since adding a new procedure could invalidate already compiled code,
+   if it is a better match
+explicit:
+ + clearer what is overloaded, and what is not
+ + clearer what a procedure name can be resolved to
+ - more friction, both by requiring unique procedure names everywhere, and updating procedure groups, but also when dealing with overloaded procedures in a library (removes the ability to supply overloads to the library)
+ - common procedure names (like iterate) is a pain, since it could be defined in a library
+
+Implicit seems to be the way to go, since it is a lot easier to use, and the problems with it could be solved by
+supplying better debug info and solving the problem with program invalidation on late additions in the metaprogram.
+
+Solutions to program invalidation on late (after use/resolution of a name) addition of overloads
+ 1. disallow addition after use
+ 2. keep track of users, check on addition if it invalidates previous uses, error if this is the case
+    (the reason for throwing an error is that that procedure may have been run already)
+ 3. only warn on late addition
+ 4. require late additions to be declared earlier
+
+PS: declaring, in source, a procedure that is known to be a late addition, but not defining its body, can remove all of these
+    problems
+
+1 is a bit limiting
+2 seems like too much trouble
+3 seems reasonable, since late additions may not lead to an invalid program, per se, but it often could.
+4 seems like too much trouble
+
+Name shadowing: yay or nay?
+Requiring no shadowing for procedures when overloading is implicit seems stupid, but allowing everything to shadow seems
+equally stupid.
+Why not just disallow it for everything but procedures. I need to finish this compiler soon, and that is not happening if I
+try to please everyone. Personally I think variable shadowing is stupid, and since I don't use libraries, name collisions have
+never been a major problem for me.
+However, that means a procedure bound to a name is fundamentally different from a struct bound to a name. Should this be shown
+with a syntax difference? Jai and Odin does not do this, but both have some sort of shadowing. Nah, I think it is acceptable to
+just state that only constants bound to procedures with a body may shadow.
+
+What should the pointer type symbol be?
+
+Option #1
+a: ^type = &value;
+
+Option #2
+a: &type = &value;
+
+option #2 causes problems with typeid, since it is ambiguous whether one wants to take an address to the typeid, or take the
+pointer type... Which actually may be a non problem, since taking the pointer type can only be done with constants, and
+it is kind of wierd to take the address of a constant. Maybe the default bahaviour should be to take the address of if it
+is a variable and pointer to if it is a constant? It kind of removes the ability to detect types and fix precedence in the parser thoug.
+I think I will go with option #1
+
+
+-------------------------------------------------------
+                       Syntax
+-------------------------------------------------------
+
+keywords:
+proc
+struct
+union
+enum
+where
+when
+if
+else
+while
+break
+continue
+defer
+using
+return
+
+
+name refers to an identifier, which is defined as _|(_*[a-zA-Z]+[a-zA-z\d]*)
+
+// arguments
+name: type = value
+name: $type = value
+$name: type = value
+$name: $type = value
+
+name0, name1   : type  = value
+name0, name1   : $type = value
+$name0, name1  : type  = value
+name0, $name1  : type  = value
+$name0, $name1 : type  = value
+$name0, $name1 : $type = value
+
+using name: type = value
+using name: $type = value
+using $name: type = value
+using $name: $type = value
+
+using name0, name1   : type  = value
+using name0, name1   : $type = value
+using $name0, name1  : type  = value
+using name0, $name1  : type  = value
+using $name0, $name1 : type  = value
+using $name0, $name1 : $type = value
+
+// variable declaration syntax
+name : type = value;
+name0, name1, name2 : type = value;
+name0, name1, name2 : type0, type1, type2 = value;
+name0, name1, name2 : type0, type1, type2 = value0, value1, value2;
+
+name : type = ---;
+name0, name1, name2 : type = ---;
+name0, name1, name2 : type0, type1, type2 = ---;
+
+using name : type = value;
+using name0, name1, name2 : type = value;
+using name0, name1, name2 : type0, type1, type2 = value;
+using name0, name1, name2 : type0, type1, type2 = value0, value1, value2;
+
+using name : type = ---;
+using name0, name1, name2 : type = ---;
+using name0, name1, name2 : type0, type1, type2 = ---;
+
+// value can be --- to tell the compiler not to zero initialize the variable(s)
+
+// constant declaration syntax (must be easy to distinguish procedures from structs and other constants)
+name : type : value;
+name0, name1, name2 : type : value;
+name0, name1, name2 : type0, type1, type2 : value;
+name0, name1, name2 : type0, type1, type2 : value0, value1, value2;
+
+using name : type : value;
+using name0, name1, name2 : type : value;
+using name0, name1, name2 : type0, type1, type2 : value;
+using name0, name1, name2 : type0, type1, type2 : value0, value1, value2;
+
+// value cannot be --- ?
+
+// procedure type
+proc
+proc(args)
+proc -> return_values
+proc(args) -> return_values
+
+// procedure definition
+proc {}
+proc(args) {}
+proc -> return_values {}
+proc(args) -> return_values {}
+
+proc where expression {}
+proc(args) where expression {}
+proc -> return_values where expression {}
+proc(args) -> return_values where expression {}
+
+// args are a comma separated list of single type and value variable declarations
+
+// procedure declaration
+proc ---
+proc(args) ---
+proc -> return_values ---
+proc(args) -> return_values ---
+
+// structs type
+struct {}
+struct(args) {}
+
+// struct type declaration
+struct ---
+
+struct(args) ---
+
+// union type
+union {}
+union(args) {}
+
+// union type declaration
+union ---
+union(args) ---
+
+// enums type
+enum member_type {}
+
+// enum typ declaration
+enum member_type ---
+
+// imports
+import "path";
+import "path" as name;
+
+using import "path";
+using import "path" as name;
+
+// using
+using expression;
+
+// if
+if expression do statement
+if init; expression do statement
+if expression {}
+if init; expression {}
+
+// when
+when expression do statement
+when init; expression do statement
+when expression {}
+when init; expression {}
+
+// else (follows directly after an if or when)
+else do statement
+else {}
+
+// while
+while condition do statement
+while init; condition do statement
+while init; condition; step do statement
+
+while condition {}
+while init; condition {}
+while init; condition; step {}
+
+// break
+break;
+break expression;
+
+// continue
+continue;
+continue expression;
+
+// return
+return;
+
+return expression;
+return expression0, expression1;
+
+return name = expression;
+return name0 = expression0, name1 = expression1;
+
+// assignment
+¤ is any binary op
+
+name = expression;
+name ¤= expression;
+
+name0, name1 = expression;
+name0, name1 ¤= expression;
+
+name0, name1 = expression0, expression1;
+name0, name1 ¤= expression, expression1;
+
+// struct literals
+{} // Ambiguity at statement level and allows "if {} {}"
+{type: args} // Ambiguity at statement level
+
+// array literals
+[]
+[expression]
+[expression0, expression1]
+
+[type:]
+[type: expression]
+[type: expression0, expression1]
+
+// slice - maybe add [e0:e1:e2] for step?
+name[:]
+name[expression:]
+name[:expression]
+name[expression0:expression1]
+
+// ranges
+..
+expression..
+..expression
+expression0..expression1
+
+..<
+expression..<
+..<expression
+expression0..<expression1
+
+// types
+^            - pointer
+[]           - slice
+[expression] - array
+
+// to be decide tomorrow
+Should using support exceptions? Like use Math except Sin?
+What about for loops?
+How should types work? Should types be more fancy?
+How to make metaprograms work with libraries?
+What about local constant declarations?
+What about polymorphic declarations?
