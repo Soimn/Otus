@@ -1056,8 +1056,9 @@ What about passing only semantically valid declarations with symbols generated a
    is implemented in the metaprogram layer?
  + supports common use case and allows for full control if wanted
 
-Decided: The compiler contains all functionality that relates to the language, but exists as a library. The metaprogram layer
-         sits on top of this and has its own model of the compilation.
+Decided: Only type checked declarations are passed to the metaprogram. The metaprogram is now considered as an intecepter in
+         the compilation process, instead of being in charge of every operation. This is to make it possible for me to
+         finish this compiler within the next decade.
 
 Overloading: implicit vs. explicit
 implicit:
@@ -1166,34 +1167,28 @@ using $name0, $name1 : $type = value
 // variable declaration syntax
 name : type = value;
 name0, name1, name2 : type = value;
-name0, name1, name2 : type0, type1, type2 = value;
-name0, name1, name2 : type0, type1, type2 = value0, value1, value2;
+name0, name1, name2 : type = value0, value1, value2;
 
 name : type = ---;
 name0, name1, name2 : type = ---;
-name0, name1, name2 : type0, type1, type2 = ---;
 
 using name : type = value;
 using name0, name1, name2 : type = value;
-using name0, name1, name2 : type0, type1, type2 = value;
-using name0, name1, name2 : type0, type1, type2 = value0, value1, value2;
+using name0, name1, name2 : type = value0, value1, value2;
 
 using name : type = ---;
 using name0, name1, name2 : type = ---;
-using name0, name1, name2 : type0, type1, type2 = ---;
 
 // value can be --- to tell the compiler not to zero initialize the variable(s)
 
 // constant declaration syntax (must be easy to distinguish procedures from structs and other constants)
 name : type : value;
 name0, name1, name2 : type : value;
-name0, name1, name2 : type0, type1, type2 : value;
-name0, name1, name2 : type0, type1, type2 : value0, value1, value2;
+name0, name1, name2 : type : value0, value1, value2;
 
 using name : type : value;
 using name0, name1, name2 : type : value;
-using name0, name1, name2 : type0, type1, type2 : value;
-using name0, name1, name2 : type0, type1, type2 : value0, value1, value2;
+using name0, name1, name2 : type : value0, value1, value2;
 
 // value cannot be --- ?
 
@@ -1204,6 +1199,16 @@ proc -> return_values
 proc(args) -> return_values
 
 // procedure definition
+proc do statement
+proc(args) do statement
+proc -> return_values do statement
+proc(args) -> return_values do statement
+
+proc where expression do statement
+proc(args) where expression do statement
+proc -> return_values where expression do statement
+proc(args) -> return_values where expression do statement
+
 proc {}
 proc(args) {}
 proc -> return_values {}
@@ -1221,6 +1226,11 @@ proc ---
 proc(args) ---
 proc -> return_values ---
 proc(args) -> return_values ---
+
+proc where expression ---
+proc(args) where expression ---
+proc -> return_values where expression ---
+proc(args) -> return_values where expression ---
 
 // structs type
 struct {}
@@ -1248,6 +1258,15 @@ enum member_type ---
 // imports
 import "path";
 import "path" as name;
+
+using import "path";
+
+// include
+include "path";
+
+// foreign import
+foreign import "path";
+foreign import "path" as alias;
 
 using import "path";
 using import "path" as name;
@@ -1328,26 +1347,196 @@ name[expression:]
 name[:expression]
 name[expression0:expression1]
 
-// ranges
-..
-expression..
+// spread
 ..expression
-expression0..expression1
-
-..<
-expression..<
-..<expression
-expression0..<expression1
 
 // types
 ^            - pointer
 []           - slice
 [expression] - array
+[..]         - dynamic array
+
+// for
+/* to be added later
+for symbol in expression do statement
+for symbol0, symbol1 in expression do statement
+
+for symbol in expression {}
+for symbol0, symbol1 in expression {}
+*/
 
 // to be decide tomorrow
 Should using support exceptions? Like use Math except Sin?
-What about for loops?
 How should types work? Should types be more fancy?
 How to make metaprograms work with libraries?
 What about local constant declarations?
 What about polymorphic declarations?
+Operator overloading?
+Context & dynamic arrays?
+
+// decided
+* Operator overloading and macros need to be thought through more thoroughly, but should be a part of the language.
+  It shouldn't be a problem to add them later down the line
+* Exceptions to using is a another thing that can easily be added later down the line, so it is wise to delay the
+  decision.
+* Polymorhpic declarations are passed down the pipeline as "templates" at first, and then every instantiation is passed,
+  when they are instantiated.
+CONTEXT SYSTEM - custom calling convention, TLS is not reliable
+TYPES - Odin style, but with some implicit casting and pointer arithmetic
+PACKAGES AND MODULES, PARTICULARLY LINK NAME PREFIXES
+METAPROGRAM LIBS
+
+Procedure :: proc
+{
+	DoStuff :: proc do return 5;
+
+	{
+		f := DoStuff();
+		 // a lot of code
+
+		DoStuff :: proc do return 5;
+	}
+
+	a : f64;
+
+	^u64(a)
+	(^u64)(a)
+	(^u64)a // could pass parser, but checked by sema to ensure it is a cast
+
+	(SQRT)5 == SQRT(5)
+
+	e : ^Entity = &entity;
+
+}
+
+
+Types
+Postulate that types are a description of the amount of memory and the layout and interpretation of that chunk of memory
+E.g. a 32-bit int is a description of a chunk of memory that is 4 bytes long and should be interpreted as a contiguous set of
+     bits that describe a signed binary integer of 32 bits. The layout/endianess is platform dependent.
+1. What if rules surrounding access to the chunk of memory is also specified by the type? This could support atomic types, but
+   is probably inferioir to explicitly calling procedures
+2. What if the interpretation is dependent on some value? This is a union
+3. What if the amount of memory used is depedent on some value? This is not possible with a staticly typed language
+4. What if the layout is depedent on some value? This is just stupid
+5. What if the layout is decided by the compiler? This is just struct field reordering
+6. What about combining types? An "and" combination of types is just a struct, an "xor" combination is just a union
+   "or" seems stupid, since then type is several things at once, and this just seems like a way of describing implicit
+    casting
+7. What about void? Should there be a type that decribes a chunk of memory that does not exist? Odin does not allow this and
+   says that only "values" (essentially something that takes up memory) can have a type
+
+void does not make sense by itself, unless talking about something that does not exist
+void pointer seems like a pointer to something that does not exist, which is bizarre
+void* in C is just a pointer to a generic block of memory with unspecified size
+it is therefore better to use a generic pointer type (like Odin's rawptr) than pointer to void
+this results in some problems with procedures that do not return a value, since what is their
+return type then? I think it would make sense to say that they do not have a return type, since
+they do not return anything. This would result in a type system like the one in Odin.
+
+calling conventions
+* default
+* contextless
+* ccall
+* stdcall
+* fastcall
+* none
+* odin?
+
+
+include allows the inclusion of a single file's AST in the current one
+includes do not deduplicate, as they embed AST
+
+import is used to import a library
+ * libraries must be easy to setup and well defined
+ * it must be possible to allow a user to import only select parts of a library
+ * libraries must have the ability to define their own metaprograms
+ * a metaprogram may override the metaprogram of a library that it imports (subject to change)
+ * libraries should have their own link name prefix (to avoid name collision)
+ * library names should never collide
+ * libraries have a public and private scope. The public scope is accessible from the importer, but
+   the private is not. Import declarations are always private.
+
+foreign import is used to import a foreign library
+
+Should foreign include be a thing? Like include the converted AST of a compiled C header? This introduces a lot of problems due
+to undefined behaviour in C, but it could prove usefull when, for example dealing with foreign library bindings. Maybe C files
+could be included and associated with a foreign import, to automatically generate all procedure declarations and import them
+from the dynamic library. This is sort of funky, so it should be thought over more before deciding to go either way.
+
+how libraries work need to be decided another time
+for the time being, just support AST include
+
+
+
+HEY! LISTEN! guh~
+There seems to be a lot of value in giving the metaprogram a semantically valid declaration with symbol info generated, but not
+type checked. This allows the metaprogram to add swizzeling, custom implicit casting rules, allowing access of struct member fields by number instead of name, reorder structs for optimal packing, and much more.
+
+It also seems like the split between the compiler internal representation and the metaprogram representation of the AST, and
+a message loop to allow future expansion (in Jai) is useful
+
+New mental model
+The metaprogram works as an administrator, inspecting the actions of the compiler, able to change declarations that finish a
+stage, push them back through that stage and allow declarations to flow into later stages
+
+--> push to next stage
+==> go through same stage again
+
+..........          ..............................................          .................        ............
+| Parser |-| |----> | Semantic Analysis & Symbol Info Generation |-| |----> | Type Checking |-| |--> | Code Gen |
+.......... | |  ^   .............................................. | |  ^   ................. | |    ............
+            M   |================================================== M   |===================== M
+                ^                                                                            |
+                |============================================================================|
+
+
+// NOTE:
+// compilation = program + packages
+// when you add loose source files, they are treated as part of the program
+// when a declaration is passed to the "next" stage, it cannot be "recycled"
+
+// TODO: What about errors?
+// they could be issued by a message to the metaprogram
+// Should the compilation be recoverable?
+// if a file does not exist, should the metaprogram be able to discard it and continue?
+// but: max one parse error per file
+
+// TODO: What about stalling?
+// should there be a special message for when the compiler cannot resolve more types?
+// this happens when the compiler encounteres a symbol that does not exist, which could
+// be fixed by the metaprogram.
+// e.g. the program requires a procedure named PrintEntity which is generated by the metaprogram. When should
+//      the metaprogram generate this? It does not necessarily know when it has processed all the entities.
+//      Is it easier to just wait on a stall and add it then? Or should the metaprogram add a declaration
+//      up front for declarations that it does not know when will be generated?
+// I think it is a reasonable requirement to force the user to declare those kinds of procedures before they
+// are generated. Then, this kind of elimintates the use of a pipeline stall message.
+
+// initialize compiler state
+// free resources
+// build binary
+
+/// add to program
+// add file
+// add declaration
+/// add to package
+// add declaration to a certain package
+
+// begin intercept
+
+// wait for next message
+/// if nothing is done before issuing a call to "wait for next message",
+/// it is assumed that the user does not want do anything with the subject
+/// of the message
+
+/// file load intercept
+// modify text and pass on
+
+/// parse result intercept
+// modify parsed ast and pass on
+
+/// type checked intercept
+// (optionally) modify and recirculate ast
+
+// end intercept

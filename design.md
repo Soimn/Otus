@@ -32,7 +32,7 @@ Problems: (P: problem, I: important information, S: solution, ?: possible soluti
      path to the file to be loaded, or the module to be imported, may be prefixed with a path prefix, in the form
      "path_prefix:path/to/file/or/module". This is used for absolute paths. All paths are assumed to be relative to the
      current file, if no path prefix is specified.<br>
-  S: A program consists of several modules with a single entry point. A module is a collection of source files within the same
+  #: A program consists of several modules with a single entry point. A module is a collection of source files within the same
      directory, under the same namespace. A module has a public and private namespace and can import other modules' public
      namespace. Importing is done via import statements, which specifies a path to the target module's directory. Importing is
      not recursive, which means that importing the superdirectory of a modules' directory does not import said module.
@@ -63,13 +63,13 @@ Problems: (P: problem, I: important information, S: solution, ?: possible soluti
   ?: Namespacing imports and file vs. export scope<br>
   #: Import statements which are able to selectively import declarations and namespace them<br>
   #: Imports that namespace and file vs export scope<br>
-  S: Imports that namespace and public vs. private module scopes
+  S: Imports that namespace and public vs. private module scopes, linking names prefixed with package name by default
 
   P: How should attributes to procedures, structs and other constructs be marked up?<br>
   ?: By compiler directives before the declaration<br>
   #: @attrtibute_name(args) or @[attribute_name_0(args), attribute_name_1(args), ...] for multiple, before the declaration<br>
   #: @attribute_name(args), multiple attributes are separated by whitespace, can be placed before and after(before terminator) any declaration<br>
-  S: @attribute_name(args), multiple attributes are separated by whitespace, can be placed before any statement or expression
+  S: @attribute_name(args), multiple attributes are separated by whitespace, can be placed before any* statement or expression
 
   P: Should macros be added to the language?<br>
   ?: yes? Similar to Jai macros
@@ -126,7 +126,7 @@ Ideas (-: idea, x: scratched idea):
 	It may be possible to use array literals for this, but only if the compiler can "unroll" them.
   - allow for operator overloading that works on the ast. This allows x in [a, b, c] to be conditionally unrolled to x == a || x == b || x == c
   
-  - Allow use of the blank identifier to explicitly specify that a type should be inferred. e.g.
+  x Allow use of the blank identifier to explicitly specify that a type should be inferred. e.g.
     x, y, z, w : int, _, float, _ = 0, 0, 0, 0;
 
   - Provide Zig-esque optimization options: debug, release_safe, release_fast, release_small
@@ -137,7 +137,7 @@ Ideas (-: idea, x: scratched idea):
   - a beefier version of the attribute which can also be used by itself as an expression or declaration
 
 Builtin types:
-  - int               // A 64-bit signed integer
+  - int               // A maximally sized signed integer
   - uint              // A 64-bit unsigned integer
   - float             // A 64-bit IEEE-754 floating point value
   - bool              // An 8-bit value that can either be false (0) or true (any value that is not 0)
@@ -153,13 +153,12 @@ Builtin types:
 Casting rules:
   - distinct types do not cast
   - any pointer type can be explicitly casted to any other pointer type and can be implicitly casted to and from rawptr
-  - "typeid" can be explicitly casted to any integer type
-  - no type can be casted to "typeid"
+  - "typeid" can be explicitly casted to and from any integer and float type
   - "any" can be explicitly casted to any pointer type and any type can be implicitly casted to "any"
   - any specific base type implicitly casts to an unspecific type of the the same category<br>
     i.e. i8, i16, i32, i64 implicitly cast to int, u8..64 cast to uint, f32 and f64 cast to float
   - any integer and float type can be explicitly casted to any other integer or float type
-  - any base type can be explicitly casted to bool
+  - any base type can be explicitly casted to bool and implicitly in certain contexts
   - bool can be explicitly casted to any integer, float and pointer type
 
 
@@ -183,6 +182,7 @@ Keywords:
   - false
   - import
   - foreign
+  - package
 
 Control structures:
  - if    // if init; condition
@@ -192,6 +192,7 @@ Control structures:
  - while // while init; condition; step
 
 Declarations:
+  - package declaration
   - import declaration
   - variable declaration
   - constant declaration

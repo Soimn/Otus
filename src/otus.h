@@ -89,185 +89,96 @@ typedef struct Slice
 
 #define Slice(T) Slice
 
-/// IDs and handles
-/////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
 
-#define INVALID_ID -1
+typedef u32 Package_ID;
+typedef u32 File_ID;
 
-typedef i64 File_ID;
-typedef i32 Package_ID;
-typedef i32 Declaration_ID;
-
-/// AST
-/////////////////////////////////////////////////////
-
-/// Declarations
-/////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
 
 enum DECLARATION_KIND
 {
     Declaration_Invalid = 0,
+    Declaration_Proc,
+    Declaration_Macro,
+    Declaration_Struct,
+    Declaration_Union,
+    Declaration_Enum,
     Declaration_Import,
-    Declaration_Variable,
-    Declaration_Constant,
+    Declaration_Include,
 };
+
+typedef struct Locator
+{
+    Package_ID package;
+    File_ID file;
+    u32 line;
+    u32 column;
+} Locator;
+
+typedef struct Code_Note
+{
+    
+} Code_Note;
 
 typedef struct Declaration
 {
     Enum8(DECLARATION_KIND) kind;
-    Package_ID package;
-    // ast
-    // symbols
+    Locator locator;
+    // notes
+    //symbol_id
+    //AST* ast;
 } Declaration;
-
-#define DECLARATION_BLOCK_SIZE 64
-typedef struct Declaration_Block
-{
-    struct Declaration_Block* next;
-    u64 committed_map;
-    Declaration declarations[DECLARATION_BLOCK_SIZE];
-} Declaration_Block;
-
-typedef struct Declaration_Array
-{
-    Declaration_Block* first;
-    Declaration_Block* current;
-    u32 block_count;
-    u32 current_block_size;
-} Declaration_Array;
-
-typedef struct Declaration_Iterator
-{
-    Declaration_Block* first_block;
-    Declaration_Block* current_block;
-    Declaration* current;
-    Declaration_ID current_id;
-} Declaration_Iterator;
-
-/// Workspace bookkeeping
-/////////////////////////////////////////////////////
-
-// NOTE(soimn): Including the same file on disk in two
-//              different packages will result in two
-//              distinct File structs, each with a set
-//              of declarations parsed from the same
-//              file content. This is the case, because
-//              each package needs its own copy of the
-//              declarations in a file.
-typedef struct File
-{
-    String name;
-    String path;
-    String contents;
-    Slice(Declaration_ID) declarations;
-} File;
 
 typedef struct Package
 {
-    String name;
-    Dynamic_Array(File) files;
-    // symbols
+    bool _;
 } Package;
 
-typedef struct Error_Report
-{
-} Error_Report;
+//////////////////////////////////////////////////////
 
-typedef struct Workspace
-{
-    Declaration_Array declarations;
-    Dynamic_Array(Package) packages;
-    
+typedef struct Workspace {
     bool has_errors;
-    Dynamic_Array(Error_Report) error_reports;
 } Workspace;
-
-/// API
-/////////////////////////////////////////////////////
 
 typedef struct Workspace_Options
 {
-    
+    String working_directory;
 } Workspace_Options;
 
-API_FUNC Workspace* OpenWorkspace(Workspace_Options options);
+enum COMPILATION_MESSAGE_KIND
+{
+    CompilationMessage_Done = 0,
+    CompilationMessage_LoadFile,
+    CompilationMessage_ParsedDeclaration,
+    CompilationMessage_CheckedDeclaration
+};
+
+typedef struct Compilation_Message
+{
+    Enum8(COMPILATION_MESSAGE_KIND) kind;
+} Compilation_Message;
+
+API_FUNC Workspace* OpenWorkspace();
 API_FUNC void CloseWorkspace(Workspace* workspace);
 
-API_FUNC File_ID ParseFile(Workspace* workspace, Package_ID package_id, String name, String path, String contents);
-API_FUNC File_ID LoadAndParseFile(Workspace* workspace, Package_ID package_id, String path);
+API_FUNC void AddFile(Workspace* workspace, String path);
+API_FUNC void AddSourceCode(Workspace* workspace, String code);
+API_FUNC void AddDeclaration(Workspace* workspace, ...);
 
-API_FUNC void CommitDeclarationByID(Workspace* workspace, Declaration_ID id);
+API_FUNC void AddDeclarationToPackage(Workspace* workspace, Package_ID package, Declaration declaration);
 
-/// Helper functions
-/////////////////////////////////////////////////////
+API_FUNC void BeginCompilation(Workspace* workspace);
+API_FUNC void FinishCompilation(Workspace* workspace);
+API_FUNC Compilation_Message WaitForNextMessage(Workspace* workspace);
 
-void
-CommitDeclaration(Workspace* workspace, Declaration_Iterator it)
-{
-    CommitDeclarationByID(workspace, it.current_id);
-}
+// TODO(soimn): Allow the user to provide more info (like: file, line, package)
+API_FUNC void ReportError(Workspace* workspace, String message);
+API_FUNC void ReportWarning(Workspace* workspace, String message);
 
-Declaration_Iterator
-IterateDeclarations(Workspace* workspace)
-{
-    Declaration_Iterator result = {0};
-    
-    // TODO(soimn): NOT_IMPLEMENTED
-    
-    return result;
-}
+API_FUNC void ModifyCurrentDeclaration(Workspace* workspace, Declaration declaration);
+API_FUNC void HandleCurrentDeclarationLater(Workspace* workspace);
 
-void
-AdvanceIterator(Declaration_Iterator* it)
-{
-    // TODO(soimn): NOT_IMPLEMENTED
-}
-
-Package_ID
-AddNewPackage(Workspace* workspace, String name)
-{
-    Package_ID result = INVALID_ID;
-    
-    // TODO(soimn): NOT_IMPLEMENTED
-    
-    return result;
-}
-
-Package_ID
-PackageID(Workspace* workspace, String name)
-{
-    Package_ID result = INVALID_ID;
-    
-    // TODO(soimn): NOT_IMPLEMENTED
-    
-    return result;
-}
-
-bool
-PackageExists(Workspace* workspace, String name)
-{
-    return (PackageID(workspace, name) != INVALID_ID);
-}
-
-/*
-Declaration_ID
-AddNewDeclaration(Workspace* workspace, Package_ID package, ...)
-{
-}*/
-
-/// Memory management utilities
-/////////////////////////////////////////////////////
-
-typedef struct Memory_Block
-{
-    struct Memory_Block* next;
-    u32 offset;
-    u32 space;
-} Memory_Block;
-
-typedef struct Memory_Arena
-{
-    Memory_Block* first;
-    Memory_Block* current;
-    
-} Memory_Arena;
+// TODO(soimn): User level preprocessor and parse tree modification support
+// API_FUNC void UseThisStringInsteadOfLoadingTheFile(Workspace* workspace, String text);
+// API_FUNC void UseThisASTInstead(Workspace* workspace, AST* ast);

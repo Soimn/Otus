@@ -11,46 +11,107 @@
 
 #define ARRAY_COUNT(A) (sizeof(A) / sizeof(0[A]))
 
-static Workspace WorkspaceStub = { .has_errors = true };
+typedef struct Compiler_State
+{
+    // IMPORTANT NOTE: Must be first field (Workspace* -> Compiler_State* casting)
+    Workspace workspace;
+} Compiler_State;
+
+/// ////////////////////////////////////////////////////////////////////////
+
 
 API_FUNC Workspace*
-OpenWorkspace(Workspace_Options options)
+OpenWorkspace()
 {
-    Workspace* workspace = &WorkspaceStub;
+    static Compiler_State compiler_state_stub = {
+        .workspace = { .has_errors = true }
+    };
     
-    // TODO(soimn): Try to allocate workspace resources
+    NOT_IMPLEMENTED;
     
-    return workspace;
+    return &compiler_state_stub.workspace;
 }
 
 API_FUNC void
 CloseWorkspace(Workspace* workspace)
 {
+    Compiler_State* compiler_state = (Compiler_State*)workspace;
+    (void)compiler_state;
+    
     NOT_IMPLEMENTED;
 }
 
-API_FUNC File_ID
-ParseFile(Workspace* workspace, Package_ID package_id, String name, String path, String contents)
-{
-    File_ID file_id = INVALID_ID;
-    
-    NOT_IMPLEMENTED;
-    
-    return file_id;
-}
+/// ////////////////////////////////////////////////////////////////////////
 
-API_FUNC File_ID
-LoadAndParseFile(Workspace* workspace, Package_ID package_id, String path)
+API_FUNC void
+AddFile(Workspace* workspace, String path)
 {
-    File_ID file_id = INVALID_ID;
+    Compiler_State* compiler_state = (Compiler_State*)workspace;
+    (void)compiler_state;
     
     NOT_IMPLEMENTED;
-    
-    return file_id;
 }
 
 API_FUNC void
-CommitDeclarationByID(Workspace* workspace, Declaration_ID id)
+AddSourceCode(Workspace* workspace, String code)
 {
+    Compiler_State* compiler_state = (Compiler_State*)workspace;
+    (void)compiler_state;
+    
     NOT_IMPLEMENTED;
+}
+
+API_FUNC void
+AddDeclaration(Workspace* workspace, ...)
+{
+    Compiler_State* compiler_state = (Compiler_State*)workspace;
+    (void)compiler_state;
+    
+    NOT_IMPLEMENTED;
+}
+
+API_FUNC void
+AddDeclarationToPackage(Workspace* workspace, Package_ID package, ...)
+{
+    Compiler_State* compiler_state = (Compiler_State*)workspace;
+    (void)compiler_state;
+    
+    NOT_IMPLEMENTED;
+}
+
+/// ////////////////////////////////////////////////////////////////////////
+
+API_FUNC void
+BeginCompilation(Workspace* workspace)
+{
+    Compiler_State* compiler_state = (Compiler_State*)workspace;
+    (void)compiler_state;
+    
+    NOT_IMPLEMENTED;
+}
+
+API_FUNC void
+FinishCompilation(Workspace* workspace)
+{
+    Compiler_State* compiler_state = (Compiler_State*)workspace;
+    (void)compiler_state;
+    
+    NOT_IMPLEMENTED;
+}
+
+API_FUNC Compilation_Message
+WaitForNextMessage(Workspace* workspace)
+{
+    Compiler_State* compiler_state = (Compiler_State*)workspace;
+    (void)compiler_state;
+    
+    Compilation_Message message = {0};
+    
+    if (workspace->has_errors) message.kind = CompilationMessage_Done;
+    else
+    {
+        NOT_IMPLEMENTED;
+    }
+    
+    return message;
 }

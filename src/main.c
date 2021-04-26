@@ -10,36 +10,39 @@
 int
 main(int argc, const char** argv)
 {
-    if (argc != 2) fprintf(stderr, "Wrong number of arguments\n");
-    else
+    Workspace_Options workspace_options = {
+        .working_directory = CONST_STRING("")
+    };
+    
+    Workspace* workspace = OpenWorkspace(workspace_options); // init resources and state
+    AddFile(workspace, CONST_STRING("main.os"));             // add main file
+    
+    BeginCompilation(workspace); // begin compilation and message loop
+    
+    for (Compilation_Message message = WaitForNextMessage(workspace);
+         message.kind != CompilationMessage_Done;                             // This will accumulate errors
+         //message.kind != CompilationMessage_Done && !workspace->has_errors; // This will exit on first error
+         message = WaitForNextMessage(workspace))
     {
-        String main_file = {
-            .data = (u8*)argv[1],
-            .size = strlen(argv[1])
-        };
-        
-        Workspace* workspace    = OpenWorkspace((Workspace_Options){});
-        Package_ID main_package = AddNewPackage(workspace, CONST_STRING("main"));
-        LoadAndParseFile(workspace, main_package, main_file);
-        
-        Memory_Arena scratch_arena = {0};
-        
-        for (Declaration_Iterator it = IterateDeclarations(workspace);
-             it.current != 0 && !workspace->has_errors;
-             AdvanceIterator(&it))
+        if (message.kind == CompilationMessage_CheckedDeclaration)
         {
-            if (it.current->kind == Declaration_Import) CommitDeclaration(workspace, it);
+            Declaration declaration = message.declaration;
+            
+            // dont do anything if the declaration has no notes
+            if (declaration.notes.size == 0) continue;
+            
+            // handle declaration later if it has over 1 note
+            else if (declaration.notes.size > 1) HandleCurrentDeclarationLater(workspace);
             else
             {
-                NOT_IMPLEMENTED;
+                declaration.notes.size = 0;
+                
+                ModifyCurrentDeclaration(workspace, declaration);
             }
         }
-        
-        if (workspace->has_errors)
-        {
-            fprintf(stderr, "There were errors. Exiting...\n");
-        }
-        
-        CloseWorkspace(workspace);
     }
+    
+    FinishCompilation(workspace); // end intercept of messages, finish compilation and report errors
+    
+    CloseWorkspace(workspace); // free resources
 }
