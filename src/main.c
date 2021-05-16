@@ -14,35 +14,22 @@ main(int argc, const char** argv)
         .working_directory = CONST_STRING("")
     };
     
-    Workspace* workspace = OpenWorkspace(workspace_options); // init resources and state
-    AddFile(workspace, CONST_STRING("main.os"));             // add main file
+    Workspace* workspace = OpenWorkspace(workspace_options);
+    AddFile(workspace, CONST_STRING("main.os"));
     
-    BeginCompilation(workspace); // begin compilation and message loop
-    
-    for (Compilation_Message message = WaitForNextMessage(workspace);
-         message.kind != CompilationMessage_Done;                             // This will accumulate errors
-         //message.kind != CompilationMessage_Done && !workspace->has_errors; // This will exit on first error
-         message = WaitForNextMessage(workspace))
+    for (Declaration* declaration = InspectNextDeclaration(workspace);
+         declaration != 0;
+         declaration = InspectNextDeclaration(workspace))
     {
-        if (message.kind == CompilationMessage_CheckedDeclaration)
-        {
-            Declaration declaration = message.declaration;
-            
-            // dont do anything if the declaration has no notes
-            if (declaration.notes.size == 0) continue;
-            
-            // handle declaration later if it has over 1 note
-            else if (declaration.notes.size > 1) HandleCurrentDeclarationLater(workspace);
-            else
-            {
-                declaration.notes.size = 0;
-                
-                ModifyCurrentDeclaration(workspace, declaration);
-            }
-        }
     }
     
-    FinishCompilation(workspace); // end intercept of messages, finish compilation and report errors
+    FinnishCompilation(workspace);
     
-    CloseWorkspace(workspace); // free resources
+    Binary_Options debug_binary_options   = {0};
+    Binary_Options release_binary_options = {0};
+    
+    BuildBinary(workspace, debug_binary_options);
+    BuildBinary(workspace, release_binary_options);
+    
+    CloseWorkspace(workspace);
 }

@@ -118,14 +118,15 @@ typedef struct Locator
 
 typedef struct Code_Note
 {
-    
+    String identifier;
+    //Slice(AST) arguments;
 } Code_Note;
 
 typedef struct Declaration
 {
     Enum8(DECLARATION_KIND) kind;
     Locator locator;
-    // notes
+    Dynamic_Array(Code_Note) notes;
     //symbol_id
     //AST* ast;
 } Declaration;
@@ -146,18 +147,10 @@ typedef struct Workspace_Options
     String working_directory;
 } Workspace_Options;
 
-enum COMPILATION_MESSAGE_KIND
+typedef struct Binary_Options
 {
-    CompilationMessage_Done = 0,
-    CompilationMessage_LoadFile,
-    CompilationMessage_ParsedDeclaration,
-    CompilationMessage_CheckedDeclaration
-};
-
-typedef struct Compilation_Message
-{
-    Enum8(COMPILATION_MESSAGE_KIND) kind;
-} Compilation_Message;
+    bool _;
+} Binary_Options;
 
 API_FUNC Workspace* OpenWorkspace();
 API_FUNC void CloseWorkspace(Workspace* workspace);
@@ -165,12 +158,11 @@ API_FUNC void CloseWorkspace(Workspace* workspace);
 API_FUNC void AddFile(Workspace* workspace, String path);
 API_FUNC void AddSourceCode(Workspace* workspace, String code);
 API_FUNC void AddDeclaration(Workspace* workspace, ...);
+API_FUNC void AddDeclarationToPackage(Workspace* workspace, Package_ID package, ...);
 
-API_FUNC void AddDeclarationToPackage(Workspace* workspace, Package_ID package, Declaration declaration);
-
-API_FUNC void BeginCompilation(Workspace* workspace);
-API_FUNC void FinishCompilation(Workspace* workspace);
-API_FUNC Compilation_Message WaitForNextMessage(Workspace* workspace);
+API_FUNC Declaration* InspectNextDeclaration(Workspace* workspace);
+API_FUNC void FinnishCompilation(Workspace* workspace);
+API_FUNC void BuildBinary(Workspace* workspace, Binary_Options options);
 
 // TODO(soimn): Allow the user to provide more info (like: file, line, package)
 API_FUNC void ReportError(Workspace* workspace, String message);
@@ -178,7 +170,3 @@ API_FUNC void ReportWarning(Workspace* workspace, String message);
 
 API_FUNC void ModifyCurrentDeclaration(Workspace* workspace, Declaration declaration);
 API_FUNC void HandleCurrentDeclarationLater(Workspace* workspace);
-
-// TODO(soimn): User level preprocessor and parse tree modification support
-// API_FUNC void UseThisStringInsteadOfLoadingTheFile(Workspace* workspace, String text);
-// API_FUNC void UseThisASTInstead(Workspace* workspace, AST* ast);

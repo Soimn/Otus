@@ -897,7 +897,7 @@ But is also introduces some ambiguities
 
 #load - load file and return []u8
 
-// remove using as, replace with using¨
+// remove using as
 // what to do about character literals? ' or ` ?
 
 source_location
@@ -1540,3 +1540,94 @@ stage, push them back through that stage and allow declarations to flow into lat
 // (optionally) modify and recirculate ast
 
 // end intercept
+
+
+
+
+
+// Problems
+
+x when statements & code notes
+x metaprogramming
+- overloading
+- types
+x code notes
+packages & libraries
+
+
+
+// Code Notes
+There should be a way of marking up expressions
+When statements complicate this, since they need to be evaluated before being passed to the metaprogram
+
+Solution 1: Disallow code notes on when statements, and when statement condition
+Solution 2: Disallow code notes on when statements, and ass the when statement condition to the metaprogram separately
+
+Solution: #1
+
+x := @no_overflow (a + b);
+x := @no_overflow(a + b);
+
+Code note placement
+
+@note_in_front_of_statement statement
+@note_as_prefix_operator_for_expression prefix_expression
+
+struct @note_in_front_of_struct_body
+{
+	@note_as_prefix_operator_on_a a : @note_as_prefix_operator_on_b b @note_on_the_field_as_a_whole,
+
+	//e.g.
+	health: int @NoSerialize,
+	
+}
+
+Is notes on expressions really necessary? Having them adds a lot of freedom, but it also complicates the grammar and AST
+What about restricting notes to only declarations, and scopes?
+
+@note_in_front_of_declaration_statement statement
+
+struct @note_in_front_of_scope {
+	a: b @note_on_field,
+}
+
+proc(a: b @note_on_parameter, c, d: e = f @note_on_parameters) -> (g, h: i @note_on_return_values) @note_in_front_of_body {
+
+}
+
+Solution: Code notes should only apply to declarations and scopes
+
+// types
+A type is something that describes the size of a region of memory, as well as its layout and how it should be interpreted
+There are rules for what happens when types are operated on
+
+void is not a type, as it does not describe a region of memory or its layout
+
+rawptr describes a region of memory of unknown size and unknown layout
+int describes a region of memory that represents a signed integer of size between 1 and 8 bytes
+uint describes a region of memory that represents a unsigned integer of between 1 and 8 bytes
+float describes a region of memory that represents a single or double precision floating point number
+bool describes a region of memory that represents a boolean of size between 1 and 8 bytes // is this reasonable?
+
+i8, i16, i32, i64 describes signed integers of size n
+u8, u16, u32, u64 describes unsigned integers of size n
+f32, f64 describes IEEE 754 floating point numbers of precision n
+
+a type can be converted implicitly to any other type if it is known, by the compiler at compile time, that the type can be exactly represented by the conversion target
+any pointer type can be casted to and from rawptr implicitly
+any pointer type can be casted to any other pointer type explicitly
+
+Seems like the rules of the type system needs some more thought and experimentation
+
+// overloading
+Overloading should be implicit
+
+See what works when the compiler is functional
+
+// packages & libraries
+there needs to be a way of linking with dlls
+there should be a way of defining a package of some sort
+
+packages do not have their own metaprogram
+
+packages work as in Odin, except that the main program is not a package, and has the ability to include other source files that do not belong to a package
